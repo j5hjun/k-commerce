@@ -1,0 +1,16 @@
+[project]
+name = "k-commerce-cli"
+version = "0.1.0"
+description = "CLI for K-Commerce workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer",
+]
+
+[project.scripts]
+k-commerce = "k_commerce_cli.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
