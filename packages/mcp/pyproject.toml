@@ -1,0 +1,14 @@
+[project]
+name = "k-commerce-mcp"
+version = "0.1.0"
+description = "MCP server for Korean commerce workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+k-commerce-mcp = "k_commerce_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
