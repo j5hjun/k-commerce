@@ -19,11 +19,14 @@ uv run k-commerce-mcp
 
 ## Branch Strategy
 
-Use short-lived branches and keep `main` in a releasable state.
+Use short-lived branches and treat `dev` as the main integration branch.
 
 - `main`
-  - default branch
-  - keep stable and review-approved
+  - stable branch for reviewed and validated changes
+  - merge into `main` from `dev` when a release-ready set of changes is prepared
+- `dev`
+  - shared integration branch for ongoing team development
+  - open feature, fix, docs, chore, and refactor pull requests against `dev`
 - `feat/<topic>`
   - new feature work
   - example: `feat/mcp-server-bootstrap`
@@ -39,6 +42,18 @@ Use short-lived branches and keep `main` in a releasable state.
 - `refactor/<topic>`
   - internal code improvements without intended behavior changes
   - example: `refactor/server-layout`
+
+Recommended flow:
+
+1. Branch from `dev`
+2. Open pull requests into `dev`
+3. Merge `dev` into `main` after the changes are reviewed and considered stable
+
+Documentation-only changes:
+
+- use `docs/<topic>` when the documentation update is its own task
+- include documentation changes in the same branch when they belong to a feature or fix
+- for repository setup or process documentation on `dev`, updating `dev` directly can be acceptable during the initial setup phase
 
 ## Commit Message Convention
 
@@ -70,7 +85,10 @@ chore: configure uv workspace
 
 Before opening a pull request:
 
+- branch from `dev` unless you are preparing a `dev` to `main` promotion
 - make sure the branch name matches the change type
+- target `dev` for normal development work
+- target `main` only for reviewed changes that are ready to be promoted from `dev`
 - fill out the PR template with created files, modified files, and test steps
 - include only the scope needed for one planned feature or one clearly scoped fix
 
