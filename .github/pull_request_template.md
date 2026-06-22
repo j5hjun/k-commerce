@@ -1,14 +1,5 @@
 ## What
-- Added planned feature:
-
-## Why
 - 
-
-## Scope
-- In scope:
-  - 
-- Out of scope:
-  - 
 
 ## Created Files
 - `path/to/file`
@@ -34,9 +25,6 @@
 - [ ] `uv build`
 - [ ] `uv run k-commerce-mcp`
 - [ ] Additional verification:
-
-## Expected Result
-- 
 
 ## Review Focus
 - 
