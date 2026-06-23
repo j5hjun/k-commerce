@@ -1,5 +1,5 @@
 from k_commerce_cli.providers import LOGIN_PROVIDERS
-from k_commerce_cli.providers.types import LoginResult
+from k_commerce_cli.types import LoginResult
 
 
 def login(provider: str) -> LoginResult:

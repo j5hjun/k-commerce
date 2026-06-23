@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from k_commerce_cli.providers.types import LoginResult
+from k_commerce_cli.types import LoginResult
 
 
 @dataclass(frozen=True)

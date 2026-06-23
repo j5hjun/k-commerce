@@ -1,12 +1,6 @@
-from dataclasses import dataclass
 from typing import Protocol
 
-
-@dataclass(frozen=True)
-class LoginResult:
-    provider: str
-    success: bool
-    message: str
+from k_commerce_cli.types import LoginResult
 
 
 class LoginProvider(Protocol):
