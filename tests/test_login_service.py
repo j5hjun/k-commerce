@@ -2,12 +2,15 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from k_commerce_cli.providers import LOGIN_PROVIDERS
 from k_commerce_cli.providers.coupang.login import (
     CoupangCredentials,
     CoupangLoginProvider,
 )
+from k_commerce_cli.services.login import login as run_login
+from k_commerce_cli.types import LoginResult
 
 
 class CoupangLoginProviderTests(unittest.TestCase):
@@ -95,3 +98,26 @@ class ProviderRegistryTests(unittest.TestCase):
         provider = LOGIN_PROVIDERS["coupang"]
 
         self.assertIsInstance(provider, CoupangLoginProvider)
+
+
+class LoginServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_login_dispatches_to_provider_async(self) -> None:
+        expected = LoginResult(
+            provider="coupang",
+            success=True,
+            message="쿠팡 로그인 성공",
+        )
+
+        with patch.object(
+            LOGIN_PROVIDERS["coupang"],
+            "login",
+            new=AsyncMock(return_value=expected),
+        ) as login_provider:
+            result = await run_login("coupang")
+
+        self.assertEqual(result, expected)
+        login_provider.assert_awaited_once_with()
+
+    async def test_login_rejects_unsupported_provider(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported provider: unknown"):
+            await run_login("unknown")

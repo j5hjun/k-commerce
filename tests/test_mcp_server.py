@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from k_commerce_mcp import server
+from k_commerce_cli.types import LoginResult
 
 
 class MCPServerTests(unittest.IsolatedAsyncioTestCase):
@@ -21,10 +22,21 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Coupang", login_tool.description)
 
-    def test_login_tool_dispatches_to_login_coupang_for_coupang_provider(self) -> None:
-        result = server.login(provider="coupang")
+    async def test_login_tool_dispatches_to_login_service_for_coupang_provider(self) -> None:
+        with patch(
+            "k_commerce_mcp.tools.login.run_login",
+            new=AsyncMock(
+                return_value=LoginResult(
+                    provider="coupang",
+                    success=True,
+                    message="쿠팡 로그인 성공",
+                )
+            ),
+        ) as run_login:
+            result = await server.login(provider="coupang")
 
-        self.assertEqual(result, "login_coupang is not implemented yet")
+        self.assertEqual(result, "쿠팡 로그인 성공")
+        run_login.assert_awaited_once_with("coupang")
 
 
 class MainEntrypointTests(unittest.TestCase):

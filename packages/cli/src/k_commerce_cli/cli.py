@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-import typer
+import asyncclick as click
 
 from k_commerce_cli.services.login import login as run_login
 
-app = typer.Typer(help="CLI for K-Commerce workflows.")
-
-
-@app.callback()
-def cli() -> None:
+@click.group(help="CLI for K-Commerce workflows.")
+async def app() -> None:
     pass
 
 
 @app.command()
-def login(provider: str) -> None:
+@click.argument("provider")
+async def login(provider: str) -> None:
     try:
-        print(run_login(provider))
+        result = await run_login(provider)
     except ValueError as error:
-        raise typer.BadParameter(str(error)) from error
+        raise click.BadParameter(str(error)) from error
+
+    click.echo(result.message)
 
 
 def main(argv: list[str] | None = None) -> int:

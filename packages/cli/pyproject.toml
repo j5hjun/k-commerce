@@ -5,8 +5,8 @@ description = "CLI for K-Commerce workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "asyncclick",
   "playwright",
-  "typer",
 ]
 
 [project.scripts]
