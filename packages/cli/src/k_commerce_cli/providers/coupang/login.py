@@ -1,10 +1,9 @@
 from pathlib import Path
 
 import asyncclick as click
-from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from .browser import COUPANG_HOME_URL, COUPANG_LOGIN_URL, CoupangBrowser, first_product_link_selector
+from .browser import CoupangBrowser
 from .browser import (
     CoupangBrowserSession,
 )
@@ -19,9 +18,7 @@ class CoupangLoginProvider:
     def __init__(self) -> None:
         self.browser = CoupangBrowser()
         self._browser_session: CoupangBrowserSession | None = None
-        self.credentials_path = (
-            Path.home() / ".k-commerce" / "coupang" / "credentials.json"
-        )
+        self.credentials_path = Path.home() / ".coupang-session" / "credentials.json"
 
     @property
     def credentials_path(self) -> Path:
@@ -86,15 +83,15 @@ class CoupangLoginProvider:
         return self._browser_session
 
     async def _verify_session(self, session: CoupangBrowserSession) -> bool:
-        await session.page.goto(COUPANG_HOME_URL)
-        return await self._current_page_is_logged_in(session.page)
+        await self.browser.open_home(session)
+        return await self.browser.is_logged_in(session.page)
 
     async def _login_with_credentials(self, credentials: CoupangCredentials) -> bool:
         if self._browser_session is None:
             self._browser_session = await self.browser.launch()
 
         page = self._browser_session.page
-        await self._open_login_entry(page)
+        await self.browser.open_login_entry(self._browser_session)
         await page.fill(
             'input[name="email"], input#login-email-input',
             credentials.email,
@@ -113,92 +110,31 @@ class CoupangLoginProvider:
         except PlaywrightTimeoutError:
             return False
 
-        return await self._current_page_is_logged_in(page)
+        return await self.browser.is_logged_in(page)
 
     async def _wait_for_manual_login(self) -> bool:
         if self._browser_session is None:
             self._browser_session = await self.browser.launch()
-            await self._open_login_entry(self._browser_session.page)
+            await self.browser.open_login_entry(self._browser_session)
 
-        page = self._browser_session.page
-
-        if "login.coupang.com" in page.url:
-            try:
-                await page.wait_for_url(
-                    lambda url: "login.coupang.com" not in str(url),
-                    timeout=300_000,
-                )
-            except PlaywrightTimeoutError:
-                return False
-
-        for _ in range(300):
-            page = self._select_active_page(page)
-            if await self._current_page_is_logged_in(page):
-                return True
-            try:
-                await page.wait_for_timeout(1000)
-            except PlaywrightError:
-                page = self._select_active_page(page)
-
-        return False
+        return await self.browser.wait_for_manual_login(self._browser_session)
 
     async def _persist_session(self, login_method: str) -> None:
         self.session_store.ensure_dir()
         if self._browser_session is None:
             self.session_store.storage_state_path.write_text("{}", encoding="utf-8")
         else:
-            await self._browser_session.context.storage_state(
-                path=self.session_store.storage_state_path
+            await self.browser.save_storage_state(
+                self._browser_session,
+                self.session_store.storage_state_path,
             )
         self.session_store.write_metadata({"login_method": login_method})
-
-    async def _current_page_is_logged_in(self, page) -> bool:
-        if "login.coupang.com" in page.url:
-            return False
-
-        login_link = await page.query_selector('a[href*="login.coupang.com"]')
-        my_coupang_link = await page.query_selector(
-            'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
-        )
-        return login_link is None and my_coupang_link is not None
 
     async def _close_browser_session(self) -> None:
         if self._browser_session is None:
             return
 
         try:
-            await self._browser_session.page.close()
+            await self.browser.close(self._browser_session)
         finally:
-            try:
-                await self._browser_session.context.close()
-            finally:
-                try:
-                    await self._browser_session.browser.close()
-                finally:
-                    stop = getattr(self._browser_session.playwright, "stop", None)
-                    if stop is not None:
-                        await stop()
-                    self._browser_session = None
-
-    def _select_active_page(self, page):
-        if self._browser_session is None:
-            return page
-
-        is_closed = getattr(page, "is_closed", None)
-        if callable(is_closed) and not is_closed():
-            return page
-
-        for candidate in reversed(self._browser_session.context.pages):
-            candidate_is_closed = getattr(candidate, "is_closed", None)
-            if callable(candidate_is_closed) and not candidate_is_closed():
-                return candidate
-
-        return page
-
-    async def _open_login_entry(self, page) -> None:
-        try:
-            await page.goto(COUPANG_LOGIN_URL)
-            return
-        except PlaywrightError:
-            await page.goto(COUPANG_HOME_URL)
-            await page.click(first_product_link_selector())
+            self._browser_session = None
