@@ -11,7 +11,7 @@ RUNNER = CliRunner()
 
 
 class CLITests(unittest.IsolatedAsyncioTestCase):
-    async def test_login_coupang_command_prints_login_message(self) -> None:
+    async def test_login_coupang_command_prints_login_message_once(self) -> None:
         with patch(
             "k_commerce_cli.cli.run_login",
             new=AsyncMock(
@@ -25,5 +25,5 @@ class CLITests(unittest.IsolatedAsyncioTestCase):
             result = await RUNNER.invoke(app, ["login", "coupang"])
 
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("쿠팡 로그인 성공", result.stdout)
+        self.assertEqual(result.stdout.splitlines(), ["쿠팡 로그인 성공"])
         run_login.assert_awaited_once_with("coupang")
