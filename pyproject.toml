@@ -9,6 +9,11 @@ members = [
   "packages/mcp",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
 [tool.ruff]
 line-length = 200
 
