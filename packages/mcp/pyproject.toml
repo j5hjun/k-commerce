@@ -3,11 +3,17 @@ name = "k-commerce-mcp"
 version = "0.1.0"
 description = "MCP server for Korean commerce workflows."
 readme = "README.md"
-requires-python = ">=3.11"
-dependencies = []
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "k-commerce-cli",
+  "mcp[cli]",
+]
 
 [project.scripts]
 k-commerce-mcp = "k_commerce_mcp.server:main"
+
+[tool.uv.sources]
+k-commerce-cli = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

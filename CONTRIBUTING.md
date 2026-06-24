@@ -12,10 +12,61 @@ This repository uses `uv` workspace management.
 Use these commands from the repository root unless noted otherwise.
 
 ```bash
-uv sync --all-packages
+uv sync
 uv build
+uv run pytest
 uv run k-commerce-mcp
 ```
+
+## Test Layout
+
+Tests are organized by package.
+
+- `packages/cli/tests`
+  - CLI unit/integration tests
+  - provider/browser/store tests
+- `packages/cli/tests/e2e`
+  - file-backed login flow scenarios that run through the CLI entrypoint
+  - uses `--root-dir` to isolate credentials and session data under a temporary directory
+- `packages/cli/tests/smoke`
+  - opt-in smoke tests that launch the real browser or depend on local credentials/session state
+  - skipped by default unless explicit smoke env vars are provided
+- `packages/mcp/tests`
+  - MCP server and tool wiring tests
+
+Run the full suite from the repository root:
+
+```bash
+uv run pytest
+```
+
+Run only the CLI e2e-style scenarios:
+
+```bash
+uv run pytest packages/cli/tests/e2e
+```
+
+Run the CLI smoke tests explicitly:
+
+```bash
+RUN_COUPANG_SMOKE=1 uv run pytest packages/cli/tests/smoke -m smoke
+```
+
+Smoke inputs by case:
+
+- existing session
+  - source: `~/.k-commerce/coupang`
+  - copied artifacts: `chrome-profile/`, `cookies.dat`
+- credentials
+  - source: `~/.k-commerce/coupang`
+  - copied artifacts: `credentials.json`
+- invalid credentials
+  - source: none
+  - generated artifacts: invalid `credentials.json`
+- manual login without credentials
+  - source: none
+  - starts from an empty temporary root directory
+  - requires you to complete the browser login flow during the smoke run
 
 ## Branch Strategy
 

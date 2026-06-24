@@ -1,16 +1,35 @@
 [project]
 name = "k-commerce"
 version = "0.1.0"
-requires-python = ">=3.11"
-dependencies = []
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "k-commerce-cli",
+  "k-commerce-mcp",
+]
 
 [tool.uv.workspace]
 members = [
+  "packages/cli",
   "packages/mcp",
+]
+
+[tool.uv.sources]
+k-commerce-cli = { workspace = true }
+k-commerce-mcp = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.1",
 ]
 
 [tool.ruff]
 line-length = 200
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+  "packages/cli/tests",
+  "packages/mcp/tests",
+]
+markers = [
+  "smoke: opt-in smoke tests that launch the real browser or depend on local credentials/session state",
+]
