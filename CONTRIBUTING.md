@@ -12,7 +12,7 @@ This repository uses `uv` workspace management.
 Use these commands from the repository root unless noted otherwise.
 
 ```bash
-uv sync --all-packages
+uv sync
 uv build
 uv run k-commerce-mcp
 ```
