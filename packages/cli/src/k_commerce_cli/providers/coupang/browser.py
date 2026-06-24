@@ -95,6 +95,7 @@ class CoupangBrowser:
             result = stop()
             if inspect.isawaitable(result):
                 await result
+        await asyncio.sleep(1.0)
 
     def profile_dir(self, base_dir: Path) -> Path:
         return base_dir / "chrome-profile"
