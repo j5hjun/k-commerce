@@ -1,157 +1,151 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import inspect
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
-from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from playwright.async_api import async_playwright
+import nodriver as uc
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
-NAVER_HOME_URL = "https://www.naver.com/"
 COUPANG_VIEWPORT = {"width": 1440, "height": 900}
+COUPANG_LOGIN_LINK_SELECTOR = 'a[href*="login/login.pang"]'
+COUPANG_MYCOUPANG_SELECTOR = (
+    'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
+)
 CHROME_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/136.0.0.0 Safari/537.36"
-)
-FIREFOX_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) "
-    "Gecko/20100101 Firefox/146.0"
+    "Chrome/149.0.0.0 Safari/537.36"
 )
 
 
 @dataclass(frozen=True)
 class CoupangBrowserSession:
-    playwright: object
-    browser: object | None
-    context: object
-    page: object
-    persistent: bool = False
-
-
-def first_product_link_selector() -> str:
-    return 'a[href^="/vp/products/"]'
-
-
+    browser: object
+    tab: object
+    profile_dir: Path
+    cookies_file: Path
 class CoupangBrowser:
-    async def launch(
-        self,
-        preferred: Literal["firefox", "chrome"] | None = None,
-        storage_state_path: Path | None = None,
-        base_dir: Path | None = None,
-    ) -> CoupangBrowserSession:
-        playwright = await async_playwright().start()
-        if preferred is None:
-            preferred = self._default_browser()
-        if preferred == "chrome":
-            return await self._launch_chrome_persistent(playwright, base_dir=base_dir)
-        return await self._launch_firefox(
-            playwright,
-            storage_state_path=storage_state_path,
+    async def launch(self, base_dir: Path) -> CoupangBrowserSession:
+        profile_dir = self.profile_dir(base_dir)
+        cookies_file = self.cookies_file(base_dir)
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        browser = await uc.start(
+            headless=False,
+            user_data_dir=str(profile_dir),
+            browser_args=[
+                f"--window-size={COUPANG_VIEWPORT['width']},{COUPANG_VIEWPORT['height']}",
+                "--lang=ko-KR",
+            ],
+            lang="ko-KR",
+        )
+        tab = await self._ensure_tab(browser)
+        await self._load_cookies(browser, cookies_file)
+        return CoupangBrowserSession(
+            browser=browser,
+            tab=tab,
+            profile_dir=profile_dir,
+            cookies_file=cookies_file,
         )
 
     async def open_home(self, session: CoupangBrowserSession) -> None:
-        await session.page.goto(COUPANG_HOME_URL, wait_until="domcontentloaded")
+        await session.tab.get(COUPANG_HOME_URL)
 
     async def open_login(self, session: CoupangBrowserSession) -> None:
-        await session.page.goto(
-            COUPANG_LOGIN_URL,
-            wait_until="domcontentloaded",
-            referer=COUPANG_HOME_URL,
-        )
+        await session.tab.get(COUPANG_LOGIN_URL)
 
     async def open_login_entry(self, session: CoupangBrowserSession) -> None:
-        try:
-            await self._open_via_naver(session)
-            await self.open_login(session)
-        except Exception:
-            await self.open_home(session)
-            await session.page.click(first_product_link_selector())
+        await self.open_login(session)
 
-    def select_active_page(
-        self,
-        session: CoupangBrowserSession,
-        current_page: object,
-    ) -> object:
-        is_closed = getattr(current_page, "is_closed", None)
-        if callable(is_closed) and not is_closed():
-            return current_page
+    async def is_logged_in(self, tab: object) -> bool:
+        page_state = await self._read_login_state(tab)
+        page_url = page_state["url"]
+        if "login.coupang.com" in page_url:
+            return False
 
-        for candidate in reversed(session.context.pages):
-            candidate_is_closed = getattr(candidate, "is_closed", None)
-            if callable(candidate_is_closed) and not candidate_is_closed():
-                return candidate
-
-        return current_page
+        return (not page_state["has_login_link"]) and page_state["has_mycoupang_link"]
 
     async def wait_for_manual_login(
         self,
         session: CoupangBrowserSession,
-        timeout_ms: int = 300_000,
         poll_count: int = 300,
     ) -> bool:
-        page = session.page
-
-        if "login.coupang.com" in page.url:
-            try:
-                await page.wait_for_url(
-                    lambda url: "login.coupang.com" not in str(url),
-                    timeout=timeout_ms,
-                )
-            except PlaywrightTimeoutError:
-                return False
-
         for _ in range(poll_count):
-            page = self.select_active_page(session, page)
-            if await self.is_logged_in(page):
+            active_tab = self._active_tab(session)
+            if await self.is_logged_in(active_tab):
                 return True
-            try:
-                await page.wait_for_timeout(1000)
-            except PlaywrightError:
-                page = self.select_active_page(session, page)
-
+            await self._sleep_ms(1000)
         return False
 
-    async def is_logged_in(self, page: object) -> bool:
-        page_url = getattr(page, "url", "")
-        if "login.coupang.com" in page_url:
-            return False
-
-        login_link = await page.query_selector('a[href*="login.coupang.com"]')
-        my_coupang_link = await page.query_selector(
-            'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
-        )
-        return login_link is None and my_coupang_link is not None
-
-    async def save_storage_state(
-        self,
-        session: CoupangBrowserSession,
-        storage_state_path: Path,
-    ) -> None:
-        if getattr(session, "persistent", False):
-            return
-        await session.context.storage_state(path=storage_state_path)
+    async def save_session(self, session: CoupangBrowserSession) -> None:
+        cookies_api = getattr(session.browser, "cookies", None)
+        save = getattr(cookies_api, "save", None)
+        if save is not None:
+            await save(file=str(session.cookies_file))
 
     async def close(self, session: CoupangBrowserSession) -> None:
-        try:
-            await session.page.close()
-        finally:
+        stop = getattr(session.browser, "stop", None)
+        if stop is not None:
+            result = stop()
+            if inspect.isawaitable(result):
+                await result
+
+    def profile_dir(self, base_dir: Path) -> Path:
+        return base_dir / "chrome-profile"
+
+    def cookies_file(self, base_dir: Path) -> Path:
+        return base_dir / "cookies.dat"
+
+    async def fill_login_form(
+        self,
+        session: CoupangBrowserSession,
+        email: str,
+        password: str,
+    ) -> bool:
+        evaluate = getattr(session.tab, "evaluate", None)
+        if callable(evaluate):
             try:
-                await session.context.close()
-            finally:
-                try:
-                    if session.browser is not None:
-                        await session.browser.close()
-                finally:
-                    stop = getattr(session.playwright, "stop", None)
-                    if stop is not None:
-                        await stop()
+                result = await evaluate(
+                    """
+                    ([email, password]) => {
+                      const emailInput = document.querySelector('input[name="email"], input#login-email-input');
+                      const passwordInput = document.querySelector('input[name="password"], input#login-password-input');
+                      const submitButton = document.querySelector('button[type="submit"], .login__button');
+                      if (!emailInput || !passwordInput || !submitButton) return false;
+                      emailInput.focus();
+                      emailInput.value = email;
+                      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+                      emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+                      passwordInput.focus();
+                      passwordInput.value = password;
+                      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+                      passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+                      submitButton.click();
+                      return true;
+                    }
+                    """,
+                    [email, password],
+                )
+                if isinstance(result, bool):
+                    return result
+            except Exception:
+                pass
+
+        email_input = await self._safe_select(session.tab, 'input[name="email"], input#login-email-input')
+        password_input = await self._safe_select(session.tab, 'input[name="password"], input#login-password-input')
+        submit_button = await self._safe_select(session.tab, 'button[type="submit"], .login__button')
+
+        if email_input is None or password_input is None or submit_button is None:
+            return False
+
+        await email_input.send_keys(email)
+        await password_input.send_keys(password)
+        await submit_button.click()
+        return True
 
     async def random_delay(self, min_ms: int = 500, max_ms: int = 2_000) -> None:
         await self._sleep_ms(random.randint(min_ms, max_ms))
@@ -159,84 +153,90 @@ class CoupangBrowser:
     async def _sleep_ms(self, timeout_ms: int) -> None:
         await asyncio.sleep(timeout_ms / 1000)
 
-    async def _open_via_naver(self, session: CoupangBrowserSession) -> None:
-        page = session.page
-        await page.goto(NAVER_HOME_URL, wait_until="domcontentloaded")
-        await self.random_delay(1_000, 2_000)
-        search_input = await page.query_selector('input#query, input[name="query"]')
-        if search_input is None:
+    async def _ensure_tab(self, browser: object) -> object:
+        main_tab = getattr(browser, "main_tab", None)
+        if main_tab is not None:
+            return main_tab
+        return await browser.get("about:blank")
+
+    async def _load_cookies(self, browser: object, cookies_file: Path) -> None:
+        if not cookies_file.is_file():
             return
 
-        await page.click('input#query, input[name="query"]')
-        await self.random_delay(300, 600)
-        await page.fill('input#query, input[name="query"]', "쿠팡")
-        await self.random_delay(300, 500)
-        await page.keyboard.press("Enter")
-        await self.random_delay(2_000, 3_000)
+        cookies_api = getattr(browser, "cookies", None)
+        load = getattr(cookies_api, "load", None)
+        if load is not None:
+            await load(file=str(cookies_file))
 
-        coupang_link = await page.query_selector('a[href*="coupang.com"]')
-        if coupang_link is not None:
-            await page.click('a[href*="coupang.com"]')
-            await self.random_delay(2_000, 3_000)
+    async def _safe_select(self, tab: object, selector: str, timeout: int = 1):
+        try:
+            return await tab.select(selector, timeout=timeout)
+        except Exception:
+            await self._sleep_ms(250)
+            try:
+                return await tab.select(selector, timeout=timeout)
+            except Exception:
+                return None
 
-    def _default_browser(self) -> Literal["firefox", "chrome"]:
-        return "chrome" if os.getenv("COUPANG_BROWSER") == "chrome" else "firefox"
+    def _active_tab(self, session: CoupangBrowserSession) -> object:
+        tabs = getattr(session.browser, "tabs", None)
+        candidates: list[object] = []
+        if isinstance(tabs, list):
+            candidates.extend(reversed(tabs))
 
-    def chrome_profile_dir(self, base_dir: Path | None = None) -> Path:
-        root_dir = base_dir or (Path.home() / ".k-commerce" / "coupang")
-        return root_dir / "chrome-profile"
+        main_tab = getattr(session.browser, "main_tab", None)
+        if main_tab is not None:
+            candidates.append(main_tab)
+        candidates.append(session.tab)
 
-    async def _launch_firefox(
-        self,
-        playwright: object,
-        storage_state_path: Path | None = None,
-    ) -> CoupangBrowserSession:
-        browser = await playwright.firefox.launch(
-            headless=False,
-            firefox_user_prefs={
-                "general.useragent.override": "",
-                "intl.accept_languages": "ko-KR,ko,en-US,en",
-                "privacy.resistFingerprinting": False,
-            },
-        )
-        context_kwargs = dict(
-            locale="ko-KR",
-            timezone_id="Asia/Seoul",
-            viewport=COUPANG_VIEWPORT,
-            user_agent=FIREFOX_USER_AGENT,
-        )
-        if storage_state_path is not None:
-            context_kwargs["storage_state"] = storage_state_path
-        context = await browser.new_context(**context_kwargs)
-        page = await context.new_page()
-        return CoupangBrowserSession(
-            playwright=playwright,
-            browser=browser,
-            context=context,
-            page=page,
-        )
+        for candidate in candidates:
+            if not hasattr(candidate, "select"):
+                continue
+            url = str(getattr(candidate, "url", ""))
+            if "coupang.com" in url:
+                return candidate
 
-    async def _launch_chrome_persistent(
-        self,
-        playwright: object,
-        base_dir: Path | None = None,
-    ) -> CoupangBrowserSession:
-        profile_dir = self.chrome_profile_dir(base_dir)
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        context = await playwright.chromium.launch_persistent_context(
-            profile_dir,
-            channel="chrome",
-            headless=False,
-            locale="ko-KR",
-            timezone_id="Asia/Seoul",
-            viewport=COUPANG_VIEWPORT,
-            user_agent=CHROME_USER_AGENT,
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
-        return CoupangBrowserSession(
-            playwright=playwright,
-            browser=None,
-            context=context,
-            page=page,
-            persistent=True,
-        )
+        for candidate in candidates:
+            if not hasattr(candidate, "select"):
+                continue
+            url = str(getattr(candidate, "url", ""))
+            if url.startswith(("https://", "http://", "about:blank")):
+                return candidate
+
+        for candidate in candidates:
+            if hasattr(candidate, "select"):
+                return candidate
+
+        return session.tab
+
+    async def _read_login_state(self, tab: object) -> dict[str, object]:
+        evaluate = getattr(tab, "evaluate", None)
+        if callable(evaluate):
+            try:
+                result = await evaluate(
+                    """
+                    (() => ({
+                      url: window.location.href,
+                      has_login_link: document.querySelector('a[href*="login/login.pang"]') !== null,
+                      has_mycoupang_link:
+                        document.querySelector('a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]') !== null
+                    }))()
+                    """
+                )
+                if isinstance(result, dict):
+                    return {
+                        "url": str(result.get("url", "")),
+                        "has_login_link": bool(result.get("has_login_link", False)),
+                        "has_mycoupang_link": bool(result.get("has_mycoupang_link", False)),
+                    }
+            except Exception:
+                pass
+
+        page_url = getattr(tab, "url", "")
+        login_link = await self._safe_select(tab, COUPANG_LOGIN_LINK_SELECTOR)
+        my_coupang_link = await self._safe_select(tab, COUPANG_MYCOUPANG_SELECTOR)
+        return {
+            "url": page_url,
+            "has_login_link": login_link is not None,
+            "has_mycoupang_link": my_coupang_link is not None,
+        }

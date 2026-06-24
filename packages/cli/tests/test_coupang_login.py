@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import os
 import sys
 import tempfile
 import types
 import unittest
-from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-_fake_click = types.SimpleNamespace(echo=lambda *args, **kwargs: None, secho=lambda *args, **kwargs: None)
-sys.modules.setdefault("asyncclick", _fake_click)
-
-_fake_playwright_async_api = types.SimpleNamespace(
-    Error=RuntimeError,
-    TimeoutError=TimeoutError,
-    async_playwright=AsyncMock(),
+sys.modules.setdefault(
+    "asyncclick",
+    types.SimpleNamespace(echo=lambda *args, **kwargs: None, secho=lambda *args, **kwargs: None),
 )
-sys.modules.setdefault("playwright", types.SimpleNamespace(async_api=_fake_playwright_async_api))
-sys.modules.setdefault("playwright.async_api", _fake_playwright_async_api)
+sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 
 from k_commerce_cli.providers.coupang.browser import (
     COUPANG_HOME_URL,
@@ -27,247 +20,233 @@ from k_commerce_cli.providers.coupang.browser import (
     CoupangBrowserSession,
 )
 from k_commerce_cli.providers.coupang.login import CoupangLoginProvider
-
-
-class _DummyPage:
-    def __init__(self) -> None:
-        self.url = "about:blank"
-        self.goto_calls: list[tuple[str, dict[str, object]]] = []
-        self.click_calls: list[str] = []
-        self.query_selector_map: dict[str, object | None] = {}
-        self.wait_for_timeout_calls: list[int] = []
-        self.fill_calls: list[tuple[str, str]] = []
-        self.keyboard_presses: list[str] = []
-        self.closed = False
-        self.fail_login_goto = False
-        self.keyboard = SimpleNamespace(press=self._keyboard_press)
-
-    async def goto(self, url: str, **kwargs: object) -> None:
-        self.goto_calls.append((url, kwargs))
-        self.url = url
-        if self.fail_login_goto and url == COUPANG_LOGIN_URL:
-            raise RuntimeError("login url blocked")
-
-    async def click(self, selector: str) -> None:
-        self.click_calls.append(selector)
-
-    async def query_selector(self, selector: str) -> object | None:
-        return self.query_selector_map.get(selector)
-
-    async def fill(self, selector: str, value: str) -> None:
-        self.fill_calls.append((selector, value))
-
-    async def wait_for_timeout(self, timeout_ms: int) -> None:
-        self.wait_for_timeout_calls.append(timeout_ms)
-
-    async def _keyboard_press(self, key: str) -> None:
-        self.keyboard_presses.append(key)
-
-    def is_closed(self) -> bool:
-        return self.closed
+from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.coupang.session_store import CoupangSessionStore
 
 
 class _DummyElement:
-    def __init__(self, page: _DummyPage, selector: str) -> None:
-        self.page = page
-        self.selector = selector
-
-    async def click(self) -> None:
-        self.page.click_calls.append(self.selector)
-
-    async def fill(self, value: str) -> None:
-        self.page.fill_calls.append((self.selector, value))
+    def __init__(self) -> None:
+        self.click = AsyncMock()
+        self.send_keys = AsyncMock()
 
 
-class _DummyContext:
-    def __init__(self, pages: list[_DummyPage] | None = None) -> None:
-        self.pages = pages or []
+class _DummyKeyboard:
+    def __init__(self) -> None:
+        self.press = AsyncMock()
 
 
-class _BrowserEntrySpy:
+class _DummyTab:
+    def __init__(self) -> None:
+        self.url = "about:blank"
+        self.get_calls: list[str] = []
+        self.select_map: dict[str, object | None] = {}
+        self.select_errors: dict[str, Exception] = {}
+        self.keyboard = _DummyKeyboard()
+        self.evaluate_result = None
+        self.evaluate_error: Exception | None = None
+        self.evaluate_calls: list[str] = []
+
+    async def get(self, url: str) -> None:
+        self.get_calls.append(url)
+        self.url = url
+        if url == COUPANG_LOGIN_URL and getattr(self, "fail_login", False):
+            raise RuntimeError("blocked")
+
+    async def select(self, selector: str, timeout: int = 0):
+        if selector in self.select_errors:
+            raise self.select_errors[selector]
+        return self.select_map.get(selector)
+
+    async def evaluate(self, _script: str, *_args):
+        self.evaluate_calls.append(_script)
+        if self.evaluate_error is not None:
+            raise self.evaluate_error
+        return self.evaluate_result
+
+
+class _DummyCookies:
+    def __init__(self) -> None:
+        self.save = AsyncMock()
+        self.load = AsyncMock()
+
+
+class _DummyBrowser:
+    def __init__(self, tab: _DummyTab | None = None) -> None:
+        self.main_tab = tab
+        self.tabs = [tab] if tab is not None else []
+        self.get = AsyncMock(return_value=tab)
+        self.stop = AsyncMock()
+        self.cookies = _DummyCookies()
+
+
+class _FakeNodriverRuntime:
+    def __init__(self, browser: _DummyBrowser) -> None:
+        self.start = AsyncMock(return_value=browser)
+
+
+class _BrowserSpy:
     def __init__(self) -> None:
         self.launch = AsyncMock()
         self.open_login_entry = AsyncMock()
-        self.wait_for_manual_login = AsyncMock()
+        self.open_home = AsyncMock()
         self.is_logged_in = AsyncMock()
-        self.save_storage_state = AsyncMock()
-        self.chrome_profile_dir = lambda base_dir: base_dir / "chrome-profile"
-
-
-class _LoginCompletionBrowserSpy:
-    def __init__(self) -> None:
-        self.launch = AsyncMock()
-        self.open_login_entry = AsyncMock()
-        self.wait_for_manual_login = AsyncMock(return_value=True)
-
-
-class _FakeStorageContext:
-    def __init__(self) -> None:
-        self.storage_state = AsyncMock()
-
-
-class _FakeBrowserInstance:
-    def __init__(self) -> None:
-        self.new_context = AsyncMock()
-
-
-class _FakeBrowserType:
-    def __init__(self, name: str) -> None:
-        self.name = name
-        self.launch = AsyncMock(return_value=_FakeBrowserInstance())
-        self.launch_persistent_context = AsyncMock()
-
-
-class _FakePlaywrightRuntime:
-    def __init__(self) -> None:
-        self.firefox = _FakeBrowserType("firefox")
-        self.chromium = _FakeBrowserType("chromium")
+        self.wait_for_manual_login = AsyncMock()
+        self.fill_login_form = AsyncMock()
+        self.save_session = AsyncMock()
+        self.close = AsyncMock()
 
 
 class CoupangBrowserTests(unittest.IsolatedAsyncioTestCase):
-    async def test_open_login_entry_falls_back_to_home_then_product(self) -> None:
+    async def test_launch_uses_profile_dir_and_loads_cookies(self) -> None:
         browser = CoupangBrowser()
-        browser.random_delay = AsyncMock()
-        page = _DummyPage()
-        page.fail_login_goto = True
-        page.query_selector_map = {
-            'input#query, input[name="query"]': _DummyElement(page, 'input#query, input[name="query"]'),
-            'a[href*="coupang.com"]': _DummyElement(page, 'a[href*="coupang.com"]'),
-        }
-        session = CoupangBrowserSession(
-            playwright=object(),
-            browser=object(),
-            context=_DummyContext([page]),
-            page=page,
-        )
+        tab = _DummyTab()
+        runtime_browser = _DummyBrowser(tab)
+        nodriver_module = sys.modules["nodriver"]
+        original_start = nodriver_module.start
+        start_mock = AsyncMock(return_value=runtime_browser)
+        nodriver_module.start = start_mock
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                base_dir = Path(temp_dir) / ".k-commerce" / "coupang"
+                base_dir.mkdir(parents=True)
+                cookies_file = base_dir / "cookies.dat"
+                cookies_file.write_text("cookies", encoding="utf-8")
+
+                session = await browser.launch(base_dir)
+        finally:
+            nodriver_module.start = original_start
+
+        self.assertEqual(start_mock.await_args.kwargs["user_data_dir"], str(base_dir / "chrome-profile"))
+        runtime_browser.cookies.load.assert_awaited_once_with(file=str(cookies_file))
+        self.assertEqual(session.profile_dir, base_dir / "chrome-profile")
+        self.assertEqual(session.cookies_file, cookies_file)
+
+    async def test_open_login_entry_opens_login_page_directly(self) -> None:
+        browser = CoupangBrowser()
+        tab = _DummyTab()
+        session = CoupangBrowserSession(browser=_DummyBrowser(tab), tab=tab, profile_dir=Path("/tmp/profile"), cookies_file=Path("/tmp/cookies.dat"))
 
         await browser.open_login_entry(session)
 
-        self.assertEqual(
-            page.goto_calls,
-            [
-                ("https://www.naver.com/", {"wait_until": "domcontentloaded"}),
-                (
-                    COUPANG_LOGIN_URL,
-                    {
-                        "wait_until": "domcontentloaded",
-                        "referer": COUPANG_HOME_URL,
-                    },
-                ),
-                (COUPANG_HOME_URL, {"wait_until": "domcontentloaded"}),
-            ],
-        )
-        self.assertEqual(page.fill_calls, [('input#query, input[name="query"]', "쿠팡")])
-        self.assertEqual(page.keyboard_presses, ["Enter"])
-        self.assertEqual(
-            page.click_calls,
-            ['input#query, input[name="query"]', 'a[href*="coupang.com"]', 'a[href^="/vp/products/"]'],
-        )
+        self.assertEqual(tab.get_calls, [COUPANG_LOGIN_URL])
 
-    async def test_select_active_page_returns_last_open_page(self) -> None:
+    async def test_is_logged_in_checks_expected_selectors(self) -> None:
         browser = CoupangBrowser()
-        closed_page = _DummyPage()
-        closed_page.closed = True
-        open_page = _DummyPage()
-        session = CoupangBrowserSession(
-            playwright=object(),
-            browser=object(),
-            context=_DummyContext([closed_page, open_page]),
-            page=closed_page,
-        )
-
-        selected = browser.select_active_page(session, closed_page)
-
-        self.assertIs(selected, open_page)
-
-    async def test_is_logged_in_returns_true_when_my_coupang_visible_and_login_hidden(self) -> None:
-        browser = CoupangBrowser()
-        page = _DummyPage()
-        page.url = COUPANG_HOME_URL
-        page.query_selector_map = {
-            'a[href*="login.coupang.com"]': None,
+        tab = _DummyTab()
+        tab.url = COUPANG_HOME_URL
+        tab.select_map = {
+            'a[href*="login/login.pang"]': None,
             'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
         }
 
-        result = await browser.is_logged_in(page)
+        self.assertTrue(await browser.is_logged_in(tab))
+
+    async def test_is_logged_in_ignores_logout_link_on_logged_in_home(self) -> None:
+        browser = CoupangBrowser()
+        tab = _DummyTab()
+        tab.url = COUPANG_HOME_URL
+        tab.select_map = {
+            'a[href*="login.coupang.com"]': object(),
+            'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
+        }
+
+        self.assertTrue(await browser.is_logged_in(tab))
+
+    async def test_is_logged_in_uses_evaluate_result_when_available(self) -> None:
+        browser = CoupangBrowser()
+        tab = _DummyTab()
+        tab.url = "about:blank"
+        tab.evaluate_result = {
+            "url": COUPANG_HOME_URL,
+            "has_login_link": False,
+            "has_mycoupang_link": True,
+        }
+
+        self.assertTrue(await browser.is_logged_in(tab))
+
+    async def test_is_logged_in_ignores_stale_selector_errors_during_navigation(self) -> None:
+        browser = CoupangBrowser()
+        tab = _DummyTab()
+        tab.url = COUPANG_HOME_URL
+        tab.evaluate_error = RuntimeError("execution context changed")
+        tab.select_map = {
+            'a[href*="login.coupang.com"]': None,
+        }
+        tab.select_errors = {
+            'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': RuntimeError("stale node"),
+        }
+
+        self.assertFalse(await browser.is_logged_in(tab))
+
+    async def test_fill_login_form_uses_evaluate_when_available(self) -> None:
+        browser = CoupangBrowser()
+        tab = _DummyTab()
+        tab.evaluate_result = True
+        session = CoupangBrowserSession(
+            browser=_DummyBrowser(tab),
+            tab=tab,
+            profile_dir=Path("/tmp/profile"),
+            cookies_file=Path("/tmp/cookies.dat"),
+        )
+
+        result = await browser.fill_login_form(session, "user@example.com", "secret")
 
         self.assertTrue(result)
+        self.assertTrue(any("login-email-input" in script for script in tab.evaluate_calls))
 
-    async def test_launch_uses_chrome_browser_env_to_switch_to_persistent_mode(self) -> None:
+    async def test_active_tab_prefers_web_page_over_chrome_ui_tab(self) -> None:
         browser = CoupangBrowser()
-        fake_page = object()
-        fake_context = AsyncMock()
-        fake_context.pages = [fake_page]
-        fake_playwright = _FakePlaywrightRuntime()
-        fake_playwright.chromium.launch_persistent_context = AsyncMock(return_value=fake_context)
-        async_playwright_mock = AsyncMock()
-        async_playwright_mock.start = AsyncMock(return_value=fake_playwright)
+        coupang_tab = _DummyTab()
+        coupang_tab.url = COUPANG_HOME_URL
+        chrome_ui_tab = _DummyTab()
+        chrome_ui_tab.url = "chrome://omnibox-popup.top-chrome/"
+        runtime_browser = _DummyBrowser(coupang_tab)
+        runtime_browser.tabs = [coupang_tab, chrome_ui_tab]
+        session = CoupangBrowserSession(
+            browser=runtime_browser,
+            tab=coupang_tab,
+            profile_dir=Path("/tmp/profile"),
+            cookies_file=Path("/tmp/cookies.dat"),
+        )
 
-        browser_module = sys.modules["k_commerce_cli.providers.coupang.browser"]
-        original_async_playwright = browser_module.async_playwright
-        browser_module.async_playwright = lambda: async_playwright_mock
-        previous_browser_env = os.environ.get("COUPANG_BROWSER")
-        os.environ["COUPANG_BROWSER"] = "chrome"
-
-        try:
-            await browser.launch()
-        finally:
-            browser_module.async_playwright = original_async_playwright
-            if previous_browser_env is None:
-                os.environ.pop("COUPANG_BROWSER", None)
-            else:
-                os.environ["COUPANG_BROWSER"] = previous_browser_env
-
-        fake_playwright.chromium.launch_persistent_context.assert_awaited_once()
-        fake_playwright.firefox.launch.assert_not_awaited()
-
-    async def test_launch_uses_persistent_context_for_chrome(self) -> None:
-        browser = CoupangBrowser()
-        fake_page = object()
-        fake_context = AsyncMock()
-        fake_context.pages = [fake_page]
-        fake_playwright = _FakePlaywrightRuntime()
-        fake_playwright.chromium.launch_persistent_context = AsyncMock(return_value=fake_context)
-        async_playwright_mock = AsyncMock()
-        async_playwright_mock.start = AsyncMock(return_value=fake_playwright)
-
-        browser_module = sys.modules["k_commerce_cli.providers.coupang.browser"]
-        original_async_playwright = browser_module.async_playwright
-        browser_module.async_playwright = lambda: async_playwright_mock
-        previous_browser_env = os.environ.get("COUPANG_BROWSER")
-        os.environ["COUPANG_BROWSER"] = "chrome"
-
-        try:
-            session = await browser.launch()
-        finally:
-            browser_module.async_playwright = original_async_playwright
-            if previous_browser_env is None:
-                os.environ.pop("COUPANG_BROWSER", None)
-            else:
-                os.environ["COUPANG_BROWSER"] = previous_browser_env
-
-        fake_playwright.chromium.launch_persistent_context.assert_awaited_once()
-        launch_args = fake_playwright.chromium.launch_persistent_context.await_args
-        self.assertTrue(str(launch_args.args[0]).endswith(".k-commerce/coupang/chrome-profile"))
-        self.assertEqual(launch_args.kwargs["channel"], "chrome")
-        self.assertIs(session.context, fake_context)
-        self.assertIs(session.page, fake_page)
-        fake_playwright.chromium.launch.assert_not_awaited()
+        self.assertIs(browser._active_tab(session), coupang_tab)
 
 
 class CoupangLoginProviderTests(unittest.IsolatedAsyncioTestCase):
-    async def test_login_with_credentials_uses_browser_open_login_entry(self) -> None:
+    def test_default_credentials_path_uses_session_store_location(self) -> None:
         provider = CoupangLoginProvider()
-        browser = _BrowserEntrySpy()
-        page = AsyncMock()
-        session = type("Session", (), {"page": page})()
-        provider.browser = browser
-        provider._browser_session = session
 
-        page.wait_for_url = AsyncMock()
-        page.fill = AsyncMock()
-        page.click = AsyncMock()
-        provider._current_page_is_logged_in = AsyncMock(return_value=True)
+        self.assertEqual(
+            provider.credentials_path,
+            provider.paths.credentials_path,
+        )
+        self.assertEqual(
+            provider.paths.base_dir,
+            Path.home() / ".k-commerce" / "coupang",
+        )
+        self.assertEqual(provider.session_store.paths, provider.credential_store.paths)
+
+    async def test_restore_session_uses_profile_dir_when_present(self) -> None:
+        provider = CoupangLoginProvider()
+        browser = _BrowserSpy()
+        provider.browser = browser
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
+            provider.paths = provider.session_store.paths
+            provider.session_store.profile_dir.mkdir(parents=True)
+            await provider._restore_session()
+
+        browser.launch.assert_awaited_once_with(provider.session_store.base_dir)
+
+    async def test_login_with_credentials_uses_browser_form_submission(self) -> None:
+        provider = CoupangLoginProvider()
+        browser = _BrowserSpy()
+        session = object()
+        browser.launch = AsyncMock(return_value=session)
+        browser.fill_login_form = AsyncMock(return_value=True)
+        browser.wait_for_manual_login = AsyncMock(return_value=True)
+        provider.browser = browser
 
         result = await provider._login_with_credentials(
             type("Creds", (), {"email": "user@example.com", "password": "secret"})()
@@ -275,110 +254,47 @@ class CoupangLoginProviderTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
         browser.open_login_entry.assert_awaited_once_with(session)
+        browser.fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
 
-    async def test_persist_session_writes_storage_state_and_metadata(self) -> None:
+    async def test_persist_session_saves_cookies_and_metadata(self) -> None:
         provider = CoupangLoginProvider()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            provider.credentials_path = Path(temp_dir) / "credentials.json"
-            context = _FakeStorageContext()
-            provider._browser_session = type("Session", (), {"context": context})()
-
-            await provider._persist_session("automatic")
-
-            context.storage_state.assert_awaited_once_with(
-                path=provider.session_store.storage_state_path
-            )
-            metadata = provider.session_store.session_meta_path.read_text(encoding="utf-8")
-            self.assertIn('"login_method": "automatic"', metadata)
-
-    async def test_restore_session_uses_chrome_profile_when_browser_env_requests_chrome(self) -> None:
-        provider = CoupangLoginProvider()
-        browser = _BrowserEntrySpy()
+        browser = _BrowserSpy()
+        session = object()
         provider.browser = browser
-
+        provider._browser_session = session
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime_dir = Path(temp_dir) / ".k-commerce" / "coupang"
-            runtime_dir.mkdir(parents=True)
-            chrome_profile_dir = runtime_dir / "chrome-profile"
-            chrome_profile_dir.mkdir()
-            provider.session_store = type(
-                "SessionStore",
-                (),
-                {
-                    "base_dir": runtime_dir,
-                    "storage_state_path": runtime_dir / "storage-state.json",
-                    "session_meta_path": runtime_dir / "session-meta.json",
-                    "has_storage_state": lambda self: False,
-                    "ensure_dir": lambda self: None,
-                    "write_metadata": lambda self, payload: None,
-                },
-            )()
+            provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
+            provider.paths = provider.session_store.paths
+            await provider._persist_session("automatic")
+            metadata = provider.session_store.session_meta_path.read_text(encoding="utf-8")
 
-            previous_browser_env = os.environ.get("COUPANG_BROWSER")
-            os.environ["COUPANG_BROWSER"] = "chrome"
-            try:
-                await provider._restore_session()
-            finally:
-                if previous_browser_env is None:
-                    os.environ.pop("COUPANG_BROWSER", None)
-                else:
-                    os.environ["COUPANG_BROWSER"] = previous_browser_env
-
-        browser.launch.assert_awaited_once()
-        launch_kwargs = browser.launch.await_args.kwargs
-        self.assertEqual(launch_kwargs["preferred"], "chrome")
-        self.assertNotIn("storage_state_path", launch_kwargs)
-
-    async def test_persist_session_skips_storage_state_for_chrome_profile_mode(self) -> None:
-        provider = CoupangLoginProvider()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime_dir = Path(temp_dir) / ".k-commerce" / "coupang"
-            runtime_dir.mkdir(parents=True)
-            provider.session_store = type(
-                "SessionStore",
-                (),
-                {
-                    "base_dir": runtime_dir,
-                    "storage_state_path": runtime_dir / "storage-state.json",
-                    "session_meta_path": runtime_dir / "session-meta.json",
-                    "ensure_dir": lambda self: runtime_dir.mkdir(parents=True, exist_ok=True),
-                    "write_metadata": lambda self, payload: (runtime_dir / "session-meta.json").write_text(str(payload), encoding="utf-8"),
-                },
-            )()
-            browser = _BrowserEntrySpy()
-            provider.browser = browser
-            provider._browser_session = type("Session", (), {"context": _FakeStorageContext()})()
-
-            previous_browser_env = os.environ.get("COUPANG_BROWSER")
-            os.environ["COUPANG_BROWSER"] = "chrome"
-            try:
-                await provider._persist_session("automatic")
-            finally:
-                if previous_browser_env is None:
-                    os.environ.pop("COUPANG_BROWSER", None)
-                else:
-                    os.environ["COUPANG_BROWSER"] = previous_browser_env
-
-        browser.save_storage_state.assert_not_awaited()
+        browser.save_session.assert_awaited_once_with(session)
+        self.assertIn('"login_method": "automatic"', metadata)
 
     async def test_wait_for_manual_login_delegates_to_browser(self) -> None:
         provider = CoupangLoginProvider()
-        browser = _LoginCompletionBrowserSpy()
-        page = AsyncMock()
-        session = type("Session", (), {"page": page})()
+        browser = _BrowserSpy()
+        session = object()
         provider.browser = browser
         provider._browser_session = session
+        browser.wait_for_manual_login = AsyncMock(return_value=True)
 
-        result = await provider._wait_for_manual_login()
-
-        self.assertTrue(result)
+        self.assertTrue(await provider._wait_for_manual_login())
         browser.wait_for_manual_login.assert_awaited_once_with(session)
 
-    def test_default_credentials_path_matches_ts_session_dir(self) -> None:
+    async def test_close_browser_session_handles_non_awaitable_stop(self) -> None:
         provider = CoupangLoginProvider()
+        session = CoupangBrowserSession(
+            browser=types.SimpleNamespace(stop=lambda: None),
+            tab=_DummyTab(),
+            profile_dir=Path("/tmp/profile"),
+            cookies_file=Path("/tmp/cookies.dat"),
+        )
+        provider._browser_session = session
 
-        self.assertEqual(provider.credentials_path.name, "credentials.json")
-        self.assertEqual(provider.credentials_path.parent.name, ".coupang-session")
+        await provider._close_browser_session()
+
+        self.assertIsNone(provider._browser_session)
 
 
 if __name__ == "__main__":

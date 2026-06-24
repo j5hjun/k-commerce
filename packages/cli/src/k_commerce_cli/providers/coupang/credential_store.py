@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from k_commerce_cli.providers.paths import ProviderPaths
+
 
 @dataclass(frozen=True)
 class CoupangCredentials:
@@ -10,8 +12,23 @@ class CoupangCredentials:
 
 
 class CoupangCredentialStore:
-    def __init__(self, credentials_path: Path):
-        self.credentials_path = credentials_path
+    def __init__(
+        self,
+        paths: ProviderPaths | Path | None = None,
+        *,
+        provider: str = "coupang",
+        root_dir: Path | None = None,
+    ):
+        if isinstance(paths, ProviderPaths):
+            self.paths = paths
+        elif isinstance(paths, Path):
+            self.paths = ProviderPaths(paths.parent.name, root_dir=paths.parent.parent)
+            self.credentials_path = paths
+            return
+        else:
+            self.paths = ProviderPaths(provider, root_dir=root_dir or Path.home() / ".k-commerce")
+
+        self.credentials_path = self.paths.credentials_path
 
     def load(self) -> CoupangCredentials | None:
         if not self.credentials_path.exists():
