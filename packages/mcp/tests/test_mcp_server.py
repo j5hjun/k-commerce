@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from k_commerce_cli.types import LoginResult
 from k_commerce_mcp import server
 

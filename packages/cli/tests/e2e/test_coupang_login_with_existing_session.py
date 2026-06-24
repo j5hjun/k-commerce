@@ -2,9 +2,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from k_commerce_cli.cli import app
 from k_commerce_cli.providers import LOGIN_PROVIDERS
+
 from ._helpers import RUNNER, ensure_profile_dir, make_session
 
 

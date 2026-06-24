@@ -6,6 +6,7 @@ import asyncclick as click
 
 from k_commerce_cli.services.login import login as run_login
 
+
 @click.group(help="CLI for K-Commerce workflows.")
 async def app() -> None:
     pass

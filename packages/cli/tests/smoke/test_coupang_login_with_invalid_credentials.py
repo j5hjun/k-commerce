@@ -1,6 +1,6 @@
 import pytest
-
 from k_commerce_cli.providers import LOGIN_PROVIDERS
+
 from ._helpers import invoke_login, require_smoke_enabled, write_credentials
 
 

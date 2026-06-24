@@ -5,9 +5,7 @@ from pathlib import Path
 
 import pytest
 from asyncclick.testing import CliRunner
-
 from k_commerce_cli.cli import app
-
 
 RUNNER = CliRunner()
 LOCAL_PROVIDER_SOURCE_ROOT = Path.home() / ".k-commerce"

@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 from asyncclick.testing import CliRunner
 
-
 RUNNER = CliRunner()
 
 

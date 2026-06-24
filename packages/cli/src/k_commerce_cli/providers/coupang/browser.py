@@ -15,11 +15,6 @@ COUPANG_LOGIN_LINK_SELECTOR = 'a[href*="login/login.pang"]'
 COUPANG_MYCOUPANG_SELECTOR = (
     'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
 )
-CHROME_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/149.0.0.0 Safari/537.36"
-)
 
 
 @dataclass(frozen=True)

@@ -3,10 +3,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
-
 from k_commerce_cli.cli import app
 from k_commerce_cli.types import LoginResult
-
 
 RUNNER = CliRunner()
 
