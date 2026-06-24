@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import asyncclick as click
 
 from k_commerce_cli.services.login import login as run_login
@@ -11,9 +13,15 @@ async def app() -> None:
 
 @app.command()
 @click.argument("provider")
-async def login(provider: str) -> None:
+@click.option(
+    "--root-dir",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+    help="Override the provider storage root directory.",
+)
+async def login(provider: str, root_dir: Path | None) -> None:
     try:
-        result = await run_login(provider)
+        result = await run_login(provider, root_dir=root_dir)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 

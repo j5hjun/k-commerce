@@ -23,6 +23,15 @@ Run the CLI from the workspace root:
 uv run k-commerce login coupang
 ```
 
+To isolate credentials and session data under a custom directory:
+
+```bash
+uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
+```
+
+This option is intended for local verification and automated tests where credentials and session files
+must be isolated from the default `~/.k-commerce` directory.
+
 ## Coupang Login Flow
 
 The `coupang` login command tries the following in order:
@@ -38,6 +47,10 @@ When login succeeds, the CLI saves the session so the next run can reuse it.
 To enable automatic login, create this file:
 
 `~/.k-commerce/coupang/credentials.json`
+
+When `--root-dir` is provided, the credential file is resolved under:
+
+`<root-dir>/coupang/credentials.json`
 
 Example:
 
@@ -57,6 +70,10 @@ If the file is missing, the CLI skips automatic login and opens the browser for 
 The Coupang provider stores local state under:
 
 `~/.k-commerce/coupang/`
+
+When `--root-dir` is provided, the provider instead uses:
+
+`<root-dir>/coupang/`
 
 Files created there:
 

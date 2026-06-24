@@ -18,6 +18,55 @@ uv run pytest
 uv run k-commerce-mcp
 ```
 
+## Test Layout
+
+Tests are organized by package.
+
+- `packages/cli/tests`
+  - CLI unit/integration tests
+  - provider/browser/store tests
+- `packages/cli/tests/e2e`
+  - file-backed login flow scenarios that run through the CLI entrypoint
+  - uses `--root-dir` to isolate credentials and session data under a temporary directory
+- `packages/cli/tests/smoke`
+  - opt-in smoke tests that launch the real browser or depend on local credentials/session state
+  - skipped by default unless explicit smoke env vars are provided
+- `packages/mcp/tests`
+  - MCP server and tool wiring tests
+
+Run the full suite from the repository root:
+
+```bash
+uv run pytest
+```
+
+Run only the CLI e2e-style scenarios:
+
+```bash
+uv run pytest packages/cli/tests/e2e
+```
+
+Run the CLI smoke tests explicitly:
+
+```bash
+RUN_COUPANG_SMOKE=1 uv run pytest packages/cli/tests/smoke -m smoke
+```
+
+Smoke inputs by case:
+
+- existing session
+  - source: `/tmp/k-commerce-smoke/existing-session/coupang`
+  - copied artifacts: `chrome-profile/`, `cookies.dat`
+- credentials
+  - source: `/tmp/k-commerce-smoke/credentials/coupang`
+  - copied artifacts: `credentials.json`
+- invalid credentials
+  - source: none
+  - generated artifacts: invalid `credentials.json`
+- manual login without credentials
+  - source: none
+  - starts from an empty temporary root directory
+
 ## Branch Strategy
 
 Use short-lived branches and treat `dev` as the main integration branch.

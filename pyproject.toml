@@ -30,3 +30,6 @@ testpaths = [
   "packages/cli/tests",
   "packages/mcp/tests",
 ]
+markers = [
+  "smoke: opt-in smoke tests that launch the real browser or depend on local credentials/session state",
+]

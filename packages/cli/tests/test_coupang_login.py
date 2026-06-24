@@ -235,6 +235,16 @@ def test_default_credentials_path_uses_session_store_location() -> None:
     assert provider.session_store.paths == provider.credential_store.paths
 
 
+def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
+    provider = CoupangLoginProvider()
+
+    provider._configure_paths(tmp_path)
+
+    assert provider.paths.base_dir == tmp_path / "coupang"
+    assert provider.credentials_path == tmp_path / "coupang" / "credentials.json"
+    assert provider.session_store.base_dir == tmp_path / "coupang"
+
+
 @pytest.mark.anyio
 async def test_restore_session_uses_profile_dir_when_present() -> None:
     provider = CoupangLoginProvider()

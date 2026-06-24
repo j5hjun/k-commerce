@@ -14,15 +14,19 @@ class CoupangLoginProvider:
     def __init__(self) -> None:
         self.browser = CoupangBrowser()
         self._browser_session: CoupangBrowserSession | None = None
-        self.credential_store = CoupangCredentialStore(provider=self.name)
-        self.session_store = CoupangSessionStore(provider=self.name)
+        self._configure_paths()
+
+    def _configure_paths(self, root_dir: Path | None = None) -> None:
+        self.credential_store = CoupangCredentialStore(provider=self.name, root_dir=root_dir)
+        self.session_store = CoupangSessionStore(provider=self.name, root_dir=root_dir)
         self.paths = self.session_store.paths
 
     @property
     def credentials_path(self) -> Path:
         return self.credential_store.credentials_path
 
-    async def login(self) -> LoginResult:
+    async def login(self, root_dir: Path | None = None) -> LoginResult:
+        self._configure_paths(root_dir)
         click.secho("쿠팡 로그인을 시작합니다...", fg="blue")
         try:
             credentials = self._load_credentials()
