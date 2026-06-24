@@ -1,7 +1,7 @@
 import pytest
 from k_commerce_cli.providers import LOGIN_PROVIDERS
 
-from ._helpers import invoke_login, require_smoke_enabled, write_credentials
+from ._helpers import invoke_login, provider_paths, require_smoke_enabled, write_credentials
 
 
 @pytest.mark.anyio
@@ -10,7 +10,7 @@ async def test_coupang_login_with_invalid_credentials_smoke(tmp_path, monkeypatc
     require_smoke_enabled()
     provider = LOGIN_PROVIDERS["coupang"]
     root_dir = tmp_path
-    session_root = root_dir / "coupang"
+    paths = provider_paths(root_dir)
     write_credentials(root_dir, "wrong@example.com", "wrong-password")
 
     async def fail_login(*args, **kwargs):
@@ -22,4 +22,4 @@ async def test_coupang_login_with_invalid_credentials_smoke(tmp_path, monkeypatc
 
     assert result.exit_code == 0
     assert result.stdout.splitlines()[-1] == "쿠팡 로그인 실패"
-    assert not (session_root / "session-meta.json").exists()
+    assert not paths.session_meta_path.exists()

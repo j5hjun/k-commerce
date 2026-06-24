@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
+from k_commerce_cli.providers.paths import ProviderPaths
 
 RUNNER = CliRunner()
 LOCAL_PROVIDER_SOURCE_ROOT = Path.home() / ".k-commerce"
@@ -27,10 +28,14 @@ async def invoke_login(root_dir: Path):
     return await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
 
+def provider_paths(root_dir: Path) -> ProviderPaths:
+    return ProviderPaths("coupang", root_dir=root_dir)
+
+
 def write_credentials(root_dir: Path, email: str, password: str) -> Path:
-    session_root = root_dir / "coupang"
-    session_root.mkdir(parents=True, exist_ok=True)
-    credentials_path = session_root / "credentials.json"
+    paths = provider_paths(root_dir)
+    paths.base_dir.mkdir(parents=True, exist_ok=True)
+    credentials_path = paths.credentials_path
     credentials_path.write_text(
         json.dumps({"email": email, "password": password}),
         encoding="utf-8",
@@ -39,11 +44,11 @@ def write_credentials(root_dir: Path, email: str, password: str) -> Path:
 
 
 def copy_provider_artifact(source_root: Path, destination_root: Path, relative_path: str) -> None:
-    source_path = source_root / "coupang" / relative_path
+    source_path = ProviderPaths("coupang", root_dir=source_root).base_dir / relative_path
     if not source_path.exists():
         pytest.skip(f"Missing required smoke artifact: {source_path}")
 
-    destination_path = destination_root / "coupang" / relative_path
+    destination_path = provider_paths(destination_root).base_dir / relative_path
     destination_path.parent.mkdir(parents=True, exist_ok=True)
 
     if source_path.is_dir():

@@ -13,8 +13,8 @@ from ._helpers import RUNNER, ensure_session_root, make_session
 async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Path) -> None:
     provider = LOGIN_PROVIDERS["coupang"]
     root_dir = tmp_path
-    session_root = ensure_session_root(root_dir)
-    (session_root / "credentials.json").write_text(
+    paths = ensure_session_root(root_dir)
+    paths.credentials_path.write_text(
         json.dumps({"email": "wrong@example.com", "password": "wrong-password"}),
         encoding="utf-8",
     )
@@ -37,10 +37,10 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
         "브라우저에서 직접 로그인해주세요...",
         "쿠팡 로그인 실패",
     ]
-    launch.assert_awaited_once_with(session_root)
+    launch.assert_awaited_once_with(provider.session_store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "wrong@example.com", "wrong-password")
     assert wait_for_manual_login.await_count == 2
     save_session.assert_not_called()
     close.assert_awaited_once_with(session)
-    assert not (session_root / "session-meta.json").exists()
+    assert not paths.session_meta_path.exists()

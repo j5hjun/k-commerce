@@ -53,7 +53,7 @@ class CoupangLoginProvider:
         if not self.session_store.has_profile():
             return None
 
-        self._browser_session = await self.browser.launch(self.session_store.base_dir)
+        self._browser_session = await self.browser.launch(self.session_store.paths)
         return self._browser_session
 
     async def _verify_session(self, session: CoupangBrowserSession) -> bool:
@@ -62,7 +62,7 @@ class CoupangLoginProvider:
 
     async def _login_with_credentials(self, credentials: CoupangCredentials) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch(self.session_store.base_dir)
+            self._browser_session = await self.browser.launch(self.session_store.paths)
 
         await self.browser.open_login_entry(self._browser_session)
         submitted = await self.browser.fill_login_form(
@@ -77,7 +77,7 @@ class CoupangLoginProvider:
 
     async def _wait_for_manual_login(self) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch(self.session_store.base_dir)
+            self._browser_session = await self.browser.launch(self.session_store.paths)
             await self.browser.open_login_entry(self._browser_session)
 
         return await self.browser.wait_for_manual_login(self._browser_session)

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import random
 from dataclasses import dataclass
 from pathlib import Path
 
 import nodriver as uc
+
+from k_commerce_cli.providers.paths import ProviderPaths
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
@@ -26,9 +27,9 @@ class CoupangBrowserSession:
 
 
 class CoupangBrowser:
-    async def launch(self, base_dir: Path) -> CoupangBrowserSession:
-        profile_dir = self.profile_dir(base_dir)
-        cookies_file = self.cookies_file(base_dir)
+    async def launch(self, paths: ProviderPaths) -> CoupangBrowserSession:
+        profile_dir = paths.profile_dir
+        cookies_file = paths.cookies_file
         profile_dir.mkdir(parents=True, exist_ok=True)
 
         browser = await uc.start(
@@ -90,13 +91,7 @@ class CoupangBrowser:
             result = stop()
             if inspect.isawaitable(result):
                 await result
-        await asyncio.sleep(1.0)
-
-    def profile_dir(self, base_dir: Path) -> Path:
-        return base_dir / "chrome-profile"
-
-    def cookies_file(self, base_dir: Path) -> Path:
-        return base_dir / "cookies.dat"
+        await self._sleep_ms(1000)
 
     async def fill_login_form(
         self,
@@ -144,9 +139,6 @@ class CoupangBrowser:
         await password_input.send_keys(password)
         await submit_button.click()
         return True
-
-    async def random_delay(self, min_ms: int = 500, max_ms: int = 2_000) -> None:
-        await self._sleep_ms(random.randint(min_ms, max_ms))
 
     async def _sleep_ms(self, timeout_ms: int) -> None:
         await asyncio.sleep(timeout_ms / 1000)

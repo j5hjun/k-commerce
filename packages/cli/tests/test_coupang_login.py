@@ -8,10 +8,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-sys.modules.setdefault(
-    "asyncclick",
-    types.SimpleNamespace(echo=lambda *args, **kwargs: None, secho=lambda *args, **kwargs: None),
-)
 sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 
 from k_commerce_cli.providers.coupang.browser import (
@@ -22,6 +18,7 @@ from k_commerce_cli.providers.coupang.browser import (
 )
 from k_commerce_cli.providers.coupang.login import CoupangLoginProvider
 from k_commerce_cli.providers.coupang.session_store import CoupangSessionStore
+from k_commerce_cli.providers.paths import ProviderPaths
 
 
 class _DummyElement:
@@ -103,18 +100,18 @@ async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
 
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            base_dir = Path(temp_dir) / ".k-commerce" / "coupang"
-            base_dir.mkdir(parents=True)
-            cookies_file = base_dir / "cookies.dat"
+            paths = ProviderPaths("coupang", root_dir=Path(temp_dir) / ".k-commerce")
+            paths.base_dir.mkdir(parents=True)
+            cookies_file = paths.cookies_file
             cookies_file.write_text("cookies", encoding="utf-8")
 
-            session = await browser.launch(base_dir)
+            session = await browser.launch(paths)
     finally:
         nodriver_module.start = original_start
 
-    assert start_mock.await_args.kwargs["user_data_dir"] == str(base_dir / "chrome-profile")
+    assert start_mock.await_args.kwargs["user_data_dir"] == str(paths.profile_dir)
     runtime_browser.cookies.load.assert_awaited_once_with(file=str(cookies_file))
-    assert session.profile_dir == base_dir / "chrome-profile"
+    assert session.profile_dir == paths.profile_dir
     assert session.cookies_file == cookies_file
 
 
@@ -255,7 +252,7 @@ async def test_restore_session_uses_profile_dir_when_present() -> None:
         provider.session_store.profile_dir.mkdir(parents=True)
         await provider._restore_session()
 
-    browser.launch.assert_awaited_once_with(provider.session_store.base_dir)
+    browser.launch.assert_awaited_once_with(provider.session_store.paths)
 
 
 @pytest.mark.anyio

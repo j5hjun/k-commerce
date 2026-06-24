@@ -13,8 +13,8 @@ from ._helpers import RUNNER, ensure_session_root, make_session
 async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Path) -> None:
     provider = LOGIN_PROVIDERS["coupang"]
     root_dir = tmp_path
-    session_root = ensure_session_root(root_dir)
-    (session_root / "credentials.json").write_text(
+    paths = ensure_session_root(root_dir)
+    paths.credentials_path.write_text(
         json.dumps({"email": "merchant@example.com", "password": "secret"}),
         encoding="utf-8",
     )
@@ -36,12 +36,12 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
         "자동 로그인을 시도합니다...",
         "쿠팡 로그인 성공",
     ]
-    launch.assert_awaited_once_with(session_root)
+    launch.assert_awaited_once_with(provider.session_store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "merchant@example.com", "secret")
     wait_for_manual_login.assert_awaited_once_with(session, poll_count=30)
     save_session.assert_awaited_once_with(session)
     close.assert_awaited_once_with(session)
-    assert json.loads((session_root / "session-meta.json").read_text(encoding="utf-8")) == {
+    assert json.loads(paths.session_meta_path.read_text(encoding="utf-8")) == {
         "login_method": "automatic",
     }

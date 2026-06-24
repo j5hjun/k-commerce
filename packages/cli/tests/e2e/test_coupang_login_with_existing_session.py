@@ -12,7 +12,7 @@ from ._helpers import RUNNER, ensure_profile_dir, make_session
 async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Path) -> None:
     provider = LOGIN_PROVIDERS["coupang"]
     root_dir = tmp_path
-    session_root = ensure_profile_dir(root_dir)
+    paths = ensure_profile_dir(root_dir)
     session = make_session()
 
     with (
@@ -25,7 +25,8 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "쿠팡 로그인 성공"]
-    launch.assert_awaited_once_with(session_root)
+    launch.assert_awaited_once_with(provider.session_store.paths)
+    assert provider.session_store.paths == paths
     open_home.assert_awaited_once_with(session)
     is_logged_in.assert_awaited_once_with(session.tab)
     close.assert_awaited_once_with(session)

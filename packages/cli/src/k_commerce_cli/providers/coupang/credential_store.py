@@ -14,17 +14,13 @@ class CoupangCredentials:
 class CoupangCredentialStore:
     def __init__(
         self,
-        paths: ProviderPaths | Path | None = None,
+        paths: ProviderPaths | None = None,
         *,
         provider: str = "coupang",
         root_dir: Path | None = None,
     ):
         if isinstance(paths, ProviderPaths):
             self.paths = paths
-        elif isinstance(paths, Path):
-            self.paths = ProviderPaths(paths.parent.name, root_dir=paths.parent.parent)
-            self.credentials_path = paths
-            return
         else:
             self.paths = ProviderPaths(provider, root_dir=root_dir or Path.home() / ".k-commerce")
 
