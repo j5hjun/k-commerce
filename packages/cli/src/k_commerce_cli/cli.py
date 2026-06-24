@@ -8,6 +8,11 @@ from k_commerce_cli.services.login import login as run_login
 from k_commerce_cli.services.logout import logout as run_logout
 
 
+@click.group(help="CLI for K-Commerce workflows.")
+async def app() -> None:
+    pass
+
+
 def root_dir_option(func):
     return click.option(
         "--root-dir",
@@ -17,14 +22,11 @@ def root_dir_option(func):
     )(func)
 
 
-@click.group(help="CLI for K-Commerce workflows.")
-async def app() -> None:
-    pass
+def provider_command(func):
+    return app.command()(click.argument("provider")(root_dir_option(func)))
 
 
-@app.command()
-@click.argument("provider")
-@root_dir_option
+@provider_command
 async def login(provider: str, root_dir: Path | None) -> None:
     try:
         result = await run_login(provider, root_dir=root_dir)
@@ -34,9 +36,7 @@ async def login(provider: str, root_dir: Path | None) -> None:
     click.echo(result.message)
 
 
-@app.command()
-@click.argument("provider")
-@root_dir_option
+@provider_command
 async def logout(provider: str, root_dir: Path | None) -> None:
     try:
         result = await run_logout(provider, root_dir=root_dir)
