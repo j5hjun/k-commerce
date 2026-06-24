@@ -2,13 +2,14 @@ from pathlib import Path
 
 import asyncclick as click
 
+from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.types import LogoutResult
 
 from .session_store import CoupangSessionStore
 
 
 class CoupangLogoutProvider:
-    name = "coupang"
+    name = ProviderName.COUPANG
 
     def __init__(self) -> None:
         self._configure_paths()

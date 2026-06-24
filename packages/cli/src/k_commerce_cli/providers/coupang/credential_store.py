@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.providers.paths import ProviderPaths
 
 
@@ -16,7 +17,7 @@ class CoupangCredentialStore:
         self,
         paths: ProviderPaths | None = None,
         *,
-        provider: str = "coupang",
+        provider: str = ProviderName.COUPANG,
         root_dir: Path | None = None,
     ):
         if isinstance(paths, ProviderPaths):

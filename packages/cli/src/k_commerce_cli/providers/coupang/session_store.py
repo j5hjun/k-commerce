@@ -2,6 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
+from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.providers.paths import ProviderPaths
 
 
@@ -10,7 +11,7 @@ class CoupangSessionStore:
         self,
         paths: ProviderPaths | None = None,
         *,
-        provider: str = "coupang",
+        provider: str = ProviderName.COUPANG,
         root_dir: Path | None = None,
     ):
         self.paths = paths or ProviderPaths(provider, root_dir=root_dir or Path.home() / ".k-commerce")
