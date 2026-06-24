@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from ._helpers import (
-    EXISTING_SESSION_SOURCE_ROOT,
+    LOCAL_PROVIDER_SOURCE_ROOT,
     copy_provider_artifact,
     invoke_login,
     require_smoke_enabled,
@@ -16,8 +16,8 @@ async def test_coupang_login_with_existing_session_smoke(tmp_path: Path) -> None
     require_smoke_enabled()
     root_dir = tmp_path
 
-    copy_provider_artifact(EXISTING_SESSION_SOURCE_ROOT, root_dir, "chrome-profile")
-    copy_provider_artifact(EXISTING_SESSION_SOURCE_ROOT, root_dir, "cookies.dat")
+    copy_provider_artifact(LOCAL_PROVIDER_SOURCE_ROOT, root_dir, "chrome-profile")
+    copy_provider_artifact(LOCAL_PROVIDER_SOURCE_ROOT, root_dir, "cookies.dat")
 
     result = await invoke_login(root_dir)
 

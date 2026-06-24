@@ -10,9 +10,14 @@ from k_commerce_cli.cli import app
 
 
 RUNNER = CliRunner()
-SMOKE_ROOT = Path("/tmp/k-commerce-smoke")
-EXISTING_SESSION_SOURCE_ROOT = SMOKE_ROOT / "existing-session"
-CREDENTIALS_SOURCE_ROOT = SMOKE_ROOT / "credentials"
+LOCAL_PROVIDER_SOURCE_ROOT = Path.home() / ".k-commerce"
+CHROME_PROFILE_IGNORE_NAMES = {
+    "DevToolsActivePort",
+    "RunningChromeVersion",
+    "SingletonCookie",
+    "SingletonLock",
+    "SingletonSocket",
+}
 
 
 def require_smoke_enabled() -> None:
@@ -44,6 +49,9 @@ def copy_provider_artifact(source_root: Path, destination_root: Path, relative_p
     destination_path.parent.mkdir(parents=True, exist_ok=True)
 
     if source_path.is_dir():
-        shutil.copytree(source_path, destination_path, dirs_exist_ok=True)
+        ignore = None
+        if source_path.name == "chrome-profile":
+            ignore = shutil.ignore_patterns(*CHROME_PROFILE_IGNORE_NAMES)
+        shutil.copytree(source_path, destination_path, dirs_exist_ok=True, ignore=ignore)
     else:
         shutil.copy2(source_path, destination_path)

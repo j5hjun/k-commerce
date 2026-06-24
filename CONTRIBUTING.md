@@ -55,10 +55,10 @@ RUN_COUPANG_SMOKE=1 uv run pytest packages/cli/tests/smoke -m smoke
 Smoke inputs by case:
 
 - existing session
-  - source: `/tmp/k-commerce-smoke/existing-session/coupang`
+  - source: `~/.k-commerce/coupang`
   - copied artifacts: `chrome-profile/`, `cookies.dat`
 - credentials
-  - source: `/tmp/k-commerce-smoke/credentials/coupang`
+  - source: `~/.k-commerce/coupang`
   - copied artifacts: `credentials.json`
 - invalid credentials
   - source: none
@@ -66,6 +66,7 @@ Smoke inputs by case:
 - manual login without credentials
   - source: none
   - starts from an empty temporary root directory
+  - requires you to complete the browser login flow during the smoke run
 
 ## Branch Strategy
 
