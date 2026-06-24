@@ -17,8 +17,16 @@ members = [
 k-commerce-cli = { workspace = true }
 k-commerce-mcp = { workspace = true }
 
+[dependency-groups]
+dev = [
+  "pytest>=8.4.1",
+]
+
 [tool.ruff]
 line-length = 200
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+  "packages/cli/tests",
+  "packages/mcp/tests",
+]

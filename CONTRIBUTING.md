@@ -14,6 +14,7 @@ Use these commands from the repository root unless noted otherwise.
 ```bash
 uv sync
 uv build
+uv run pytest
 uv run k-commerce-mcp
 ```
 

@@ -28,6 +28,8 @@ class CoupangBrowserSession:
     tab: object
     profile_dir: Path
     cookies_file: Path
+
+
 class CoupangBrowser:
     async def launch(self, base_dir: Path) -> CoupangBrowserSession:
         profile_dir = self.profile_dir(base_dir)
