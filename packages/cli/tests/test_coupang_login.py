@@ -230,8 +230,8 @@ async def test_active_tab_prefers_web_page_over_chrome_ui_tab() -> None:
 def test_default_credentials_path_uses_session_store_location() -> None:
     provider = CoupangLoginProvider()
 
-    assert provider.credentials_path == provider.paths.credentials_path
-    assert provider.paths.base_dir == Path.home() / ".k-commerce" / "coupang"
+    assert provider.credential_store.credentials_path == provider.session_store.paths.credentials_path
+    assert provider.session_store.paths.base_dir == Path.home() / ".k-commerce" / "coupang"
     assert provider.session_store.paths == provider.credential_store.paths
 
 
@@ -240,8 +240,8 @@ def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
 
     provider._configure_paths(tmp_path)
 
-    assert provider.paths.base_dir == tmp_path / "coupang"
-    assert provider.credentials_path == tmp_path / "coupang" / "credentials.json"
+    assert provider.session_store.paths.base_dir == tmp_path / "coupang"
+    assert provider.credential_store.credentials_path == tmp_path / "coupang" / "credentials.json"
     assert provider.session_store.base_dir == tmp_path / "coupang"
 
 
@@ -252,7 +252,6 @@ async def test_restore_session_uses_profile_dir_when_present() -> None:
     provider.browser = browser
     with tempfile.TemporaryDirectory() as temp_dir:
         provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
-        provider.paths = provider.session_store.paths
         provider.session_store.profile_dir.mkdir(parents=True)
         await provider._restore_session()
 
@@ -287,7 +286,6 @@ async def test_persist_session_saves_cookies_and_metadata() -> None:
     provider._browser_session = session
     with tempfile.TemporaryDirectory() as temp_dir:
         provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
-        provider.paths = provider.session_store.paths
         await provider._persist_session("automatic")
         metadata = provider.session_store.session_meta_path.read_text(encoding="utf-8")
 

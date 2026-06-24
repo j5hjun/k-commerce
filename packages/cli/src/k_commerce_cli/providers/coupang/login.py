@@ -20,11 +20,6 @@ class CoupangLoginProvider:
     def _configure_paths(self, root_dir: Path | None = None) -> None:
         self.credential_store = CoupangCredentialStore(provider=self.name, root_dir=root_dir)
         self.session_store = CoupangSessionStore(provider=self.name, root_dir=root_dir)
-        self.paths = self.session_store.paths
-
-    @property
-    def credentials_path(self) -> Path:
-        return self.credential_store.credentials_path
 
     async def login(self, root_dir: Path | None = None) -> LoginResult:
         self._configure_paths(root_dir)
