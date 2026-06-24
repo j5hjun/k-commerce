@@ -8,6 +8,15 @@ from k_commerce_cli.services.login import login as run_login
 from k_commerce_cli.services.logout import logout as run_logout
 
 
+def root_dir_option(func):
+    return click.option(
+        "--root-dir",
+        type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+        default=None,
+        help="Override the provider storage root directory.",
+    )(func)
+
+
 @click.group(help="CLI for K-Commerce workflows.")
 async def app() -> None:
     pass
@@ -15,12 +24,7 @@ async def app() -> None:
 
 @app.command()
 @click.argument("provider")
-@click.option(
-    "--root-dir",
-    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
-    default=None,
-    help="Override the provider storage root directory.",
-)
+@root_dir_option
 async def login(provider: str, root_dir: Path | None) -> None:
     try:
         result = await run_login(provider, root_dir=root_dir)
@@ -32,12 +36,7 @@ async def login(provider: str, root_dir: Path | None) -> None:
 
 @app.command()
 @click.argument("provider")
-@click.option(
-    "--root-dir",
-    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
-    default=None,
-    help="Override the provider storage root directory.",
-)
+@root_dir_option
 async def logout(provider: str, root_dir: Path | None) -> None:
     try:
         result = await run_logout(provider, root_dir=root_dir)
