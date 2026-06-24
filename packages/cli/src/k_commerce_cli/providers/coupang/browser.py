@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,10 +41,12 @@ def first_product_link_selector() -> str:
 class CoupangBrowser:
     async def launch(
         self,
-        preferred: Literal["firefox", "chrome"] = "firefox",
+        preferred: Literal["firefox", "chrome"] | None = None,
         storage_state_path: Path | None = None,
     ) -> CoupangBrowserSession:
         playwright = await async_playwright().start()
+        if preferred is None:
+            preferred = self._default_browser()
         browser_types = (
             [playwright.firefox, playwright.chromium]
             if preferred == "firefox"
@@ -207,3 +210,6 @@ class CoupangBrowser:
         if coupang_link is not None:
             await page.click('a[href*="coupang.com"]')
             await self.random_delay(2_000, 3_000)
+
+    def _default_browser(self) -> Literal["firefox", "chrome"]:
+        return "chrome" if os.getenv("COUPANG_BROWSER") == "chrome" else "firefox"

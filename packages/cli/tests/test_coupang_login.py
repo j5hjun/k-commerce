@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import types
@@ -104,6 +105,23 @@ class _FakeStorageContext:
         self.storage_state = AsyncMock()
 
 
+class _FakeBrowserInstance:
+    def __init__(self) -> None:
+        self.new_context = AsyncMock()
+
+
+class _FakeBrowserType:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.launch = AsyncMock(return_value=_FakeBrowserInstance())
+
+
+class _FakePlaywrightRuntime:
+    def __init__(self) -> None:
+        self.firefox = _FakeBrowserType("firefox")
+        self.chromium = _FakeBrowserType("chromium")
+
+
 class CoupangBrowserTests(unittest.IsolatedAsyncioTestCase):
     async def test_open_login_entry_falls_back_to_home_then_product(self) -> None:
         browser = CoupangBrowser()
@@ -172,6 +190,37 @@ class CoupangBrowserTests(unittest.IsolatedAsyncioTestCase):
         result = await browser.is_logged_in(page)
 
         self.assertTrue(result)
+
+    async def test_launch_uses_chromium_when_browser_env_requests_chrome(self) -> None:
+        browser = CoupangBrowser()
+        fake_page = object()
+        fake_context = AsyncMock()
+        fake_context.new_page = AsyncMock(return_value=fake_page)
+        fake_browser = _FakeBrowserInstance()
+        fake_browser.new_context = AsyncMock(return_value=fake_context)
+        fake_playwright = _FakePlaywrightRuntime()
+        fake_playwright.chromium.launch = AsyncMock(return_value=fake_browser)
+        fake_playwright.firefox.launch = AsyncMock(return_value=fake_browser)
+        async_playwright_mock = AsyncMock()
+        async_playwright_mock.start = AsyncMock(return_value=fake_playwright)
+
+        browser_module = sys.modules["k_commerce_cli.providers.coupang.browser"]
+        original_async_playwright = browser_module.async_playwright
+        browser_module.async_playwright = lambda: async_playwright_mock
+        previous_browser_env = os.environ.get("COUPANG_BROWSER")
+        os.environ["COUPANG_BROWSER"] = "chrome"
+
+        try:
+            await browser.launch()
+        finally:
+            browser_module.async_playwright = original_async_playwright
+            if previous_browser_env is None:
+                os.environ.pop("COUPANG_BROWSER", None)
+            else:
+                os.environ["COUPANG_BROWSER"] = previous_browser_env
+
+        fake_playwright.chromium.launch.assert_awaited_once()
+        fake_playwright.firefox.launch.assert_not_awaited()
 
 
 class CoupangLoginProviderTests(unittest.IsolatedAsyncioTestCase):
