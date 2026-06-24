@@ -91,6 +91,7 @@ class _BrowserEntrySpy:
         self.wait_for_manual_login = AsyncMock()
         self.is_logged_in = AsyncMock()
         self.save_storage_state = AsyncMock()
+        self.chrome_profile_dir = lambda base_dir: base_dir / "chrome-profile"
 
 
 class _LoginCompletionBrowserSpy:
@@ -114,6 +115,7 @@ class _FakeBrowserType:
     def __init__(self, name: str) -> None:
         self.name = name
         self.launch = AsyncMock(return_value=_FakeBrowserInstance())
+        self.launch_persistent_context = AsyncMock()
 
 
 class _FakePlaywrightRuntime:
@@ -191,16 +193,13 @@ class CoupangBrowserTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
 
-    async def test_launch_uses_chromium_when_browser_env_requests_chrome(self) -> None:
+    async def test_launch_uses_chrome_browser_env_to_switch_to_persistent_mode(self) -> None:
         browser = CoupangBrowser()
         fake_page = object()
         fake_context = AsyncMock()
-        fake_context.new_page = AsyncMock(return_value=fake_page)
-        fake_browser = _FakeBrowserInstance()
-        fake_browser.new_context = AsyncMock(return_value=fake_context)
+        fake_context.pages = [fake_page]
         fake_playwright = _FakePlaywrightRuntime()
-        fake_playwright.chromium.launch = AsyncMock(return_value=fake_browser)
-        fake_playwright.firefox.launch = AsyncMock(return_value=fake_browser)
+        fake_playwright.chromium.launch_persistent_context = AsyncMock(return_value=fake_context)
         async_playwright_mock = AsyncMock()
         async_playwright_mock.start = AsyncMock(return_value=fake_playwright)
 
@@ -219,8 +218,41 @@ class CoupangBrowserTests(unittest.IsolatedAsyncioTestCase):
             else:
                 os.environ["COUPANG_BROWSER"] = previous_browser_env
 
-        fake_playwright.chromium.launch.assert_awaited_once()
+        fake_playwright.chromium.launch_persistent_context.assert_awaited_once()
         fake_playwright.firefox.launch.assert_not_awaited()
+
+    async def test_launch_uses_persistent_context_for_chrome(self) -> None:
+        browser = CoupangBrowser()
+        fake_page = object()
+        fake_context = AsyncMock()
+        fake_context.pages = [fake_page]
+        fake_playwright = _FakePlaywrightRuntime()
+        fake_playwright.chromium.launch_persistent_context = AsyncMock(return_value=fake_context)
+        async_playwright_mock = AsyncMock()
+        async_playwright_mock.start = AsyncMock(return_value=fake_playwright)
+
+        browser_module = sys.modules["k_commerce_cli.providers.coupang.browser"]
+        original_async_playwright = browser_module.async_playwright
+        browser_module.async_playwright = lambda: async_playwright_mock
+        previous_browser_env = os.environ.get("COUPANG_BROWSER")
+        os.environ["COUPANG_BROWSER"] = "chrome"
+
+        try:
+            session = await browser.launch()
+        finally:
+            browser_module.async_playwright = original_async_playwright
+            if previous_browser_env is None:
+                os.environ.pop("COUPANG_BROWSER", None)
+            else:
+                os.environ["COUPANG_BROWSER"] = previous_browser_env
+
+        fake_playwright.chromium.launch_persistent_context.assert_awaited_once()
+        launch_args = fake_playwright.chromium.launch_persistent_context.await_args
+        self.assertTrue(str(launch_args.args[0]).endswith(".k-commerce/coupang/chrome-profile"))
+        self.assertEqual(launch_args.kwargs["channel"], "chrome")
+        self.assertIs(session.context, fake_context)
+        self.assertIs(session.page, fake_page)
+        fake_playwright.chromium.launch.assert_not_awaited()
 
 
 class CoupangLoginProviderTests(unittest.IsolatedAsyncioTestCase):
@@ -258,6 +290,76 @@ class CoupangLoginProviderTests(unittest.IsolatedAsyncioTestCase):
             )
             metadata = provider.session_store.session_meta_path.read_text(encoding="utf-8")
             self.assertIn('"login_method": "automatic"', metadata)
+
+    async def test_restore_session_uses_chrome_profile_when_browser_env_requests_chrome(self) -> None:
+        provider = CoupangLoginProvider()
+        browser = _BrowserEntrySpy()
+        provider.browser = browser
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir) / ".k-commerce" / "coupang"
+            runtime_dir.mkdir(parents=True)
+            chrome_profile_dir = runtime_dir / "chrome-profile"
+            chrome_profile_dir.mkdir()
+            provider.session_store = type(
+                "SessionStore",
+                (),
+                {
+                    "base_dir": runtime_dir,
+                    "storage_state_path": runtime_dir / "storage-state.json",
+                    "session_meta_path": runtime_dir / "session-meta.json",
+                    "has_storage_state": lambda self: False,
+                    "ensure_dir": lambda self: None,
+                    "write_metadata": lambda self, payload: None,
+                },
+            )()
+
+            previous_browser_env = os.environ.get("COUPANG_BROWSER")
+            os.environ["COUPANG_BROWSER"] = "chrome"
+            try:
+                await provider._restore_session()
+            finally:
+                if previous_browser_env is None:
+                    os.environ.pop("COUPANG_BROWSER", None)
+                else:
+                    os.environ["COUPANG_BROWSER"] = previous_browser_env
+
+        browser.launch.assert_awaited_once()
+        launch_kwargs = browser.launch.await_args.kwargs
+        self.assertEqual(launch_kwargs["preferred"], "chrome")
+        self.assertNotIn("storage_state_path", launch_kwargs)
+
+    async def test_persist_session_skips_storage_state_for_chrome_profile_mode(self) -> None:
+        provider = CoupangLoginProvider()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir) / ".k-commerce" / "coupang"
+            runtime_dir.mkdir(parents=True)
+            provider.session_store = type(
+                "SessionStore",
+                (),
+                {
+                    "base_dir": runtime_dir,
+                    "storage_state_path": runtime_dir / "storage-state.json",
+                    "session_meta_path": runtime_dir / "session-meta.json",
+                    "ensure_dir": lambda self: runtime_dir.mkdir(parents=True, exist_ok=True),
+                    "write_metadata": lambda self, payload: (runtime_dir / "session-meta.json").write_text(str(payload), encoding="utf-8"),
+                },
+            )()
+            browser = _BrowserEntrySpy()
+            provider.browser = browser
+            provider._browser_session = type("Session", (), {"context": _FakeStorageContext()})()
+
+            previous_browser_env = os.environ.get("COUPANG_BROWSER")
+            os.environ["COUPANG_BROWSER"] = "chrome"
+            try:
+                await provider._persist_session("automatic")
+            finally:
+                if previous_browser_env is None:
+                    os.environ.pop("COUPANG_BROWSER", None)
+                else:
+                    os.environ["COUPANG_BROWSER"] = previous_browser_env
+
+        browser.save_storage_state.assert_not_awaited()
 
     async def test_wait_for_manual_login_delegates_to_browser(self) -> None:
         provider = CoupangLoginProvider()

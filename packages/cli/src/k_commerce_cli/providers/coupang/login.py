@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import asyncclick as click
@@ -19,6 +20,7 @@ class CoupangLoginProvider:
         self.browser = CoupangBrowser()
         self._browser_session: CoupangBrowserSession | None = None
         self.credentials_path = Path.home() / ".coupang-session" / "credentials.json"
+        self.session_store = CoupangSessionStore(Path.home() / ".k-commerce" / "coupang")
 
     @property
     def credentials_path(self) -> Path:
@@ -28,7 +30,6 @@ class CoupangLoginProvider:
     def credentials_path(self, value: Path) -> None:
         self._credentials_path = value
         self.credential_store = CoupangCredentialStore(value)
-        self.session_store = CoupangSessionStore(value.parent)
 
     async def login(self) -> LoginResult:
         click.secho("쿠팡 로그인을 시작합니다...", fg="blue")
@@ -74,10 +75,22 @@ class CoupangLoginProvider:
         return self.credential_store.load()
 
     async def _restore_session(self):
+        if self._uses_chrome_persistent_session():
+            profile_dir = self.browser.chrome_profile_dir(self.session_store.base_dir)
+            if not profile_dir.is_dir():
+                return None
+
+            self._browser_session = await self.browser.launch(
+                preferred="chrome",
+                base_dir=self.session_store.base_dir,
+            )
+            return self._browser_session
+
         if not self.session_store.has_storage_state():
             return None
 
         self._browser_session = await self.browser.launch(
+            preferred="firefox",
             storage_state_path=self.session_store.storage_state_path
         )
         return self._browser_session
@@ -88,7 +101,10 @@ class CoupangLoginProvider:
 
     async def _login_with_credentials(self, credentials: CoupangCredentials) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch()
+            self._browser_session = await self.browser.launch(
+                preferred=self._preferred_browser(),
+                base_dir=self.session_store.base_dir,
+            )
 
         page = self._browser_session.page
         await self.browser.open_login_entry(self._browser_session)
@@ -114,7 +130,10 @@ class CoupangLoginProvider:
 
     async def _wait_for_manual_login(self) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch()
+            self._browser_session = await self.browser.launch(
+                preferred=self._preferred_browser(),
+                base_dir=self.session_store.base_dir,
+            )
             await self.browser.open_login_entry(self._browser_session)
 
         return await self.browser.wait_for_manual_login(self._browser_session)
@@ -123,6 +142,8 @@ class CoupangLoginProvider:
         self.session_store.ensure_dir()
         if self._browser_session is None:
             self.session_store.storage_state_path.write_text("{}", encoding="utf-8")
+        elif self._uses_chrome_persistent_session():
+            pass
         else:
             await self.browser.save_storage_state(
                 self._browser_session,
@@ -138,3 +159,9 @@ class CoupangLoginProvider:
             await self.browser.close(self._browser_session)
         finally:
             self._browser_session = None
+
+    def _preferred_browser(self) -> str:
+        return "chrome" if self._uses_chrome_persistent_session() else "firefox"
+
+    def _uses_chrome_persistent_session(self) -> bool:
+        return os.getenv("COUPANG_BROWSER") == "chrome"

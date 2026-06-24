@@ -29,9 +29,10 @@ FIREFOX_USER_AGENT = (
 @dataclass(frozen=True)
 class CoupangBrowserSession:
     playwright: object
-    browser: object
+    browser: object | None
     context: object
     page: object
+    persistent: bool = False
 
 
 def first_product_link_selector() -> str:
@@ -43,53 +44,17 @@ class CoupangBrowser:
         self,
         preferred: Literal["firefox", "chrome"] | None = None,
         storage_state_path: Path | None = None,
+        base_dir: Path | None = None,
     ) -> CoupangBrowserSession:
         playwright = await async_playwright().start()
         if preferred is None:
             preferred = self._default_browser()
-        browser_types = (
-            [playwright.firefox, playwright.chromium]
-            if preferred == "firefox"
-            else [playwright.chromium]
+        if preferred == "chrome":
+            return await self._launch_chrome_persistent(playwright, base_dir=base_dir)
+        return await self._launch_firefox(
+            playwright,
+            storage_state_path=storage_state_path,
         )
-
-        last_error: Exception | None = None
-
-        for browser_type in browser_types:
-            try:
-                browser_name = getattr(browser_type, "name", "")
-                launch_kwargs = {"headless": False}
-                if browser_name == "firefox":
-                    launch_kwargs["firefox_user_prefs"] = {
-                        "general.useragent.override": "",
-                        "intl.accept_languages": "ko-KR,ko,en-US,en",
-                        "privacy.resistFingerprinting": False,
-                    }
-
-                browser = await browser_type.launch(**launch_kwargs)
-                context_kwargs = dict(
-                    locale="ko-KR",
-                    timezone_id="Asia/Seoul",
-                    viewport=COUPANG_VIEWPORT,
-                    user_agent=(
-                        FIREFOX_USER_AGENT if browser_name == "firefox" else CHROME_USER_AGENT
-                    ),
-                )
-                if storage_state_path is not None:
-                    context_kwargs["storage_state"] = storage_state_path
-                context = await browser.new_context(**context_kwargs)
-                page = await context.new_page()
-                return CoupangBrowserSession(
-                    playwright=playwright,
-                    browser=browser,
-                    context=context,
-                    page=page,
-                )
-            except Exception as exc:
-                last_error = exc
-
-        assert last_error is not None
-        raise last_error
 
     async def open_home(self, session: CoupangBrowserSession) -> None:
         await session.page.goto(COUPANG_HOME_URL, wait_until="domcontentloaded")
@@ -169,6 +134,8 @@ class CoupangBrowser:
         session: CoupangBrowserSession,
         storage_state_path: Path,
     ) -> None:
+        if getattr(session, "persistent", False):
+            return
         await session.context.storage_state(path=storage_state_path)
 
     async def close(self, session: CoupangBrowserSession) -> None:
@@ -179,7 +146,8 @@ class CoupangBrowser:
                 await session.context.close()
             finally:
                 try:
-                    await session.browser.close()
+                    if session.browser is not None:
+                        await session.browser.close()
                 finally:
                     stop = getattr(session.playwright, "stop", None)
                     if stop is not None:
@@ -213,3 +181,62 @@ class CoupangBrowser:
 
     def _default_browser(self) -> Literal["firefox", "chrome"]:
         return "chrome" if os.getenv("COUPANG_BROWSER") == "chrome" else "firefox"
+
+    def chrome_profile_dir(self, base_dir: Path | None = None) -> Path:
+        root_dir = base_dir or (Path.home() / ".k-commerce" / "coupang")
+        return root_dir / "chrome-profile"
+
+    async def _launch_firefox(
+        self,
+        playwright: object,
+        storage_state_path: Path | None = None,
+    ) -> CoupangBrowserSession:
+        browser = await playwright.firefox.launch(
+            headless=False,
+            firefox_user_prefs={
+                "general.useragent.override": "",
+                "intl.accept_languages": "ko-KR,ko,en-US,en",
+                "privacy.resistFingerprinting": False,
+            },
+        )
+        context_kwargs = dict(
+            locale="ko-KR",
+            timezone_id="Asia/Seoul",
+            viewport=COUPANG_VIEWPORT,
+            user_agent=FIREFOX_USER_AGENT,
+        )
+        if storage_state_path is not None:
+            context_kwargs["storage_state"] = storage_state_path
+        context = await browser.new_context(**context_kwargs)
+        page = await context.new_page()
+        return CoupangBrowserSession(
+            playwright=playwright,
+            browser=browser,
+            context=context,
+            page=page,
+        )
+
+    async def _launch_chrome_persistent(
+        self,
+        playwright: object,
+        base_dir: Path | None = None,
+    ) -> CoupangBrowserSession:
+        profile_dir = self.chrome_profile_dir(base_dir)
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        context = await playwright.chromium.launch_persistent_context(
+            profile_dir,
+            channel="chrome",
+            headless=False,
+            locale="ko-KR",
+            timezone_id="Asia/Seoul",
+            viewport=COUPANG_VIEWPORT,
+            user_agent=CHROME_USER_AGENT,
+        )
+        page = context.pages[0] if context.pages else await context.new_page()
+        return CoupangBrowserSession(
+            playwright=playwright,
+            browser=None,
+            context=context,
+            page=page,
+            persistent=True,
+        )
