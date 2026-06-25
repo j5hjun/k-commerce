@@ -11,22 +11,23 @@ from ._helpers import RUNNER, ensure_profile_dir, make_session
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Path) -> None:
     provider = PROVIDERS["coupang"]
+    login_provider = provider._login_provider
     root_dir = tmp_path
     paths = ensure_profile_dir(root_dir)
     session = make_session()
 
     with (
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_home", new=AsyncMock()) as open_home,
-        patch.object(provider.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(login_provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(login_provider.browser, "open_home", new=AsyncMock()) as open_home,
+        patch.object(login_provider.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
+        patch.object(login_provider.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "쿠팡 로그인 성공"]
-    launch.assert_awaited_once_with(provider.session_store.paths)
-    assert provider.session_store.paths == paths
+    launch.assert_awaited_once_with(login_provider.store.paths)
+    assert login_provider.store.paths == paths
     open_home.assert_awaited_once_with(session)
     is_logged_in.assert_awaited_once_with(session.tab)
     close.assert_awaited_once_with(session)

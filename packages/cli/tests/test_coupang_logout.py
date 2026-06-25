@@ -3,22 +3,23 @@ from pathlib import Path
 import pytest
 
 from k_commerce_cli.providers.coupang.logout import CoupangLogoutProvider
-from k_commerce_cli.providers.coupang.session_store import CoupangSessionStore
+from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.store import ProviderStore
 
 
 @pytest.mark.anyio
 async def test_logout_clears_saved_session(tmp_path: Path) -> None:
     provider = CoupangLogoutProvider()
-    provider.session_store = CoupangSessionStore(provider="coupang", root_dir=tmp_path)
-    provider.session_store.profile_dir.mkdir(parents=True)
-    provider.session_store.cookies_file.write_text("cookies", encoding="utf-8")
-    provider.session_store.write_metadata({"login_method": "automatic"})
+    provider.store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    provider.store.profile_dir.mkdir(parents=True)
+    provider.store.cookies_file.write_text("cookies", encoding="utf-8")
+    provider.store.write_session_metadata({"login_method": "automatic"})
 
     result = await provider.logout(root_dir=tmp_path)
 
     assert result.success is True
     assert result.message == "쿠팡 로그아웃 완료"
-    assert provider.session_store.has_session() is False
+    assert provider.store.has_session() is False
 
 
 @pytest.mark.anyio

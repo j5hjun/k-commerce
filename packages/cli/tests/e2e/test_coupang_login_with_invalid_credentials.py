@@ -12,6 +12,7 @@ from ._helpers import RUNNER, ensure_session_root, make_session
 @pytest.mark.anyio
 async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Path) -> None:
     provider = PROVIDERS["coupang"]
+    login_provider = provider._login_provider
     root_dir = tmp_path
     paths = ensure_session_root(root_dir)
     paths.credentials_path.write_text(
@@ -21,12 +22,12 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
     session = make_session()
 
     with (
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider.browser, "fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
-        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock(side_effect=[False, False])) as wait_for_manual_login,
-        patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(login_provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(login_provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(login_provider.browser, "fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
+        patch.object(login_provider.browser, "wait_for_manual_login", new=AsyncMock(side_effect=[False, False])) as wait_for_manual_login,
+        patch.object(login_provider.browser, "save_session", new=AsyncMock()) as save_session,
+        patch.object(login_provider.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
@@ -37,7 +38,7 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
         "브라우저에서 직접 로그인해주세요...",
         "쿠팡 로그인 실패",
     ]
-    launch.assert_awaited_once_with(provider.session_store.paths)
+    launch.assert_awaited_once_with(login_provider.store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "wrong@example.com", "wrong-password")
     assert wait_for_manual_login.await_count == 2

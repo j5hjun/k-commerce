@@ -3,11 +3,11 @@ from pathlib import Path
 import asyncclick as click
 
 from k_commerce_cli.providers.constants import ProviderName
+from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.store import Credentials, ProviderStore
 from k_commerce_cli.types import LoginResult
 
 from .browser import CoupangBrowser, CoupangBrowserSession
-from .credential_store import CoupangCredentials, CoupangCredentialStore
-from .session_store import CoupangSessionStore
 
 
 class CoupangLoginProvider:
@@ -19,8 +19,7 @@ class CoupangLoginProvider:
         self._configure_paths()
 
     def _configure_paths(self, root_dir: Path | None = None) -> None:
-        self.credential_store = CoupangCredentialStore(provider=self.name, root_dir=root_dir)
-        self.session_store = CoupangSessionStore(provider=self.name, root_dir=root_dir)
+        self.store = ProviderStore(ProviderPaths(self.name, root_dir or Path.home() / ".k-commerce"))
 
     async def login(self, root_dir: Path | None = None) -> LoginResult:
         self._configure_paths(root_dir)
@@ -47,23 +46,23 @@ class CoupangLoginProvider:
         finally:
             await self._close_browser_session()
 
-    def _load_credentials(self) -> CoupangCredentials | None:
-        return self.credential_store.load()
+    def _load_credentials(self) -> Credentials | None:
+        return self.store.load_credentials()
 
     async def _restore_session(self):
-        if not self.session_store.has_profile():
+        if not self.store.has_profile():
             return None
 
-        self._browser_session = await self.browser.launch(self.session_store.paths)
+        self._browser_session = await self.browser.launch(self.store.paths)
         return self._browser_session
 
     async def _verify_session(self, session: CoupangBrowserSession) -> bool:
         await self.browser.open_home(session)
         return await self.browser.is_logged_in(session.tab)
 
-    async def _login_with_credentials(self, credentials: CoupangCredentials) -> bool:
+    async def _login_with_credentials(self, credentials: Credentials) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch(self.session_store.paths)
+            self._browser_session = await self.browser.launch(self.store.paths)
 
         await self.browser.open_login_entry(self._browser_session)
         submitted = await self.browser.fill_login_form(
@@ -78,16 +77,15 @@ class CoupangLoginProvider:
 
     async def _wait_for_manual_login(self) -> bool:
         if self._browser_session is None:
-            self._browser_session = await self.browser.launch(self.session_store.paths)
+            self._browser_session = await self.browser.launch(self.store.paths)
             await self.browser.open_login_entry(self._browser_session)
 
         return await self.browser.wait_for_manual_login(self._browser_session)
 
     async def _persist_session(self, login_method: str) -> None:
-        self.session_store.ensure_dir()
         if self._browser_session is not None:
             await self.browser.save_session(self._browser_session)
-        self.session_store.write_metadata({"login_method": login_method})
+        self.store.write_session_metadata({"login_method": login_method})
 
     async def _close_browser_session(self) -> None:
         if self._browser_session is None:

@@ -20,8 +20,8 @@ from k_commerce_cli.providers.coupang.browser import (
 )
 from k_commerce_cli.providers.coupang.login import CoupangLoginProvider
 from k_commerce_cli.providers.coupang.status import CoupangStatusProvider
-from k_commerce_cli.providers.coupang.session_store import CoupangSessionStore
 from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.store import ProviderStore
 from k_commerce_cli.types import StatusResult
 
 
@@ -228,12 +228,13 @@ async def test_active_tab_prefers_web_page_over_chrome_ui_tab() -> None:
     assert browser._active_tab(session) is coupang_tab
 
 
-def test_default_credentials_path_uses_session_store_location() -> None:
+def test_default_store_uses_provider_paths() -> None:
     provider = CoupangLoginProvider()
 
-    assert provider.credential_store.credentials_path == provider.session_store.paths.credentials_path
-    assert provider.session_store.paths.base_dir == Path.home() / ".k-commerce" / "coupang"
-    assert provider.session_store.paths == provider.credential_store.paths
+    assert isinstance(provider.store, ProviderStore)
+    assert provider.store.credentials_path == provider.store.paths.credentials_path
+    assert provider.store.paths.base_dir == Path.home() / ".k-commerce" / "coupang"
+    assert provider.store.base_dir == Path.home() / ".k-commerce" / "coupang"
 
 
 def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
@@ -241,9 +242,10 @@ def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
 
     provider._configure_paths(tmp_path)
 
-    assert provider.session_store.paths.base_dir == tmp_path / "coupang"
-    assert provider.credential_store.credentials_path == tmp_path / "coupang" / "credentials.json"
-    assert provider.session_store.base_dir == tmp_path / "coupang"
+    assert isinstance(provider.store, ProviderStore)
+    assert provider.store.paths.base_dir == tmp_path / "coupang"
+    assert provider.store.credentials_path == tmp_path / "coupang" / "credentials.json"
+    assert provider.store.base_dir == tmp_path / "coupang"
 
 
 @pytest.mark.anyio
@@ -252,11 +254,11 @@ async def test_restore_session_uses_profile_dir_when_present() -> None:
     browser = _BrowserSpy()
     provider.browser = browser
     with tempfile.TemporaryDirectory() as temp_dir:
-        provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
-        provider.session_store.profile_dir.mkdir(parents=True)
+        provider.store = ProviderStore(ProviderPaths("coupang", root_dir=Path(temp_dir)))
+        provider.store.profile_dir.mkdir(parents=True)
         await provider._restore_session()
 
-    browser.launch.assert_awaited_once_with(provider.session_store.paths)
+    browser.launch.assert_awaited_once_with(provider.store.paths)
 
 
 @pytest.mark.anyio
@@ -284,9 +286,9 @@ async def test_persist_session_saves_cookies_and_metadata() -> None:
     provider.browser = browser
     provider._browser_session = session
     with tempfile.TemporaryDirectory() as temp_dir:
-        provider.session_store = CoupangSessionStore(provider="coupang", root_dir=Path(temp_dir))
+        provider.store = ProviderStore(ProviderPaths("coupang", root_dir=Path(temp_dir)))
         await provider._persist_session("automatic")
-        metadata = provider.session_store.session_meta_path.read_text(encoding="utf-8")
+        metadata = provider.store.session_meta_path.read_text(encoding="utf-8")
 
     browser.save_session.assert_awaited_once_with(session)
     assert '"login_method": "automatic"' in metadata
@@ -340,7 +342,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
         logged_in=True,
         message="쿠팡 로그인 상태입니다",
     )
-    browser.launch.assert_awaited_once_with(provider.session_store.paths)
+    browser.launch.assert_awaited_once_with(provider.store.paths)
     browser.open_home.assert_awaited_once_with(session)
     browser.is_logged_in.assert_awaited_once_with(session.tab)
     browser.close.assert_awaited_once_with(session)
@@ -381,5 +383,5 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     )
     browser.launch.assert_not_awaited()
     browser.close.assert_not_awaited()
-    assert provider.session_store.base_dir == tmp_path / "coupang"
-    assert not provider.session_store.base_dir.exists()
+    assert provider.store.base_dir == tmp_path / "coupang"
+    assert not provider.store.base_dir.exists()

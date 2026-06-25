@@ -1,10 +1,11 @@
 from pathlib import Path
 
 from k_commerce_cli.providers.constants import ProviderName
+from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.store import ProviderStore
 from k_commerce_cli.types import StatusResult
 
 from .browser import CoupangBrowser, CoupangBrowserSession
-from .session_store import CoupangSessionStore
 
 
 class CoupangStatusProvider:
@@ -16,12 +17,12 @@ class CoupangStatusProvider:
         self._configure_paths()
 
     def _configure_paths(self, root_dir: Path | None = None) -> None:
-        self.session_store = CoupangSessionStore(provider=self.name, root_dir=root_dir)
+        self.store = ProviderStore(ProviderPaths(self.name, root_dir or Path.home() / ".k-commerce"))
 
     async def status(self, root_dir: Path | None = None) -> StatusResult:
         self._configure_paths(root_dir)
 
-        if not self.session_store.has_session():
+        if not self.store.has_session():
             return StatusResult(
                 provider=self.name,
                 logged_in=False,
@@ -29,7 +30,7 @@ class CoupangStatusProvider:
             )
 
         try:
-            self._browser_session = await self.browser.launch(self.session_store.paths)
+            self._browser_session = await self.browser.launch(self.store.paths)
             await self.browser.open_home(self._browser_session)
             logged_in = await self.browser.is_logged_in(self._browser_session.tab)
             return StatusResult(
