@@ -1,32 +1,25 @@
-from pathlib import Path
-
-from k_commerce_cli.providers.constants import ProviderName
-from k_commerce_cli.providers.coupang import (
-    CoupangLoginProvider,
-    CoupangLogoutProvider,
-    CoupangStatusProvider,
-)
-from k_commerce_cli.providers.types import AuthProvider
+from k_commerce_cli.providers.base import AuthProvider
+from k_commerce_cli.providers.coupang import CoupangProvider
 
 
-class CoupangProvider:
-    name = ProviderName.COUPANG
-
-    def __init__(self) -> None:
-        self._login_provider = CoupangLoginProvider()
-        self._status_provider = CoupangStatusProvider()
-        self._logout_provider = CoupangLogoutProvider()
-
-    async def login(self, root_dir: Path | None = None):
-        return await self._login_provider.login(root_dir=root_dir)
-
-    async def status(self, root_dir: Path | None = None):
-        return await self._status_provider.status(root_dir=root_dir)
-
-    async def logout(self, root_dir: Path | None = None):
-        return await self._logout_provider.logout(root_dir=root_dir)
-
-
-PROVIDERS: dict[str, AuthProvider] = {
-    ProviderName.COUPANG: CoupangProvider(),
+_PROVIDER_CLASSES: dict[str, type[AuthProvider]] = {
+    CoupangProvider.name.value: CoupangProvider,
 }
+
+
+def get_provider(name: str) -> AuthProvider:
+    normalized_name = name.lower().strip()
+
+    try:
+        provider_class = _PROVIDER_CLASSES[normalized_name]
+    except KeyError as exc:
+        supported = ", ".join(list_providers())
+        raise ValueError(
+            f"Unsupported provider: {name}. Supported providers: {supported}"
+        ) from exc
+
+    return provider_class()
+
+
+def list_providers() -> list[str]:
+    return sorted(_PROVIDER_CLASSES.keys())

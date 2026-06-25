@@ -4,20 +4,21 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers.registry import PROVIDERS
+from k_commerce_cli.providers.registry import get_provider
 
 from ._helpers import RUNNER, make_session, provider_paths
 
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_manual_login_when_credentials_missing(tmp_path: Path) -> None:
-    provider = PROVIDERS["coupang"]
+    provider = get_provider("coupang")
     login_provider = provider._login_provider
     root_dir = tmp_path
     paths = provider_paths(root_dir)
     session = make_session()
 
     with (
+        patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
         patch.object(login_provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(login_provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
         patch.object(login_provider.browser, "wait_for_manual_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,

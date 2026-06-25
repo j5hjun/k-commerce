@@ -162,9 +162,5 @@ def test_clear_session_returns_false_when_session_is_missing(tmp_path: Path) -> 
 
 
 def test_coupang_package_exports_only_provider_types() -> None:
-    assert coupang_provider_module.__all__ == [
-        "CoupangLoginProvider",
-        "CoupangLogoutProvider",
-        "CoupangStatusProvider",
-    ]
+    assert coupang_provider_module.__all__ == ["CoupangProvider"]
     assert not hasattr(coupang_provider_module, "CoupangCredentials")

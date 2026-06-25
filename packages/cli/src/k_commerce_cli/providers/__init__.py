@@ -1,4 +1,4 @@
 from .constants import ProviderName
-from .types import AuthProvider
+from .base import AuthProvider
 
 __all__ = ["AuthProvider", "ProviderName"]

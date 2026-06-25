@@ -1,9 +1,5 @@
-from .login import CoupangLoginProvider
-from .logout import CoupangLogoutProvider
-from .status import CoupangStatusProvider
+from .provider import CoupangProvider
 
 __all__ = [
-    "CoupangLoginProvider",
-    "CoupangLogoutProvider",
-    "CoupangStatusProvider",
+    "CoupangProvider",
 ]
