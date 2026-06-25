@@ -5,6 +5,7 @@ from pathlib import Path
 import asyncclick as click
 
 from k_commerce_cli.services.login import login as run_login
+from k_commerce_cli.services.login_status import login_status as run_login_status
 from k_commerce_cli.services.logout import logout as run_logout
 
 
@@ -26,10 +27,32 @@ def provider_command(func):
     return app.command()(click.argument("provider")(root_dir_option(func)))
 
 
-@provider_command
-async def login(provider: str, root_dir: Path | None) -> None:
+async def echo_login(provider: str, root_dir: Path | None) -> None:
     try:
         result = await run_login(provider, root_dir=root_dir)
+    except ValueError as error:
+        raise click.BadParameter(str(error)) from error
+
+    click.echo(result.message)
+
+
+@app.group()
+async def login() -> None:
+    pass
+
+
+@login.command()
+@root_dir_option
+async def coupang(root_dir: Path | None) -> None:
+    await echo_login("coupang", root_dir)
+
+
+@login.command()
+@click.argument("provider")
+@root_dir_option
+async def status(provider: str, root_dir: Path | None) -> None:
+    try:
+        result = await run_login_status(provider, root_dir=root_dir)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 

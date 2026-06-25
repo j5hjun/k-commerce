@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
-from k_commerce_cli.types import LoginResult, LogoutResult
+from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
 
 RUNNER = CliRunner()
 
@@ -44,6 +44,109 @@ async def test_login_coupang_command_passes_root_dir_to_service(tmp_path: Path) 
 
     assert result.exit_code == 0
     run_login.assert_awaited_once_with("coupang", root_dir=tmp_path)
+
+
+@pytest.mark.anyio
+async def test_login_status_coupang_command_prints_status_message_once() -> None:
+    with patch(
+        "k_commerce_cli.cli.run_login_status",
+        new=AsyncMock(
+            return_value=StatusResult(
+                provider="coupang",
+                logged_in=True,
+                message="쿠팡 로그인 상태입니다",
+            )
+        ),
+    ) as run_login_status:
+        result = await RUNNER.invoke(app, ["login", "status", "coupang"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["쿠팡 로그인 상태입니다"]
+    run_login_status.assert_awaited_once_with("coupang", root_dir=None)
+
+
+@pytest.mark.anyio
+async def test_login_status_coupang_command_passes_root_dir_to_service(
+    tmp_path: Path,
+) -> None:
+    with patch(
+        "k_commerce_cli.cli.run_login_status",
+        new=AsyncMock(
+            return_value=StatusResult(
+                provider="coupang",
+                logged_in=True,
+                message="쿠팡 로그인 상태입니다",
+            )
+        ),
+    ) as run_login_status:
+        result = await RUNNER.invoke(
+            app, ["login", "status", "coupang", "--root-dir", str(tmp_path)]
+        )
+
+    assert result.exit_code == 0
+    run_login_status.assert_awaited_once_with("coupang", root_dir=tmp_path)
+
+
+@pytest.mark.anyio
+async def test_login_status_unsupported_provider_uses_bad_parameter() -> None:
+    with patch(
+        "k_commerce_cli.cli.run_login_status",
+        new=AsyncMock(side_effect=ValueError("Unsupported provider: invalid")),
+    ) as run_login_status:
+        result = await RUNNER.invoke(app, ["login", "status", "invalid"])
+
+    assert result.exit_code == 2
+    assert "Invalid value: Unsupported provider: invalid" in result.output
+    run_login_status.assert_awaited_once_with("invalid", root_dir=None)
+
+
+@pytest.mark.anyio
+async def test_login_status_missing_provider_shows_parse_error() -> None:
+    with patch("k_commerce_cli.cli.run_login_status", new=AsyncMock()) as run_login_status:
+        result = await RUNNER.invoke(app, ["login", "status"])
+
+    assert result.exit_code == 2
+    assert "Missing argument 'PROVIDER'" in result.output
+    run_login_status.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_login_coupang_command_rejects_malformed_extra_argument() -> None:
+    with patch("k_commerce_cli.cli.run_login", new=AsyncMock()) as run_login:
+        result = await RUNNER.invoke(app, ["login", "coupang", "extra"])
+
+    assert result.exit_code == 2
+    assert "Got unexpected extra argument (extra)" in result.output
+    run_login.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_login_status_coupang_command_rejects_malformed_extra_argument() -> None:
+    with patch("k_commerce_cli.cli.run_login_status", new=AsyncMock()) as run_login_status:
+        result = await RUNNER.invoke(app, ["login", "status", "coupang", "extra"])
+
+    assert result.exit_code == 2
+    assert "Got unexpected extra argument (extra)" in result.output
+    run_login_status.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_login_invalid_provider_command_is_rejected_by_parser() -> None:
+    with patch(
+        "k_commerce_cli.cli.run_login",
+        new=AsyncMock(
+            return_value=LoginResult(
+                provider="invalid",
+                success=True,
+                message="unexpected",
+            )
+        ),
+    ) as run_login:
+        result = await RUNNER.invoke(app, ["login", "invalid"])
+
+    assert result.exit_code == 2
+    assert "No such command 'invalid'" in result.output
+    run_login.assert_not_awaited()
 
 
 @pytest.mark.anyio

@@ -23,10 +23,29 @@ Run the CLI from the workspace root:
 uv run k-commerce login coupang
 ```
 
+Check whether any saved local Coupang session artifacts still produce a live Coupang home session:
+
+```bash
+uv run k-commerce login status coupang
+```
+
+Remove saved local Coupang session artifacts while preserving `credentials.json` for future automatic login:
+
+```bash
+uv run k-commerce logout coupang
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
+```
+
+The same `--root-dir` option also applies to login status and logout commands:
+
+```bash
+uv run k-commerce login status coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -41,6 +60,16 @@ The `coupang` login command tries the following in order:
 3. If automatic login is unavailable or fails, wait for manual login in the browser.
 
 When login succeeds, the CLI saves the session so the next run can reuse it.
+
+## Login Status
+
+The `login status` command first checks whether saved session artifacts exist under the selected root
+directory. If no local session state is present, it does not proceed with browser-based session
+validation.
+
+When saved session artifacts do exist, `login status` uses that saved local session state to launch
+browser validation and confirm whether it still reaches the real Coupang home session instead of
+trusting the presence of local files alone.
 
 ## Credential File
 
@@ -81,5 +110,8 @@ Files created there:
 - `cookies.dat`: saved browser cookies
 - `session-meta.json`: metadata about the last successful login method
 - `credentials.json`: optional credentials for automatic login
+
+The `logout` command removes saved session artifacts such as `chrome-profile/`, `cookies.dat`, and
+`session-meta.json`, but preserves `credentials.json`.
 
 These files are local machine state and should be treated as sensitive.

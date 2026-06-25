@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Protocol
 
-from k_commerce_cli.types import LoginResult, LogoutResult
+from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
 
 
 class LoginProvider(Protocol):
@@ -15,4 +15,11 @@ class LogoutProvider(Protocol):
     name: str
 
     async def logout(self, root_dir: Path | None = None) -> LogoutResult:
+        ...
+
+
+class StatusProvider(Protocol):
+    name: str
+
+    async def login_status(self, root_dir: Path | None = None) -> StatusResult:
         ...

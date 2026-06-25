@@ -17,8 +17,10 @@ from k_commerce_cli.providers.coupang.browser import (
     CoupangBrowserSession,
 )
 from k_commerce_cli.providers.coupang.login import CoupangLoginProvider
+from k_commerce_cli.providers.coupang.status import CoupangStatusProvider
 from k_commerce_cli.providers.coupang.session_store import CoupangSessionStore
 from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.types import StatusResult
 
 
 class _DummyElement:
@@ -317,3 +319,67 @@ async def test_close_browser_session_handles_non_awaitable_stop() -> None:
     await provider._close_browser_session()
 
     assert provider._browser_session is None
+
+
+@pytest.mark.anyio
+async def test_login_status_opens_home_checks_state_and_closes_browser_session(
+    tmp_path: Path,
+) -> None:
+    provider = CoupangStatusProvider()
+    browser = _BrowserSpy()
+    session = types.SimpleNamespace(tab=object())
+    browser.launch = AsyncMock(return_value=session)
+    browser.is_logged_in = AsyncMock(return_value=True)
+    provider.browser = browser
+    (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
+
+    result = await provider.login_status(root_dir=tmp_path)
+
+    assert result == StatusResult(
+        provider="coupang",
+        logged_in=True,
+        message="쿠팡 로그인 상태입니다",
+    )
+    browser.launch.assert_awaited_once_with(provider.session_store.paths)
+    browser.open_home.assert_awaited_once_with(session)
+    browser.is_logged_in.assert_awaited_once_with(session.tab)
+    browser.close.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_login_status_closes_browser_session_when_home_check_fails(
+    tmp_path: Path,
+) -> None:
+    provider = CoupangStatusProvider()
+    browser = _BrowserSpy()
+    session = types.SimpleNamespace(tab=object())
+    browser.launch = AsyncMock(return_value=session)
+    browser.open_home = AsyncMock(side_effect=RuntimeError("boom"))
+    provider.browser = browser
+    (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await provider.login_status(root_dir=tmp_path)
+
+    browser.close.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_login_status_returns_logged_out_without_launch_on_clean_root(
+    tmp_path: Path,
+) -> None:
+    provider = CoupangStatusProvider()
+    browser = _BrowserSpy()
+    provider.browser = browser
+
+    result = await provider.login_status(root_dir=tmp_path)
+
+    assert result == StatusResult(
+        provider="coupang",
+        logged_in=False,
+        message="쿠팡 로그인 상태가 아닙니다",
+    )
+    browser.launch.assert_not_awaited()
+    browser.close.assert_not_awaited()
+    assert provider.session_store.base_dir == tmp_path / "coupang"
+    assert not provider.session_store.base_dir.exists()
