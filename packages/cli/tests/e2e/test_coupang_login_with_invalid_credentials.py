@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers import LOGIN_PROVIDERS
+from k_commerce_cli.providers.registry import PROVIDERS
 
 from ._helpers import RUNNER, ensure_session_root, make_session
 
 
 @pytest.mark.anyio
 async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Path) -> None:
-    provider = LOGIN_PROVIDERS["coupang"]
+    provider = PROVIDERS["coupang"]
     root_dir = tmp_path
     paths = ensure_session_root(root_dir)
     paths.credentials_path.write_text(

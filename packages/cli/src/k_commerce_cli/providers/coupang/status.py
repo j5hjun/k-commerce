@@ -18,7 +18,7 @@ class CoupangStatusProvider:
     def _configure_paths(self, root_dir: Path | None = None) -> None:
         self.session_store = CoupangSessionStore(provider=self.name, root_dir=root_dir)
 
-    async def login_status(self, root_dir: Path | None = None) -> StatusResult:
+    async def status(self, root_dir: Path | None = None) -> StatusResult:
         self._configure_paths(root_dir)
 
         if not self.session_store.has_session():

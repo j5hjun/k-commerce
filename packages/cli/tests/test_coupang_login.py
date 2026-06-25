@@ -333,7 +333,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     provider.browser = browser
     (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
 
-    result = await provider.login_status(root_dir=tmp_path)
+    result = await provider.status(root_dir=tmp_path)
 
     assert result == StatusResult(
         provider="coupang",
@@ -359,7 +359,7 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
     (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
 
     with pytest.raises(RuntimeError, match="boom"):
-        await provider.login_status(root_dir=tmp_path)
+        await provider.status(root_dir=tmp_path)
 
     browser.close.assert_awaited_once_with(session)
 
@@ -372,7 +372,7 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     browser = _BrowserSpy()
     provider.browser = browser
 
-    result = await provider.login_status(root_dir=tmp_path)
+    result = await provider.status(root_dir=tmp_path)
 
     assert result == StatusResult(
         provider="coupang",

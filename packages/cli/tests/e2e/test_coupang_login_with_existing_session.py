@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers import LOGIN_PROVIDERS
+from k_commerce_cli.providers.registry import PROVIDERS
 
 from ._helpers import RUNNER, ensure_profile_dir, make_session
 
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Path) -> None:
-    provider = LOGIN_PROVIDERS["coupang"]
+    provider = PROVIDERS["coupang"]
     root_dir = tmp_path
     paths = ensure_profile_dir(root_dir)
     session = make_session()

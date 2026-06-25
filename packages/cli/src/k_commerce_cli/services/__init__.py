@@ -1,5 +1,3 @@
-from .login import login
-from .login_status import login_status
-from .logout import logout
+from .auth import login, logout, status
 
-__all__ = ["login", "login_status", "logout"]
+__all__ = ["login", "status", "logout"]
