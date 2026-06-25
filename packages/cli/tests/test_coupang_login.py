@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import sys
 import tempfile
 import types
@@ -267,9 +269,7 @@ async def test_login_with_credentials_uses_browser_form_submission() -> None:
     browser.wait_for_manual_login = AsyncMock(return_value=True)
     provider.browser = browser
 
-    result = await provider._login_with_credentials(
-        type("Creds", (), {"email": "user@example.com", "password": "secret"})()
-    )
+    result = await provider._login_with_credentials(type("Creds", (), {"email": "user@example.com", "password": "secret"})())
 
     assert result is True
     browser.open_login_entry.assert_awaited_once_with(session)

@@ -34,11 +34,7 @@ class CoupangSessionStore:
         )
 
     def has_session(self) -> bool:
-        return (
-            self.has_profile()
-            or self.cookies_file.is_file()
-            or self.session_meta_path.is_file()
-        )
+        return self.has_profile() or self.cookies_file.is_file() or self.session_meta_path.is_file()
 
     def clear(self) -> bool:
         removed = False

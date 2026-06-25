@@ -87,9 +87,7 @@ async def test_login_status_coupang_command_passes_root_dir_to_service(
             )
         ),
     ) as run_status:
-        result = await RUNNER.invoke(
-            app, ["login", "status", "coupang", "--root-dir", str(tmp_path)]
-        )
+        result = await RUNNER.invoke(app, ["login", "status", "coupang", "--root-dir", str(tmp_path)])
 
     assert result.exit_code == 0
     run_status.assert_awaited_once_with("coupang", root_dir=tmp_path)
@@ -142,9 +140,7 @@ async def test_login_status_coupang_command_rejects_malformed_extra_argument() -
 async def test_login_invalid_provider_command_is_rejected_by_parser() -> None:
     with patch(
         "k_commerce_cli.cli.run_login",
-        new=AsyncMock(
-            side_effect=ValueError("Unsupported provider: invalid")
-        ),
+        new=AsyncMock(side_effect=ValueError("Unsupported provider: invalid")),
     ) as run_login:
         result = await RUNNER.invoke(app, ["login", "invalid"])
 

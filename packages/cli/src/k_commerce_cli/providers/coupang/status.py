@@ -35,11 +35,7 @@ class CoupangStatusProvider:
             return StatusResult(
                 provider=self.name,
                 logged_in=logged_in,
-                message=(
-                    "쿠팡 로그인 상태입니다"
-                    if logged_in
-                    else "쿠팡 로그인 상태가 아닙니다"
-                ),
+                message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
             )
         finally:
             await self._close_browser_session()
