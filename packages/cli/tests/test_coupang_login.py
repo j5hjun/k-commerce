@@ -248,16 +248,30 @@ def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_restore_session_uses_profile_dir_when_present() -> None:
+async def test_restore_session_uses_cookies_file_when_present() -> None:
     provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     provider.browser = browser
     with tempfile.TemporaryDirectory() as temp_dir:
         provider.store = ProviderStore(ProviderPaths("coupang", root_dir=Path(temp_dir)))
-        provider.store.profile_dir.mkdir(parents=True)
+        provider.store.base_dir.mkdir(parents=True)
+        provider.store.cookies_file.write_text("cookies", encoding="utf-8")
         await provider._restore_session()
 
     browser.launch.assert_awaited_once_with(provider.store.paths)
+
+
+@pytest.mark.anyio
+async def test_restore_session_skips_launch_without_cookies_file() -> None:
+    provider = CoupangAuthProvider()
+    browser = _BrowserSpy()
+    provider.browser = browser
+    with tempfile.TemporaryDirectory() as temp_dir:
+        provider.store = ProviderStore(ProviderPaths("coupang", root_dir=Path(temp_dir)))
+        restored = await provider._restore_session()
+
+    assert restored is None
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -332,7 +346,9 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     browser.launch = AsyncMock(return_value=session)
     browser.is_logged_in = AsyncMock(return_value=True)
     provider.browser = browser
-    (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
+    cookies_file = tmp_path / "coupang" / "cookies.dat"
+    cookies_file.parent.mkdir(parents=True)
+    cookies_file.write_text("cookies", encoding="utf-8")
 
     result = await provider.status(root_dir=tmp_path)
 
@@ -357,7 +373,9 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
     browser.launch = AsyncMock(return_value=session)
     browser.open_home = AsyncMock(side_effect=RuntimeError("boom"))
     provider.browser = browser
-    (tmp_path / "coupang" / "chrome-profile").mkdir(parents=True)
+    cookies_file = tmp_path / "coupang" / "cookies.dat"
+    cookies_file.parent.mkdir(parents=True)
+    cookies_file.write_text("cookies", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="boom"):
         await provider.status(root_dir=tmp_path)

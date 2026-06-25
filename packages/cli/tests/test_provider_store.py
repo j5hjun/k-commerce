@@ -120,8 +120,16 @@ def test_has_session_is_false_when_no_artifacts_exist(tmp_path: Path) -> None:
     assert store.has_session() is False
 
 
-@pytest.mark.parametrize("artifact", ["profile", "cookies", "metadata"])
-def test_has_session_is_true_when_any_session_artifact_exists(
+def test_has_session_is_true_when_cookies_file_exists(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    store.base_dir.mkdir(parents=True)
+    store.cookies_file.write_text("cookies", encoding="utf-8")
+
+    assert store.has_session() is True
+
+
+@pytest.mark.parametrize("artifact", ["profile", "metadata"])
+def test_has_session_is_false_without_cookies_file(
     tmp_path: Path,
     artifact: str,
 ) -> None:
@@ -129,13 +137,10 @@ def test_has_session_is_true_when_any_session_artifact_exists(
 
     if artifact == "profile":
         store.profile_dir.mkdir(parents=True)
-    elif artifact == "cookies":
-        store.base_dir.mkdir(parents=True)
-        store.cookies_file.write_text("cookies", encoding="utf-8")
     else:
         store.write_session_metadata({"login_method": "automatic"})
 
-    assert store.has_session() is True
+    assert store.has_session() is False
 
 
 def test_clear_session_removes_session_artifacts_but_keeps_credentials(tmp_path: Path) -> None:

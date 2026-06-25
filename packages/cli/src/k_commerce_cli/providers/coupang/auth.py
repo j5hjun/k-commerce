@@ -89,7 +89,7 @@ class CoupangAuthProvider(AuthProvider):
         return self.store.load_credentials()
 
     async def _restore_session(self) -> CoupangBrowserSession | None:
-        if not self.store.has_profile():
+        if not self.store.has_session():
             return None
 
         self._browser_session = await self.browser.launch(self.store.paths)

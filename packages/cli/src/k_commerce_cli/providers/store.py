@@ -47,11 +47,7 @@ class ProviderStore:
         return self.profile_dir.is_dir()
 
     def has_session(self) -> bool:
-        return (
-            self.has_profile()
-            or self.cookies_file.is_file()
-            or self.session_meta_path.is_file()
-        )
+        return self.cookies_file.is_file()
 
     def clear_session(self) -> bool:
         removed = False
