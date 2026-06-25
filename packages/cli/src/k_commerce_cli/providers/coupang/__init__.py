@@ -1,5 +1,5 @@
-from .provider import CoupangProvider
+from .auth import CoupangAuthProvider
 
 __all__ = [
-    "CoupangProvider",
+    "CoupangAuthProvider",
 ]

@@ -18,8 +18,7 @@ from k_commerce_cli.providers.coupang.browser import (
     CoupangBrowser,
     CoupangBrowserSession,
 )
-from k_commerce_cli.providers.coupang.login import CoupangLoginProvider
-from k_commerce_cli.providers.coupang.status import CoupangStatusProvider
+from k_commerce_cli.providers.coupang import CoupangAuthProvider
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import ProviderStore
 from k_commerce_cli.types import StatusResult
@@ -229,7 +228,7 @@ async def test_active_tab_prefers_web_page_over_chrome_ui_tab() -> None:
 
 
 def test_default_store_uses_provider_paths() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
 
     assert isinstance(provider.store, ProviderStore)
     assert provider.store.credentials_path == provider.store.paths.credentials_path
@@ -238,7 +237,7 @@ def test_default_store_uses_provider_paths() -> None:
 
 
 def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
 
     provider._configure_paths(tmp_path)
 
@@ -250,7 +249,7 @@ def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_restore_session_uses_profile_dir_when_present() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     provider.browser = browser
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -263,7 +262,7 @@ async def test_restore_session_uses_profile_dir_when_present() -> None:
 
 @pytest.mark.anyio
 async def test_login_with_credentials_uses_browser_form_submission() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     session = object()
     browser.launch = AsyncMock(return_value=session)
@@ -280,7 +279,7 @@ async def test_login_with_credentials_uses_browser_form_submission() -> None:
 
 @pytest.mark.anyio
 async def test_persist_session_saves_cookies_and_metadata() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     session = object()
     provider.browser = browser
@@ -296,7 +295,7 @@ async def test_persist_session_saves_cookies_and_metadata() -> None:
 
 @pytest.mark.anyio
 async def test_wait_for_manual_login_delegates_to_browser() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     session = object()
     provider.browser = browser
@@ -309,7 +308,7 @@ async def test_wait_for_manual_login_delegates_to_browser() -> None:
 
 @pytest.mark.anyio
 async def test_close_browser_session_handles_non_awaitable_stop() -> None:
-    provider = CoupangLoginProvider()
+    provider = CoupangAuthProvider()
     session = CoupangBrowserSession(
         browser=types.SimpleNamespace(stop=lambda: None),
         tab=_DummyTab(),
@@ -327,7 +326,7 @@ async def test_close_browser_session_handles_non_awaitable_stop() -> None:
 async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangStatusProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     session = types.SimpleNamespace(tab=object())
     browser.launch = AsyncMock(return_value=session)
@@ -352,7 +351,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
 async def test_login_status_closes_browser_session_when_home_check_fails(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangStatusProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     session = types.SimpleNamespace(tab=object())
     browser.launch = AsyncMock(return_value=session)
@@ -370,7 +369,7 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
 async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangStatusProvider()
+    provider = CoupangAuthProvider()
     browser = _BrowserSpy()
     provider.browser = browser
 

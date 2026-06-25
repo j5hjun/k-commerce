@@ -5,21 +5,19 @@ import asyncclick as click
 from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import Credentials, ProviderStore
-from k_commerce_cli.types import LoginResult
+from k_commerce_cli.providers.base import AuthProvider
+from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
 
 from .browser import CoupangBrowser, CoupangBrowserSession
 
 
-class CoupangLoginProvider:
+class CoupangAuthProvider(AuthProvider):
     name = ProviderName.COUPANG
 
     def __init__(self) -> None:
         self.browser = CoupangBrowser()
         self._browser_session: CoupangBrowserSession | None = None
         self._configure_paths()
-
-    def _configure_paths(self, root_dir: Path | None = None) -> None:
-        self.store = ProviderStore(ProviderPaths(self.name, root_dir or Path.home() / ".k-commerce"))
 
     async def login(self, root_dir: Path | None = None) -> LoginResult:
         self._configure_paths(root_dir)
@@ -46,10 +44,51 @@ class CoupangLoginProvider:
         finally:
             await self._close_browser_session()
 
+    async def status(self, root_dir: Path | None = None) -> StatusResult:
+        self._configure_paths(root_dir)
+
+        if not self.store.has_session():
+            return StatusResult(
+                provider=self.name,
+                logged_in=False,
+                message="쿠팡 로그인 상태가 아닙니다",
+            )
+
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            await self.browser.open_home(self._browser_session)
+            logged_in = await self.browser.is_logged_in(self._browser_session.tab)
+            return StatusResult(
+                provider=self.name,
+                logged_in=logged_in,
+                message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
+            )
+        finally:
+            await self._close_browser_session()
+
+    async def logout(self, root_dir: Path | None = None) -> LogoutResult:
+        self._configure_paths(root_dir)
+        click.secho("쿠팡 로그아웃을 시작합니다...", fg="blue")
+
+        if not self.store.has_session():
+            return LogoutResult(
+                provider=self.name,
+                success=True,
+                message="저장된 쿠팡 세션이 없습니다",
+            )
+
+        self.store.clear_session()
+        return LogoutResult(provider=self.name, success=True, message="쿠팡 로그아웃 완료")
+
+    def _configure_paths(self, root_dir: Path | None = None) -> None:
+        self.store = ProviderStore(
+            ProviderPaths(self.name, root_dir or Path.home() / ".k-commerce")
+        )
+
     def _load_credentials(self) -> Credentials | None:
         return self.store.load_credentials()
 
-    async def _restore_session(self):
+    async def _restore_session(self) -> CoupangBrowserSession | None:
         if not self.store.has_profile():
             return None
 

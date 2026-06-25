@@ -1,6 +1,6 @@
-from k_commerce_cli.services import login as run_login
+from k_commerce_cli.providers.registry import get_provider
+from k_commerce_cli.types import LoginResult
 
 
-async def login(provider: str) -> str:
-    result = await run_login(provider)
-    return result.message
+async def login(provider: str) -> LoginResult:
+    return await get_provider(provider).login()

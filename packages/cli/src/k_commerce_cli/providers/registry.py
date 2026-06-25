@@ -1,9 +1,9 @@
 from k_commerce_cli.providers.base import AuthProvider
-from k_commerce_cli.providers.coupang import CoupangProvider
+from k_commerce_cli.providers.coupang import CoupangAuthProvider
 
 
 _PROVIDER_CLASSES: dict[str, type[AuthProvider]] = {
-    CoupangProvider.name.value: CoupangProvider,
+    CoupangAuthProvider.name.value: CoupangAuthProvider,
 }
 
 

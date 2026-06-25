@@ -38,39 +38,40 @@ async def test_login_status_tool_has_clear_description() -> None:
 
 
 @pytest.mark.anyio
-async def test_login_tool_dispatches_to_login_service_for_coupang_provider() -> None:
-    with patch(
-        "k_commerce_mcp.tools.login.run_login",
-        new=AsyncMock(
-            return_value=LoginResult(
-                provider="coupang",
-                success=True,
-                message="쿠팡 로그인 성공",
-            )
-        ),
-    ) as run_login:
+async def test_login_tool_returns_provider_login_result_for_coupang_provider() -> None:
+    expected = LoginResult(
+        provider="coupang",
+        success=True,
+        message="쿠팡 로그인 성공",
+    )
+    mocked_provider = type("MockProvider", (), {"login": AsyncMock(return_value=expected)})()
+
+    with patch("k_commerce_mcp.tools.login.get_provider", return_value=mocked_provider) as get_provider:
         result = await server.login(provider="coupang")
 
-    assert result == "쿠팡 로그인 성공"
-    run_login.assert_awaited_once_with("coupang")
+    assert result == expected
+    get_provider.assert_called_once_with("coupang")
+    mocked_provider.login.assert_awaited_once_with()
 
 
 @pytest.mark.anyio
-async def test_login_status_tool_dispatches_to_status_service_for_coupang_provider() -> None:
+async def test_login_status_tool_returns_provider_status_result_for_coupang_provider() -> None:
+    expected = StatusResult(
+        provider="coupang",
+        logged_in=True,
+        message="쿠팡 로그인 상태입니다",
+    )
+    mocked_provider = type("MockProvider", (), {"status": AsyncMock(return_value=expected)})()
+
     with patch(
-        "k_commerce_mcp.tools.login_status.run_login_status",
-        new=AsyncMock(
-            return_value=StatusResult(
-                provider="coupang",
-                logged_in=True,
-                message="쿠팡 로그인 상태입니다",
-            )
-        ),
-    ) as run_login_status:
+        "k_commerce_mcp.tools.login_status.get_provider",
+        return_value=mocked_provider,
+    ) as get_provider:
         result = await server.login_status(provider="coupang")
 
-    assert result == "쿠팡 로그인 상태입니다"
-    run_login_status.assert_awaited_once_with("coupang")
+    assert result == expected
+    get_provider.assert_called_once_with("coupang")
+    mocked_provider.status.assert_awaited_once_with()
 
 
 def test_main_runs_mcp_server_over_stdio() -> None:
