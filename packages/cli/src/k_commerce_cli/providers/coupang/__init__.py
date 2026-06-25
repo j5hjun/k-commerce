@@ -1,4 +1,5 @@
-from .credential_store import CoupangCredentials
-from .login import CoupangLoginProvider
+from .auth import CoupangAuthProvider
 
-__all__ = ["CoupangCredentials", "CoupangLoginProvider"]
+__all__ = [
+    "CoupangAuthProvider",
+]

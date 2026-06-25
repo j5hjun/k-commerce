@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers import LOGIN_PROVIDERS
+from k_commerce_cli.providers.registry import get_provider
 
 from ._helpers import RUNNER, ensure_session_root, make_session
 
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Path) -> None:
-    provider = LOGIN_PROVIDERS["coupang"]
+    provider = get_provider("coupang")
     root_dir = tmp_path
     paths = ensure_session_root(root_dir)
     paths.credentials_path.write_text(
@@ -21,6 +21,7 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
     session = make_session()
 
     with (
+        patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
         patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
         patch.object(provider.browser, "fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
@@ -36,7 +37,7 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
         "자동 로그인을 시도합니다...",
         "쿠팡 로그인 성공",
     ]
-    launch.assert_awaited_once_with(provider.session_store.paths)
+    launch.assert_awaited_once_with(provider.store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "merchant@example.com", "secret")
     wait_for_manual_login.assert_awaited_once_with(session, poll_count=30)

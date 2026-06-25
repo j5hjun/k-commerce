@@ -5,7 +5,9 @@
 This repository uses `uv` workspace management.
 
 - workspace root: `pyproject.toml`
-- current package: `packages/mcp`
+- workspace packages:
+  - `packages/cli`
+  - `packages/mcp`
 
 ## Common Commands
 
@@ -15,6 +17,7 @@ Use these commands from the repository root unless noted otherwise.
 uv sync
 uv build
 uv run pytest
+uv run k-commerce --help
 uv run k-commerce-mcp
 ```
 

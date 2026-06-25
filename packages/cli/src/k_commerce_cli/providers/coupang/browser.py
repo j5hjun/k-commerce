@@ -13,9 +13,7 @@ COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
 COUPANG_VIEWPORT = {"width": 1440, "height": 900}
 COUPANG_LOGIN_LINK_SELECTOR = 'a[href*="login/login.pang"]'
-COUPANG_MYCOUPANG_SELECTOR = (
-    'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
-)
+COUPANG_MYCOUPANG_SELECTOR = 'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
 
 
 @dataclass(frozen=True)
