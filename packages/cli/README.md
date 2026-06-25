@@ -17,6 +17,8 @@ uv sync
 
 ## Usage
 
+The CLI currently supports the `coupang` provider.
+
 Run the CLI from the workspace root:
 
 ```bash
@@ -50,6 +52,9 @@ uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
 
 This option is intended for local verification and automated tests where credentials and session files
 must be isolated from the default `~/.k-commerce` directory.
+
+If you pass an unsupported provider, the CLI reports the supported provider names from the shared
+provider registry.
 
 ## Coupang Login Flow
 
