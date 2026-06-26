@@ -17,7 +17,6 @@ def _normalize_order_field(value: object) -> str:
 
 def _format_order_entry(entry: OrderListEntry) -> str:
     return (
-        f"주문번호: {_normalize_order_field(entry.order_id)} | "
         f"상품: {_normalize_order_field(entry.title)} | "
         f"수량: {entry.quantity} | "
         f"상태: {_normalize_order_field(entry.status)}"

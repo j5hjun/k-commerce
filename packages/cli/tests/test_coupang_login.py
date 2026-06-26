@@ -456,7 +456,6 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
     provider.order_browser.read_visible_orders = AsyncMock(
         return_value=(
             OrderListEntry(
-                order_id="1001",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -475,7 +474,6 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
         message="주문 1건을 찾았습니다.",
         orders=(
             OrderListEntry(
-                order_id="1001",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -526,7 +524,6 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
     provider.order_browser.read_visible_orders = AsyncMock(
         return_value=(
             OrderListEntry(
-                order_id="1001",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -545,7 +542,6 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
         message="주문 1건을 찾았습니다.",
         orders=(
             OrderListEntry(
-                order_id="1001",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",

@@ -25,13 +25,11 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
             message="주문 2건을 찾았습니다.",
             orders=(
                 OrderListEntry(
-                    order_id="1001",
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",
                 ),
                 OrderListEntry(
-                    order_id="1002",
                     title="생수 2L",
                     quantity=1,
                     status="배송중",
@@ -45,8 +43,8 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "주문번호: 1001 | 상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
-        "주문번호: 1002 | 상품: 생수 2L | 수량: 1 | 상태: 배송중",
+        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
+        "상품: 생수 2L | 수량: 1 | 상태: 배송중",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list_orders.assert_awaited_once_with(root_dir=None)
@@ -62,7 +60,6 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
             message="주문 1건을 찾았습니다.",
             orders=(
                 OrderListEntry(
-                    order_id="10|01\nA",
                     title="로켓\n프레시 | 사과",
                     quantity=2,
                     status="배송|\n완료",
@@ -77,7 +74,7 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "주문번호: 10 01 A | 상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료",
+        "상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list_orders.assert_awaited_once_with(root_dir=None)
@@ -93,7 +90,6 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
             message="주문 1건을 찾았습니다.",
             orders=(
                 OrderListEntry(
-                    order_id="1001",
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",
@@ -108,7 +104,7 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "주문번호: 1001 | 상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
+        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list_orders.assert_awaited_once_with(root_dir=None)
