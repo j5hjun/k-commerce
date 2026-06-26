@@ -25,3 +25,9 @@ def ensure_profile_dir(root_dir: Path) -> ProviderPaths:
     paths = ensure_session_root(root_dir)
     paths.profile_dir.mkdir(parents=True, exist_ok=True)
     return paths
+
+
+def ensure_existing_session(root_dir: Path) -> ProviderPaths:
+    paths = ensure_session_root(root_dir)
+    paths.cookies_file.write_text("cookies", encoding="utf-8")
+    return paths

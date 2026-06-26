@@ -5,14 +5,14 @@ import pytest
 from k_commerce_cli.cli import app
 from k_commerce_cli.providers.registry import get_provider
 
-from ._helpers import RUNNER, ensure_profile_dir, make_session
+from ._helpers import RUNNER, ensure_existing_session, make_session
 
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Path) -> None:
     provider = get_provider("coupang")
     root_dir = tmp_path
-    paths = ensure_profile_dir(root_dir)
+    paths = ensure_existing_session(root_dir)
     session = make_session()
 
     with (
@@ -20,6 +20,8 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
         patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(provider.browser, "open_home", new=AsyncMock()) as open_home,
         patch.object(provider.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
+        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock()) as wait_for_manual_login,
         patch.object(provider.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
@@ -30,4 +32,6 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
     assert provider.store.paths == paths
     open_home.assert_awaited_once_with(session)
     is_logged_in.assert_awaited_once_with(session.tab)
+    open_login_entry.assert_not_awaited()
+    wait_for_manual_login.assert_not_awaited()
     close.assert_awaited_once_with(session)

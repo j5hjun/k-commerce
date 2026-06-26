@@ -12,7 +12,7 @@ from k_commerce_cli.providers.registry import get_provider
 @provider_argument_with_root_dir_option
 async def logout(provider: str, root_dir: Path | None) -> None:
     try:
-        result = await get_provider(provider).logout(root_dir=root_dir)
+        result = await get_provider(provider).auth.logout(root_dir=root_dir)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 

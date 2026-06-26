@@ -34,7 +34,7 @@ async def login() -> None:
 @provider_argument_with_root_dir_option
 async def login_run(provider: str, root_dir: Path | None) -> None:
     try:
-        result = await get_provider(provider).login(root_dir=root_dir)
+        result = await get_provider(provider).auth.login(root_dir=root_dir)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 
@@ -48,7 +48,7 @@ async def login_run(provider: str, root_dir: Path | None) -> None:
 @provider_argument_with_root_dir_option
 async def login_status(provider: str, root_dir: Path | None) -> None:
     try:
-        result = await get_provider(provider).status(root_dir=root_dir)
+        result = await get_provider(provider).auth.status(root_dir=root_dir)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 

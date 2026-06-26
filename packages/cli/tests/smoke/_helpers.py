@@ -28,6 +28,10 @@ async def invoke_login(root_dir: Path):
     return await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
 
+async def invoke_order_list(root_dir: Path):
+    return await RUNNER.invoke(app, ["order", "list", "coupang", "--root-dir", str(root_dir)])
+
+
 def provider_paths(root_dir: Path) -> ProviderPaths:
     return ProviderPaths("coupang", root_dir=root_dir)
 

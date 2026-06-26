@@ -20,3 +20,19 @@ class StatusResult:
     provider: str
     logged_in: bool
     message: str
+
+
+@dataclass(frozen=True)
+class OrderListEntry:
+    order_id: str
+    title: str
+    quantity: int
+    status: str
+
+
+@dataclass(frozen=True)
+class OrderListResult:
+    provider: str
+    success: bool
+    message: str
+    orders: tuple[OrderListEntry, ...]
