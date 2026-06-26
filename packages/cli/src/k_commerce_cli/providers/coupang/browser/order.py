@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
-from k_commerce_cli.types import OrderListEntry
+from k_commerce_cli.types import OrderListEntry, OrderPageState, OrderStatus
+
+from .session import BrowserElement, BrowserTab, CoupangBrowserSession
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
 
 
 class CoupangOrderBrowser:
-    async def open_order_list(self, session: object) -> None:
+    async def open_order_list(self, session: CoupangBrowserSession) -> None:
         await session.tab.get(COUPANG_ORDER_LIST_URL)
 
-    async def read_order_page_state(self, tab: object) -> dict[str, object]:
+    async def read_order_page_state(self, tab: BrowserTab) -> OrderPageState:
         page_url = str(getattr(tab, "url", ""))
         has_login_prompt = await self._selector_exists(
             tab, 'input[type="password"], input[name="password"], form[action*="login"]'
@@ -28,16 +31,16 @@ class CoupangOrderBrowser:
             tab,
             '[aria-busy="true"], [class*="loading"], [class*="skeleton"], [class*="spinner"]',
         )
-        return {
-            "url": page_url,
-            "ready": (not has_loading_indicator) and (has_order_signals or has_empty_state),
-            "has_login_prompt": has_login_prompt or "login.coupang.com" in page_url,
-            "has_order_signals": has_order_signals,
-            "has_empty_state": has_empty_state,
-            "has_loading_indicator": has_loading_indicator,
-        }
+        return OrderPageState(
+            url=page_url,
+            ready=(not has_loading_indicator) and (has_order_signals or has_empty_state),
+            has_login_prompt=has_login_prompt or "login.coupang.com" in page_url,
+            has_order_signals=has_order_signals,
+            has_empty_state=has_empty_state,
+            has_loading_indicator=has_loading_indicator,
+        )
 
-    async def read_visible_orders(self, tab: object) -> tuple[OrderListEntry, ...]:
+    async def read_visible_orders(self, tab: BrowserTab) -> tuple[OrderListEntry, ...]:
         order_root = await self._safe_select(tab, '[class*="my-area-contents"] > div')
         if order_root is None:
             order_root = await self._safe_select(tab, '[class*="my-area-contents"]')
@@ -96,7 +99,7 @@ class CoupangOrderBrowser:
                     OrderListEntry(
                         title=title,
                         quantity=quantity,
-                        status=status,
+                        status=cast(OrderStatus, status),
                     )
                 )
 
@@ -127,7 +130,7 @@ class CoupangOrderBrowser:
         starts_with_order_date = normalized[:32].count("주문") > 0 and normalized[:16].count(".") >= 2
         return starts_with_order_date and has_order_date and has_detail_link and has_known_status
 
-    async def _extract_title(self, item_node: object) -> str:
+    async def _extract_title(self, item_node: BrowserElement) -> str:
         action_pattern = re.compile(r"주문 상세보기|배송 조회|교환, 반품 신청|리뷰 작성하기|판매자 문의|장바구니 담기|이전|다음")
         order_date_pattern = re.compile(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문")
         price_pattern = re.compile(r"\d{1,3}(,\d{3})*\s*원")
@@ -141,18 +144,18 @@ class CoupangOrderBrowser:
                 return link_text
         return ""
 
-    def _children(self, node: object) -> list[object]:
+    def _children(self, node: BrowserElement) -> list[BrowserElement]:
         children = getattr(node, "children", [])
         return children if isinstance(children, list) else []
 
     def _looks_like_order_group(self, text: str) -> bool:
         return bool(re.match(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문", text)) and "주문 상세보기" in text
 
-    def _normalize_text(self, value: object) -> str:
+    def _normalize_text(self, value: BrowserElement | str) -> str:
         text = getattr(value, "text_all", value)
         return " ".join(str(text or "").split())
 
-    async def _query_all(self, node: object, selector: str) -> list[object]:
+    async def _query_all(self, node: BrowserElement, selector: str) -> list[BrowserElement]:
         query = getattr(node, "query_selector_all", None)
         if not callable(query):
             return []
@@ -162,7 +165,7 @@ class CoupangOrderBrowser:
             return []
         return results if isinstance(results, list) else []
 
-    async def _safe_select(self, tab: object, selector: str) -> object | None:
+    async def _safe_select(self, tab: BrowserTab, selector: str) -> BrowserElement | None:
         select = getattr(tab, "select", None)
         if not callable(select):
             return None
@@ -171,7 +174,7 @@ class CoupangOrderBrowser:
         except Exception:
             return None
 
-    async def _selector_exists(self, tab: object, selector: str) -> bool:
+    async def _selector_exists(self, tab: BrowserTab, selector: str) -> bool:
         return await self._safe_select(tab, selector) is not None
 
 

@@ -12,6 +12,7 @@ from k_commerce_cli.providers.coupang.browser.order import (  # noqa: E402
     COUPANG_ORDER_LIST_URL,
     CoupangOrderBrowser,
 )
+from k_commerce_cli.types import OrderPageState
 
 
 class _DummyOrderTab:
@@ -146,9 +147,14 @@ async def test_read_order_page_state_reports_logged_out_page() -> None:
 
     state = await browser.read_order_page_state(tab)
 
-    assert state["ready"] is False
-    assert state["has_login_prompt"] is True
-    assert state["has_order_signals"] is False
+    assert state == OrderPageState(
+        url="https://login.coupang.com/login/login.pang",
+        ready=False,
+        has_login_prompt=True,
+        has_order_signals=False,
+        has_empty_state=False,
+        has_loading_indicator=False,
+    )
 
 
 @pytest.mark.anyio
@@ -160,10 +166,14 @@ async def test_read_order_page_state_uses_selectors_without_evaluate() -> None:
 
     state = await browser.read_order_page_state(tab)
 
-    assert state["url"] == "https://mc.coupang.com/ssr/desktop/order/list"
-    assert state["ready"] is True
-    assert state["has_login_prompt"] is False
-    assert state["has_order_signals"] is True
+    assert state == OrderPageState(
+        url="https://mc.coupang.com/ssr/desktop/order/list",
+        ready=True,
+        has_login_prompt=False,
+        has_order_signals=True,
+        has_empty_state=False,
+        has_loading_indicator=False,
+    )
     tab.evaluate.assert_not_awaited()
 
 

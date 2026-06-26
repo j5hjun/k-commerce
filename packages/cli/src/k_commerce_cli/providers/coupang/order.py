@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from k_commerce_cli.providers.base import OrderProvider
-from k_commerce_cli.types import OrderListResult
+from k_commerce_cli.types import OrderListResult, OrderPageState
+from .browser.session import BrowserTab
 from .browser.order import CoupangOrderBrowser
 
 ORDER_PAGE_STATE_ATTEMPTS = 3
@@ -42,14 +43,14 @@ class CoupangOrderProvider(OrderProvider):
 
             await self.order_browser.open_order_list(restored_session)
             page_state = await self._wait_for_order_page(restored_session.tab)
-            if page_state["has_login_prompt"]:
+            if page_state.has_login_prompt:
                 return OrderListResult(
                     provider=self.auth_provider.name,
                     success=False,
                     message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
                     orders=(),
                 )
-            if not page_state["ready"]:
+            if not page_state.ready:
                 return OrderListResult(
                     provider=self.auth_provider.name,
                     success=False,
@@ -67,19 +68,19 @@ class CoupangOrderProvider(OrderProvider):
         finally:
             await self.auth_provider._close_browser_session()
 
-    async def _wait_for_order_page(self, tab: object) -> dict[str, object]:
-        page_state: dict[str, object] = {
-            "url": str(getattr(tab, "url", "")),
-            "ready": False,
-            "has_login_prompt": False,
-            "has_order_signals": False,
-            "has_empty_state": False,
-            "has_loading_indicator": False,
-        }
+    async def _wait_for_order_page(self, tab: BrowserTab) -> OrderPageState:
+        page_state = OrderPageState(
+            url=str(getattr(tab, "url", "")),
+            ready=False,
+            has_login_prompt=False,
+            has_order_signals=False,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
 
         for attempt in range(ORDER_PAGE_STATE_ATTEMPTS):
             page_state = await self.order_browser.read_order_page_state(tab)
-            if page_state["has_login_prompt"] or page_state["ready"]:
+            if page_state.has_login_prompt or page_state.ready:
                 return page_state
             if attempt + 1 < ORDER_PAGE_STATE_ATTEMPTS:
                 await asyncio.sleep(ORDER_PAGE_STATE_POLL_SECONDS)

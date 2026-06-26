@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import nodriver as uc
 
@@ -12,10 +13,45 @@ from k_commerce_cli.providers.paths import ProviderPaths
 COUPANG_VIEWPORT = {"width": 1440, "height": 900}
 
 
+class BrowserElement(Protocol):
+    text_all: str
+    children: list["BrowserElement"]
+
+    async def query_selector_all(self, selector: str) -> list["BrowserElement"]: ...
+
+    async def click(self) -> None: ...
+
+    async def send_keys(self, text: str) -> None: ...
+
+
+class BrowserTab(Protocol):
+    url: str
+
+    async def get(self, url: str) -> None: ...
+
+    async def select(self, selector: str, timeout: int = 0) -> BrowserElement | None: ...
+
+
+class BrowserCookies(Protocol):
+    async def save(self, *, file: str) -> None: ...
+
+    async def load(self, *, file: str) -> None: ...
+
+
+class BrowserRuntime(Protocol):
+    main_tab: BrowserTab | None
+    tabs: list[BrowserTab]
+    cookies: BrowserCookies
+
+    async def get(self, url: str) -> BrowserTab: ...
+
+    def stop(self) -> object: ...
+
+
 @dataclass(frozen=True)
 class CoupangBrowserSession:
-    browser: object
-    tab: object
+    browser: BrowserRuntime
+    tab: BrowserTab
     profile_dir: Path
     cookies_file: Path
 
@@ -61,13 +97,13 @@ class CoupangSessionBrowser:
     async def _sleep_ms(self, timeout_ms: int) -> None:
         await asyncio.sleep(timeout_ms / 1000)
 
-    async def _ensure_tab(self, browser: object) -> object:
+    async def _ensure_tab(self, browser: BrowserRuntime) -> BrowserTab:
         main_tab = getattr(browser, "main_tab", None)
         if main_tab is not None:
             return main_tab
         return await browser.get("about:blank")
 
-    async def _load_cookies(self, browser: object, cookies_file: Path) -> None:
+    async def _load_cookies(self, browser: BrowserRuntime, cookies_file: Path) -> None:
         if not cookies_file.is_file():
             return
 
@@ -76,7 +112,9 @@ class CoupangSessionBrowser:
         if load is not None:
             await load(file=str(cookies_file))
 
-    async def _safe_select(self, tab: object, selector: str, timeout: int = 1):
+    async def _safe_select(
+        self, tab: BrowserTab, selector: str, timeout: int = 1
+    ) -> BrowserElement | None:
         try:
             return await tab.select(selector, timeout=timeout)
         except Exception:
@@ -86,9 +124,9 @@ class CoupangSessionBrowser:
             except Exception:
                 return None
 
-    def _active_tab(self, session: CoupangBrowserSession) -> object:
+    def _active_tab(self, session: CoupangBrowserSession) -> BrowserTab:
         tabs = getattr(session.browser, "tabs", None)
-        candidates: list[object] = []
+        candidates: list[BrowserTab] = []
         if isinstance(tabs, list):
             candidates.extend(reversed(tabs))
 

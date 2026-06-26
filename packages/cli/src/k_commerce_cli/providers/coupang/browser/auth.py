@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .session import CoupangBrowserSession, CoupangSessionBrowser
+from k_commerce_cli.types import LoginPageState
+
+from .session import BrowserTab, CoupangBrowserSession, CoupangSessionBrowser
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
@@ -21,13 +23,13 @@ class CoupangAuthBrowser:
     async def open_login_entry(self, session: CoupangBrowserSession) -> None:
         await self.open_login(session)
 
-    async def is_logged_in(self, tab: object) -> bool:
+    async def is_logged_in(self, tab: BrowserTab) -> bool:
         page_state = await self._read_login_state(tab)
-        page_url = page_state["url"]
+        page_url = page_state.url
         if "login.coupang.com" in page_url:
             return False
 
-        return (not page_state["has_login_link"]) and page_state["has_mycoupang_link"]
+        return (not page_state.has_login_link) and page_state.has_mycoupang_link
 
     async def wait_for_manual_login(
         self,
@@ -65,12 +67,12 @@ class CoupangAuthBrowser:
         await submit_button.click()
         return True
 
-    async def _read_login_state(self, tab: object) -> dict[str, object]:
+    async def _read_login_state(self, tab: BrowserTab) -> LoginPageState:
         page_url = getattr(tab, "url", "")
         login_link = await self.session_browser._safe_select(tab, COUPANG_LOGIN_LINK_SELECTOR)
         my_coupang_link = await self.session_browser._safe_select(tab, COUPANG_MYCOUPANG_SELECTOR)
-        return {
-            "url": page_url,
-            "has_login_link": login_link is not None,
-            "has_mycoupang_link": my_coupang_link is not None,
-        }
+        return LoginPageState(
+            url=str(page_url),
+            has_login_link=login_link is not None,
+            has_mycoupang_link=my_coupang_link is not None,
+        )
