@@ -44,6 +44,24 @@ class _DummyOrderElement:
         return list(self._query_map.get(selector, []))
 
 
+class _PaginatedOrderElement(_DummyOrderElement):
+    def __init__(self, on_click) -> None:
+        super().__init__("다음")
+        self._on_click = on_click
+
+    async def click(self) -> None:
+        self._on_click()
+
+
+class _ClickableOrderElement(_DummyOrderElement):
+    def __init__(self, text: str, on_click) -> None:
+        super().__init__(text)
+        self._on_click = on_click
+
+    async def click(self) -> None:
+        self._on_click()
+
+
 @pytest.mark.anyio
 async def test_open_order_list_opens_coupang_order_list_url() -> None:
     browser = CoupangOrderBrowser()
@@ -205,3 +223,91 @@ async def test_read_visible_orders_rejects_status_only_non_order_sections() -> N
 
     assert len(orders) == 1
     assert orders[0].title == "상품명"
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_follows_next_page_until_it_stops() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+
+    def make_item(title: str, status: str) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{title} {status} 장바구니 담기",
+            query_map={"a": [_DummyOrderElement(title)]},
+        )
+
+    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{date} 주문 주문 상세보기 {item.text_all}",
+            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+        )
+
+    page_index = 0
+    roots = [
+        _DummyOrderElement(children=[make_group("2026. 6. 26", make_item("첫번째 상품", "배송완료"))]),
+        _DummyOrderElement(children=[make_group("2026. 6. 25", make_item("두번째 상품", "배송중"))]),
+    ]
+
+    def advance_page() -> None:
+        nonlocal page_index
+        if page_index + 1 < len(roots):
+            page_index += 1
+            tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
+            roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+        else:
+            roots[page_index]._query_map["button, a"] = []
+
+    tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
+    roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("첫번째 상품", "두번째 상품")
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_collects_all_period_scopes() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+
+    def make_item(title: str, status: str) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{title} {status} 장바구니 담기",
+            query_map={"a": [_DummyOrderElement(title)]},
+        )
+
+    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{date} 주문 주문 상세보기 {item.text_all}",
+            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+        )
+
+    scopes = {
+        "최근 6개월": [make_group("2026. 6. 26", make_item("최근상품", "배송완료"))],
+        "2025": [make_group("2025. 12. 24", make_item("작년상품", "배송중"))],
+    }
+    current_scope = "최근 6개월"
+    clicked_scopes: list[str] = []
+
+    def render_root() -> _DummyOrderElement:
+        controls = [
+            _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
+            for label in scopes
+        ]
+        return _DummyOrderElement(
+            children=list(scopes[current_scope]),
+            query_map={"button, a": controls},
+        )
+
+    def select_scope(scope: str) -> None:
+        nonlocal current_scope
+        clicked_scopes.append(scope)
+        current_scope = scope
+        tab.select_map['[class*="my-area-contents"] > div'] = render_root()
+
+    tab.select_map['[class*="my-area-contents"] > div'] = render_root()
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("최근상품", "작년상품")
+    assert clicked_scopes == ["2025"]

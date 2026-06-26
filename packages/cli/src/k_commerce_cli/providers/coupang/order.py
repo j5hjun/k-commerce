@@ -6,6 +6,8 @@ from typing import Protocol
 
 from k_commerce_cli.providers.base import OrderProvider
 from k_commerce_cli.providers.constants import ProviderName
+from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.providers.store import ProviderStore
 from k_commerce_cli.types import OrderListResult, OrderPageState
 from .browser.session import BrowserTab
 from .browser import CoupangBrowserSession
@@ -30,7 +32,7 @@ class CoupangOrderProvider(OrderProvider):
         self.auth_provider = auth_provider
         self.order_browser = CoupangOrderBrowser()
 
-    async def list_orders(self, root_dir: Path | None = None) -> OrderListResult:
+    async def list(self, root_dir: Path | None = None) -> OrderListResult:
         restored_session = await self.auth_provider.restore_valid_session(root_dir)
         if restored_session is None:
             return OrderListResult(
@@ -58,7 +60,10 @@ class CoupangOrderProvider(OrderProvider):
                     orders=(),
                 )
 
-            orders = await self.order_browser.read_visible_orders(restored_session.tab)
+            orders = await self.order_browser.read_all_orders(restored_session.tab)
+            ProviderStore(
+                ProviderPaths(self.auth_provider.name, root_dir or Path.home() / ".k-commerce")
+            ).write_order_cache(orders)
             return OrderListResult(
                 provider=self.auth_provider.name,
                 success=True,

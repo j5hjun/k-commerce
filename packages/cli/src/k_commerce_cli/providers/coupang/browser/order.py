@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import cast
 
@@ -8,6 +9,10 @@ from k_commerce_cli.types import OrderListEntry, OrderPageState, OrderStatus
 from .session import BrowserElement, BrowserTab, CoupangBrowserSession
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
+ORDER_PAGE_TURN_ATTEMPTS = 10
+ORDER_PAGE_TURN_POLL_SECONDS = 0.2
+ORDER_PAGE_MAX_PAGES = 32
+ORDER_SCOPE_PATTERN = re.compile(r"^(최근\s*\d+개월|20\d{2})$")
 
 
 class CoupangOrderBrowser:
@@ -41,9 +46,7 @@ class CoupangOrderBrowser:
         )
 
     async def read_visible_orders(self, tab: BrowserTab) -> tuple[OrderListEntry, ...]:
-        order_root = await self._safe_select(tab, '[class*="my-area-contents"] > div')
-        if order_root is None:
-            order_root = await self._safe_select(tab, '[class*="my-area-contents"]')
+        order_root = await self._order_root(tab)
         if order_root is None:
             return ()
 
@@ -102,6 +105,17 @@ class CoupangOrderBrowser:
                         status=cast(OrderStatus, status),
                     )
                 )
+
+        return tuple(orders)
+
+    async def read_all_orders(self, tab: BrowserTab) -> tuple[OrderListEntry, ...]:
+        orders: list[OrderListEntry] = []
+        seen_rows: set[str] = set()
+        scope_labels = await self._scope_labels(tab)
+        await self._collect_current_scope_orders(tab, orders, seen_rows)
+        for scope_label in scope_labels:
+            await self._activate_scope(tab, scope_label)
+            await self._collect_current_scope_orders(tab, orders, seen_rows)
 
         return tuple(orders)
 
@@ -176,6 +190,115 @@ class CoupangOrderBrowser:
 
     async def _selector_exists(self, tab: BrowserTab, selector: str) -> bool:
         return await self._safe_select(tab, selector) is not None
+
+    async def _order_root(self, tab: BrowserTab) -> BrowserElement | None:
+        order_root = await self._safe_select(tab, '[class*="my-area-contents"] > div')
+        if order_root is not None:
+            return order_root
+        return await self._safe_select(tab, '[class*="my-area-contents"]')
+
+    async def _find_next_page_control(self, tab: BrowserTab) -> BrowserElement | None:
+        order_root = await self._order_root(tab)
+        if order_root is None:
+            return None
+
+        for control in await self._query_all(order_root, "button, a"):
+            if self._normalize_text(control) == "다음":
+                return control
+        return None
+
+    async def _page_snapshot(self, tab: BrowserTab) -> str:
+        order_root = await self._order_root(tab)
+        if order_root is None:
+            return str(getattr(tab, "url", ""))
+        return self._snapshot_text(order_root)
+
+    async def _go_to_next_page(
+        self,
+        tab: BrowserTab,
+        control: BrowserElement,
+        current_snapshot: str,
+    ) -> bool:
+        return await self._click_and_settle(tab, control, current_snapshot)
+
+    async def _collect_current_scope_orders(
+        self,
+        tab: BrowserTab,
+        orders: list[OrderListEntry],
+        seen_rows: set[str],
+    ) -> None:
+        for _ in range(ORDER_PAGE_MAX_PAGES):
+            visible_orders = await self.read_visible_orders(tab)
+            for order in visible_orders:
+                row_key = "|".join((order.title, str(order.quantity), order.status))
+                if row_key in seen_rows:
+                    continue
+                seen_rows.add(row_key)
+                orders.append(order)
+
+            next_control = await self._find_next_page_control(tab)
+            if next_control is None:
+                break
+
+            current_snapshot = await self._page_snapshot(tab)
+            if not await self._go_to_next_page(tab, next_control, current_snapshot):
+                break
+
+    async def _scope_labels(self, tab: BrowserTab) -> list[str]:
+        order_root = await self._order_root(tab)
+        if order_root is None:
+            return []
+
+        labels: list[str] = []
+        for control in await self._query_all(order_root, "button, a"):
+            label = self._normalize_text(control)
+            if not ORDER_SCOPE_PATTERN.match(label):
+                continue
+            if label == "최근 6개월":
+                continue
+            if label in labels:
+                continue
+            labels.append(label)
+        return labels
+
+    async def _activate_scope(self, tab: BrowserTab, scope_label: str) -> None:
+        order_root = await self._order_root(tab)
+        if order_root is None:
+            return
+
+        for control in await self._query_all(order_root, "button, a"):
+            if self._normalize_text(control) != scope_label:
+                continue
+            current_snapshot = await self._page_snapshot(tab)
+            await self._click_and_settle(tab, control, current_snapshot)
+            return
+
+    async def _click_and_settle(
+        self,
+        tab: BrowserTab,
+        control: BrowserElement,
+        current_snapshot: str,
+    ) -> bool:
+        click = getattr(control, "click", None)
+        if not callable(click):
+            return False
+
+        try:
+            await click()
+        except Exception:
+            return False
+
+        for _ in range(ORDER_PAGE_TURN_ATTEMPTS):
+            await asyncio.sleep(ORDER_PAGE_TURN_POLL_SECONDS)
+            if await self._page_snapshot(tab) != current_snapshot:
+                return True
+        return False
+
+    def _snapshot_text(self, node: BrowserElement) -> str:
+        parts = [self._normalize_text(node)]
+        for child in self._children(node):
+            parts.append(self._snapshot_text(child))
+        return " ".join(part for part in parts if part).strip()
 
 
 __all__ = ["COUPANG_ORDER_LIST_URL", "CoupangOrderBrowser"]

@@ -2,6 +2,8 @@
 
 MCP server for Korean commerce workflows.
 
+Current CLI behavior worth noting: Coupang `order list` walks every available period scope on the order-list page, follows each paginated result set, and refreshes a local cache file at `~/.k-commerce/coupang/orders.json`. The MCP package does not expose that cache as a tool yet.
+
 ## Setup
 
 Install the workspace from the repository root:

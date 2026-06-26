@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import types
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -23,7 +24,7 @@ from k_commerce_cli.providers.coupang import CoupangAuthProvider, CoupangOrderPr
 from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import ProviderStore
-from k_commerce_cli.types import OrderListEntry, OrderListResult, OrderPageState, StatusResult
+from k_commerce_cli.types import LoginResult, OrderListEntry, OrderListResult, OrderPageState, StatusResult
 
 
 class _DummyElement:
@@ -323,6 +324,7 @@ async def test_login_with_credentials_uses_browser_form_submission() -> None:
     browser.fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
 
 
+
 @pytest.mark.anyio
 async def test_persist_session_saves_cookies_and_metadata() -> None:
     provider = CoupangAuthProvider()
@@ -437,7 +439,7 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
 
 
 @pytest.mark.anyio
-async def test_list_orders_returns_logged_out_when_session_is_not_valid(
+async def test_list_returns_logged_out_when_session_is_not_valid(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -451,7 +453,7 @@ async def test_list_orders_returns_logged_out_when_session_is_not_valid(
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.list_orders(root_dir=tmp_path)
+    result = await provider.list(root_dir=tmp_path)
 
     assert result == OrderListResult(
         provider="coupang",
@@ -466,7 +468,7 @@ async def test_list_orders_returns_logged_out_when_session_is_not_valid(
 
 
 @pytest.mark.anyio
-async def test_list_orders_opens_order_page_after_restoring_valid_session(
+async def test_list_opens_order_page_after_restoring_valid_session(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -487,7 +489,7 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
             has_loading_indicator=False,
         )
     )
-    provider.order_browser.read_visible_orders = AsyncMock(
+    provider.order_browser.read_all_orders = AsyncMock(
         return_value=(
             OrderListEntry(
                 title="로켓프레시 사과",
@@ -500,7 +502,7 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.list_orders(root_dir=tmp_path)
+    result = await provider.list(root_dir=tmp_path)
 
     assert result == OrderListResult(
         provider=ProviderName.COUPANG,
@@ -519,12 +521,15 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
     browser.is_logged_in.assert_awaited_once_with(session.tab)
     provider.order_browser.open_order_list.assert_awaited_once_with(session)
     provider.order_browser.read_order_page_state.assert_awaited_once_with(session.tab)
-    provider.order_browser.read_visible_orders.assert_awaited_once_with(session.tab)
+    provider.order_browser.read_all_orders.assert_awaited_once_with(session.tab)
     browser.close.assert_awaited_once_with(session)
+    assert json.loads((tmp_path / "coupang" / "orders.json").read_text(encoding="utf-8")) == [
+        {"title": "로켓프레시 사과", "quantity": 2, "status": "배송완료"}
+    ]
 
 
 @pytest.mark.anyio
-async def test_list_orders_retries_until_order_page_becomes_ready(
+async def test_list_retries_until_order_page_becomes_ready(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -555,7 +560,7 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
             ),
         ]
     )
-    provider.order_browser.read_visible_orders = AsyncMock(
+    provider.order_browser.read_all_orders = AsyncMock(
         return_value=(
             OrderListEntry(
                 title="로켓프레시 사과",
@@ -568,7 +573,7 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.list_orders(root_dir=tmp_path)
+    result = await provider.list(root_dir=tmp_path)
 
     assert result == OrderListResult(
         provider=ProviderName.COUPANG,
@@ -583,12 +588,12 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
         ),
     )
     assert provider.order_browser.read_order_page_state.await_count == 2
-    provider.order_browser.read_visible_orders.assert_awaited_once_with(session.tab)
+    provider.order_browser.read_all_orders.assert_awaited_once_with(session.tab)
     browser.close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
-async def test_list_orders_returns_logged_out_when_order_page_redirects_to_login(
+async def test_list_returns_logged_out_when_order_page_redirects_to_login(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -609,12 +614,12 @@ async def test_list_orders_returns_logged_out_when_order_page_redirects_to_login
             has_loading_indicator=False,
         )
     )
-    provider.order_browser.read_visible_orders = AsyncMock(return_value=())
+    provider.order_browser.read_all_orders = AsyncMock(return_value=())
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.list_orders(root_dir=tmp_path)
+    result = await provider.list(root_dir=tmp_path)
 
     assert result == OrderListResult(
         provider=ProviderName.COUPANG,
@@ -623,12 +628,12 @@ async def test_list_orders_returns_logged_out_when_order_page_redirects_to_login
         orders=(),
     )
     provider.order_browser.read_order_page_state.assert_awaited_once_with(session.tab)
-    provider.order_browser.read_visible_orders.assert_not_awaited()
+    provider.order_browser.read_all_orders.assert_not_awaited()
     browser.close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
-async def test_list_orders_returns_failure_when_order_page_never_becomes_ready(
+async def test_list_returns_failure_when_order_page_never_becomes_ready(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -667,12 +672,12 @@ async def test_list_orders_returns_failure_when_order_page_never_becomes_ready(
             ),
         ]
     )
-    provider.order_browser.read_visible_orders = AsyncMock(return_value=())
+    provider.order_browser.read_all_orders = AsyncMock(return_value=())
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.list_orders(root_dir=tmp_path)
+    result = await provider.list(root_dir=tmp_path)
 
     assert result == OrderListResult(
         provider=ProviderName.COUPANG,
@@ -681,12 +686,12 @@ async def test_list_orders_returns_failure_when_order_page_never_becomes_ready(
         orders=(),
     )
     assert provider.order_browser.read_order_page_state.await_count == 3
-    provider.order_browser.read_visible_orders.assert_not_awaited()
+    provider.order_browser.read_all_orders.assert_not_awaited()
     browser.close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
-async def test_list_orders_closes_browser_session_when_order_page_read_fails(
+async def test_list_closes_browser_session_when_order_page_read_fails(
     tmp_path: Path,
 ) -> None:
     auth_provider = CoupangAuthProvider()
@@ -705,6 +710,6 @@ async def test_list_orders_closes_browser_session_when_order_page_read_fails(
     cookies_file.write_text("cookies", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="boom"):
-        await provider.list_orders(root_dir=tmp_path)
+        await provider.list(root_dir=tmp_path)
 
     browser.close.assert_awaited_once_with(session)

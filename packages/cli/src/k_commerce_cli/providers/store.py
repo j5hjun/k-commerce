@@ -1,8 +1,10 @@
 import json
 import shutil
+from dataclasses import asdict
 from dataclasses import dataclass
 
 from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.types import OrderListEntry
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,7 @@ class ProviderStore:
         self.cookies_file = paths.cookies_file
         self.credentials_path = paths.credentials_path
         self.session_meta_path = paths.session_meta_path
+        self.orders_path = paths.orders_path
 
     def load_credentials(self) -> Credentials | None:
         if not self.credentials_path.exists():
@@ -66,5 +69,12 @@ class ProviderStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.session_meta_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def write_order_cache(self, orders: tuple[OrderListEntry, ...]) -> None:
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.orders_path.write_text(
+            json.dumps([asdict(order) for order in orders], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

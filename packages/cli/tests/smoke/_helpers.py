@@ -1,14 +1,13 @@
 import json
 import os
 import shutil
+import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from asyncclick.testing import CliRunner
-from k_commerce_cli.cli import app
 from k_commerce_cli.providers.paths import ProviderPaths
 
-RUNNER = CliRunner()
 LOCAL_PROVIDER_SOURCE_ROOT = Path.home() / ".k-commerce"
 CHROME_PROFILE_IGNORE_NAMES = {
     "DevToolsActivePort",
@@ -24,12 +23,39 @@ def require_smoke_enabled() -> None:
         pytest.skip("Set RUN_COUPANG_SMOKE=1 to run real-browser smoke tests.")
 
 
-async def invoke_login(root_dir: Path):
-    return await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
+def invoke_cli(
+    args: Sequence[str],
+    *,
+    extra_env: dict[str, str] | None = None,
+    timeout_seconds: int = 360,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        ["uv", "run", "k-commerce", *args],
+        cwd=Path(__file__).resolve().parents[4],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        timeout=timeout_seconds,
+    )
 
 
-async def invoke_order_list(root_dir: Path):
-    return await RUNNER.invoke(app, ["order", "list", "coupang", "--root-dir", str(root_dir)])
+def invoke_login(
+    root_dir: Path,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return invoke_cli(
+        ["login", "coupang", "--root-dir", str(root_dir)],
+        extra_env=extra_env,
+    )
+
+
+def invoke_order_list(root_dir: Path) -> subprocess.CompletedProcess[str]:
+    return invoke_cli(["order", "list", "coupang", "--root-dir", str(root_dir)])
 
 
 def provider_paths(root_dir: Path) -> ProviderPaths:
