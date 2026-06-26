@@ -7,7 +7,7 @@ from .auth import (
     COUPANG_MYCOUPANG_SELECTOR,
     CoupangAuthBrowser,
 )
-from .session import COUPANG_VIEWPORT, CoupangBrowserSession, CoupangSessionBrowser
+from .session import BrowserTab, COUPANG_VIEWPORT, CoupangBrowserSession, CoupangSessionBrowser
 
 
 class CoupangBrowser:
@@ -17,7 +17,7 @@ class CoupangBrowser:
         self.session = CoupangSessionBrowser()
         self.auth = CoupangAuthBrowser(self.session)
 
-    async def launch(self, paths):
+    async def launch(self, paths) -> CoupangBrowserSession:
         return await self.session.launch(paths)
 
     async def open_home(self, session: CoupangBrowserSession) -> None:
@@ -29,7 +29,7 @@ class CoupangBrowser:
     async def open_login_entry(self, session: CoupangBrowserSession) -> None:
         await self.auth.open_login_entry(session)
 
-    async def is_logged_in(self, tab: object) -> bool:
+    async def is_logged_in(self, tab: BrowserTab) -> bool:
         return await self.auth.is_logged_in(tab)
 
     async def wait_for_manual_login(
@@ -53,7 +53,7 @@ class CoupangBrowser:
     ) -> bool:
         return await self.auth.fill_login_form(session, email, password)
 
-    def _active_tab(self, session: CoupangBrowserSession) -> object:
+    def _active_tab(self, session: CoupangBrowserSession) -> BrowserTab:
         return self.session._active_tab(session)
 
 

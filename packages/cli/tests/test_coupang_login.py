@@ -19,9 +19,10 @@ from k_commerce_cli.providers.coupang.browser import (
     CoupangBrowserSession,
 )
 from k_commerce_cli.providers.coupang import CoupangAuthProvider, CoupangOrderProvider
+from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import ProviderStore
-from k_commerce_cli.types import OrderListEntry, OrderListResult, StatusResult
+from k_commerce_cli.types import OrderListEntry, OrderListResult, OrderPageState, StatusResult
 
 
 class _DummyElement:
@@ -456,12 +457,14 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
     auth_provider.browser = browser
     provider.order_browser.open_order_list = AsyncMock()
     provider.order_browser.read_order_page_state = AsyncMock(
-        return_value={
-            "url": "https://mc.coupang.com/ssr/desktop/order/list",
-            "ready": True,
-            "has_login_prompt": False,
-            "has_order_signals": True,
-        }
+        return_value=OrderPageState(
+            url="https://mc.coupang.com/ssr/desktop/order/list",
+            ready=True,
+            has_login_prompt=False,
+            has_order_signals=True,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
     )
     provider.order_browser.read_visible_orders = AsyncMock(
         return_value=(
@@ -479,7 +482,7 @@ async def test_list_orders_opens_order_page_after_restoring_valid_session(
     result = await provider.list_orders(root_dir=tmp_path)
 
     assert result == OrderListResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="주문 1건을 찾았습니다.",
         orders=(
@@ -513,22 +516,22 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
     provider.order_browser.open_order_list = AsyncMock()
     provider.order_browser.read_order_page_state = AsyncMock(
         side_effect=[
-            {
-                "url": "https://mc.coupang.com/ssr/desktop/order/list",
-                "ready": False,
-                "has_login_prompt": False,
-                "has_order_signals": False,
-                "has_empty_state": False,
-                "has_loading_indicator": True,
-            },
-            {
-                "url": "https://mc.coupang.com/ssr/desktop/order/list",
-                "ready": True,
-                "has_login_prompt": False,
-                "has_order_signals": True,
-                "has_empty_state": False,
-                "has_loading_indicator": False,
-            },
+            OrderPageState(
+                url="https://mc.coupang.com/ssr/desktop/order/list",
+                ready=False,
+                has_login_prompt=False,
+                has_order_signals=False,
+                has_empty_state=False,
+                has_loading_indicator=True,
+            ),
+            OrderPageState(
+                url="https://mc.coupang.com/ssr/desktop/order/list",
+                ready=True,
+                has_login_prompt=False,
+                has_order_signals=True,
+                has_empty_state=False,
+                has_loading_indicator=False,
+            ),
         ]
     )
     provider.order_browser.read_visible_orders = AsyncMock(
@@ -547,7 +550,7 @@ async def test_list_orders_retries_until_order_page_becomes_ready(
     result = await provider.list_orders(root_dir=tmp_path)
 
     assert result == OrderListResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="주문 1건을 찾았습니다.",
         orders=(
@@ -576,12 +579,14 @@ async def test_list_orders_returns_logged_out_when_order_page_redirects_to_login
     auth_provider.browser = browser
     provider.order_browser.open_order_list = AsyncMock()
     provider.order_browser.read_order_page_state = AsyncMock(
-        return_value={
-            "url": "https://login.coupang.com/login/login.pang",
-            "ready": False,
-            "has_login_prompt": True,
-            "has_order_signals": False,
-        }
+        return_value=OrderPageState(
+            url="https://login.coupang.com/login/login.pang",
+            ready=False,
+            has_login_prompt=True,
+            has_order_signals=False,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
     )
     provider.order_browser.read_visible_orders = AsyncMock(return_value=())
     cookies_file = tmp_path / "coupang" / "cookies.dat"
@@ -591,7 +596,7 @@ async def test_list_orders_returns_logged_out_when_order_page_redirects_to_login
     result = await provider.list_orders(root_dir=tmp_path)
 
     assert result == OrderListResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=False,
         message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
         orders=(),
@@ -615,30 +620,30 @@ async def test_list_orders_returns_failure_when_order_page_never_becomes_ready(
     provider.order_browser.open_order_list = AsyncMock()
     provider.order_browser.read_order_page_state = AsyncMock(
         side_effect=[
-            {
-                "url": "https://mc.coupang.com/ssr/desktop/order/list",
-                "ready": False,
-                "has_login_prompt": False,
-                "has_order_signals": False,
-                "has_empty_state": False,
-                "has_loading_indicator": True,
-            },
-            {
-                "url": "https://mc.coupang.com/ssr/desktop/order/list",
-                "ready": False,
-                "has_login_prompt": False,
-                "has_order_signals": False,
-                "has_empty_state": False,
-                "has_loading_indicator": True,
-            },
-            {
-                "url": "https://mc.coupang.com/ssr/desktop/order/list",
-                "ready": False,
-                "has_login_prompt": False,
-                "has_order_signals": False,
-                "has_empty_state": False,
-                "has_loading_indicator": False,
-            },
+            OrderPageState(
+                url="https://mc.coupang.com/ssr/desktop/order/list",
+                ready=False,
+                has_login_prompt=False,
+                has_order_signals=False,
+                has_empty_state=False,
+                has_loading_indicator=True,
+            ),
+            OrderPageState(
+                url="https://mc.coupang.com/ssr/desktop/order/list",
+                ready=False,
+                has_login_prompt=False,
+                has_order_signals=False,
+                has_empty_state=False,
+                has_loading_indicator=True,
+            ),
+            OrderPageState(
+                url="https://mc.coupang.com/ssr/desktop/order/list",
+                ready=False,
+                has_login_prompt=False,
+                has_order_signals=False,
+                has_empty_state=False,
+                has_loading_indicator=False,
+            ),
         ]
     )
     provider.order_browser.read_visible_orders = AsyncMock(return_value=())
@@ -649,7 +654,7 @@ async def test_list_orders_returns_failure_when_order_page_never_becomes_ready(
     result = await provider.list_orders(root_dir=tmp_path)
 
     assert result == OrderListResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=False,
         message="쿠팡 주문 페이지를 불러오지 못했습니다.",
         orders=(),
