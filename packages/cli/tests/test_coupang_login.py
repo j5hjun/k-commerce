@@ -161,17 +161,17 @@ async def test_is_logged_in_ignores_logout_link_on_logged_in_home() -> None:
 
 
 @pytest.mark.anyio
-async def test_is_logged_in_uses_evaluate_result_when_available() -> None:
+async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> None:
     browser = CoupangBrowser()
     tab = _DummyTab()
-    tab.url = "about:blank"
-    tab.evaluate_result = {
-        "url": COUPANG_HOME_URL,
-        "has_login_link": False,
-        "has_mycoupang_link": True,
+    tab.url = COUPANG_HOME_URL
+    tab.select_map = {
+        'a[href*="login/login.pang"]': None,
+        'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
     }
 
     assert await browser.is_logged_in(tab) is True
+    assert tab.evaluate_calls == []
 
 
 @pytest.mark.anyio
@@ -191,10 +191,17 @@ async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() ->
 
 
 @pytest.mark.anyio
-async def test_fill_login_form_uses_evaluate_when_available() -> None:
+async def test_fill_login_form_uses_selectors_without_evaluate() -> None:
     browser = CoupangBrowser()
     tab = _DummyTab()
-    tab.evaluate_result = True
+    email_input = _DummyElement()
+    password_input = _DummyElement()
+    submit_button = _DummyElement()
+    tab.select_map = {
+        'input[name="email"], input#login-email-input': email_input,
+        'input[name="password"], input#login-password-input': password_input,
+        'button[type="submit"], .login__button': submit_button,
+    }
     session = CoupangBrowserSession(
         browser=_DummyBrowser(tab),
         tab=tab,
@@ -205,7 +212,10 @@ async def test_fill_login_form_uses_evaluate_when_available() -> None:
     result = await browser.fill_login_form(session, "user@example.com", "secret")
 
     assert result is True
-    assert any("login-email-input" in script for script in tab.evaluate_calls)
+    email_input.send_keys.assert_awaited_once_with("user@example.com")
+    password_input.send_keys.assert_awaited_once_with("secret")
+    submit_button.click.assert_awaited_once_with()
+    assert tab.evaluate_calls == []
 
 
 @pytest.mark.anyio

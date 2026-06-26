@@ -15,13 +15,32 @@ from k_commerce_cli.providers.coupang.browser.order import (  # noqa: E402
 
 
 class _DummyOrderTab:
-    def __init__(self, evaluate_result: object) -> None:
-        if isinstance(evaluate_result, list) and any(
-            isinstance(item, Exception) for item in evaluate_result
-        ):
-            self.evaluate = AsyncMock(side_effect=evaluate_result)
-        else:
-            self.evaluate = AsyncMock(return_value=evaluate_result)
+    def __init__(self) -> None:
+        self.url = "about:blank"
+        self.select_map: dict[str, object | None] = {}
+        self.select_errors: dict[str, Exception] = {}
+        self.evaluate = AsyncMock()
+
+    async def select(self, selector: str, timeout: int = 0):
+        if selector in self.select_errors:
+            raise self.select_errors[selector]
+        return self.select_map.get(selector)
+
+
+class _DummyOrderElement:
+    def __init__(
+        self,
+        text: str = "",
+        *,
+        children: list[object] | None = None,
+        query_map: dict[str, list[object]] | None = None,
+    ) -> None:
+        self.text_all = text
+        self.children = children or []
+        self._query_map = query_map or {}
+
+    async def query_selector_all(self, selector: str):
+        return list(self._query_map.get(selector, []))
 
 
 @pytest.mark.anyio
@@ -38,17 +57,21 @@ async def test_open_order_list_opens_coupang_order_list_url() -> None:
 @pytest.mark.anyio
 async def test_read_visible_orders_extracts_text_rows() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            {
-                "title": "테스트 상품",
-                "quantity": "3",
-                "status": "배송완료",
-                "has_detail_link": True,
-                "raw_text": "2026. 6. 24 주문 테스트 상품 배송완료",
-            }
-        ]
+    item = _DummyOrderElement(
+        "테스트 상품 3개 배송완료 장바구니 담기",
+        query_map={
+            "a": [_DummyOrderElement("테스트 상품")],
+        },
     )
+    group = _DummyOrderElement(
+        "2026. 6. 24 주문 주문 상세보기 테스트 상품 3개 배송완료 장바구니 담기",
+        query_map={
+            'tr, [class*="sc-5a139ee-0"], td': [item],
+        },
+    )
+    order_root = _DummyOrderElement(children=[group])
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = order_root
 
     orders = await browser.read_visible_orders(tab)
 
@@ -56,28 +79,29 @@ async def test_read_visible_orders_extracts_text_rows() -> None:
     assert orders[0].title == "테스트 상품"
     assert orders[0].quantity == 3
     assert orders[0].status == "배송완료"
+    tab.evaluate.assert_not_awaited()
 
 
 @pytest.mark.anyio
 async def test_read_visible_orders_filters_blank_titles_and_defaults_quantity() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            {
-                "title": "   ",
-                "quantity": "9",
-                "status": "배송완료",
-                "has_detail_link": True,
-                "raw_text": "2026. 6. 24 주문",
-            },
-            {
-                "title": "두번째 상품",
-                "status": "배송중",
-                "has_detail_link": True,
-                "raw_text": "2026. 6. 24 주문 두번째 상품 배송중",
-            },
-        ]
+    blank_item = _DummyOrderElement(
+        "장바구니 담기",
+        query_map={"a": [_DummyOrderElement("   ")]},
     )
+    valid_item = _DummyOrderElement(
+        "두번째 상품 배송중 장바구니 담기",
+        query_map={"a": [_DummyOrderElement("두번째 상품")]},
+    )
+    group = _DummyOrderElement(
+        "2026. 6. 24 주문 주문 상세보기 두번째 상품 배송중 장바구니 담기",
+        query_map={
+            'tr, [class*="sc-5a139ee-0"], td': [blank_item, valid_item],
+        },
+    )
+    order_root = _DummyOrderElement(children=[group])
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = order_root
 
     orders = await browser.read_visible_orders(tab)
 
@@ -90,18 +114,11 @@ async def test_read_visible_orders_filters_blank_titles_and_defaults_quantity() 
 @pytest.mark.anyio
 async def test_read_visible_orders_rejects_generic_page_sections_without_order_signals() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            {
-                "title": "마이쿠팡 공지사항",
-                "quantity": "1",
-                "status": "",
-            },
-            {
-                "title": "추천 상품 모음",
-                "quantity": "1",
-                "status": "",
-            },
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = _DummyOrderElement(
+        children=[
+            _DummyOrderElement("마이쿠팡 공지사항"),
+            _DummyOrderElement("추천 상품 모음"),
         ]
     )
 
@@ -111,43 +128,21 @@ async def test_read_visible_orders_rejects_generic_page_sections_without_order_s
 
 
 @pytest.mark.anyio
-async def test_read_visible_orders_recovers_from_transient_evaluate_failure() -> None:
+async def test_read_visible_orders_returns_empty_when_order_root_is_missing() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            RuntimeError("execution context changed"),
-            [
-                {
-                    "title": "테스트 상품",
-                    "quantity": "2",
-                    "status": "배송완료",
-                    "has_detail_link": True,
-                    "raw_text": "2026. 6. 24 주문 테스트 상품 배송완료",
-                }
-            ],
-        ]
-    )
+    tab = _DummyOrderTab()
 
     orders = await browser.read_visible_orders(tab)
 
-    assert len(orders) == 1
-    assert orders[0].title == "테스트 상품"
-    assert orders[0].quantity == 2
-    assert orders[0].status == "배송완료"
-    assert tab.evaluate.await_count == 2
+    assert orders == ()
 
 
 @pytest.mark.anyio
 async def test_read_order_page_state_reports_logged_out_page() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        {
-            "url": "https://login.coupang.com/login/login.pang",
-            "ready": False,
-            "has_login_prompt": True,
-            "has_order_signals": False,
-        }
-    )
+    tab = _DummyOrderTab()
+    tab.url = "https://login.coupang.com/login/login.pang"
+    tab.select_map['input[type="password"], input[name="password"], form[action*="login"]'] = object()
 
     state = await browser.read_order_page_state(tab)
 
@@ -157,18 +152,11 @@ async def test_read_order_page_state_reports_logged_out_page() -> None:
 
 
 @pytest.mark.anyio
-async def test_read_order_page_state_decodes_wrapped_evaluate_result() -> None:
+async def test_read_order_page_state_uses_selectors_without_evaluate() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            ["url", {"type": "string", "value": "https://mc.coupang.com/ssr/desktop/order/list"}],
-            ["ready", {"type": "boolean", "value": True}],
-            ["has_login_prompt", {"type": "boolean", "value": False}],
-            ["has_order_signals", {"type": "boolean", "value": True}],
-            ["has_empty_state", {"type": "boolean", "value": False}],
-            ["has_loading_indicator", {"type": "boolean", "value": False}],
-        ]
-    )
+    tab = _DummyOrderTab()
+    tab.url = "https://mc.coupang.com/ssr/desktop/order/list"
+    tab.select_map['[data-testid*="order"], [class*="my-area-contents"], [class*="my-area-body"], [class*="order"], [id*="order"]'] = object()
 
     state = await browser.read_order_page_state(tab)
 
@@ -176,57 +164,34 @@ async def test_read_order_page_state_decodes_wrapped_evaluate_result() -> None:
     assert state["ready"] is True
     assert state["has_login_prompt"] is False
     assert state["has_order_signals"] is True
-
-
-@pytest.mark.anyio
-async def test_read_visible_orders_decodes_wrapped_object_rows() -> None:
-    browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            {
-                "type": "object",
-                "value": [
-                    ["title", {"type": "string", "value": "테스트 상품"}],
-                    ["quantity", {"type": "string", "value": "2"}],
-                    ["status", {"type": "string", "value": "배송완료"}],
-                    ["has_detail_link", {"type": "boolean", "value": True}],
-                    ["raw_text", {"type": "string", "value": "2026. 6. 24 주문 테스트 상품 배송완료"}],
-                ],
-            }
-        ]
-    )
-
-    orders = await browser.read_visible_orders(tab)
-
-    assert len(orders) == 1
-    assert orders[0].title == "테스트 상품"
-    assert orders[0].quantity == 2
-    assert orders[0].status == "배송완료"
+    tab.evaluate.assert_not_awaited()
 
 
 @pytest.mark.anyio
 async def test_read_visible_orders_rejects_status_only_non_order_sections() -> None:
     browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab(
-        [
-            {
-                "title": "배송상품 주문상태 안내",
-                "quantity": "1",
-                "status": "취소",
-                "has_detail_link": False,
-                "raw_text": "배송상품 주문상태 안내 취소",
-            },
-            {
-                "title": "2026. 6. 24 주문",
-                "quantity": "1",
-                "status": "배송중",
-                "has_detail_link": True,
-                "raw_text": "2026. 6. 24 주문 배송중",
-            },
-        ]
+    ignored_item = _DummyOrderElement(
+        "배송상품 주문상태 안내 취소 장바구니 담기",
+        query_map={"a": [_DummyOrderElement("배송상품 주문상태 안내")]},
+    )
+    ignored_group = _DummyOrderElement(
+        "주문 상세보기 배송상품 주문상태 안내 취소",
+        query_map={'tr, [class*="sc-5a139ee-0"], td': [ignored_item]},
+    )
+    valid_item = _DummyOrderElement(
+        "상품명 배송중 장바구니 담기",
+        query_map={"a": [_DummyOrderElement("상품명")]},
+    )
+    valid_group = _DummyOrderElement(
+        "2026. 6. 24 주문 주문 상세보기 상품명 배송중 장바구니 담기",
+        query_map={'tr, [class*="sc-5a139ee-0"], td': [valid_item]},
+    )
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = _DummyOrderElement(
+        children=[ignored_group, valid_group]
     )
 
     orders = await browser.read_visible_orders(tab)
 
     assert len(orders) == 1
-    assert orders[0].title == "2026. 6. 24 주문"
+    assert orders[0].title == "상품명"
