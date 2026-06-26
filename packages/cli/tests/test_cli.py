@@ -25,11 +25,13 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
             message="주문 2건을 찾았습니다.",
             orders=(
                 OrderListEntry(
+                    order_date="2026. 6. 26",
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",
                 ),
                 OrderListEntry(
+                    order_date="2026. 6. 25",
                     title="생수 2L",
                     quantity=1,
                     status="배송중",
@@ -60,6 +62,7 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
             message="주문 1건을 찾았습니다.",
             orders=(
                 OrderListEntry(
+                    order_date="2026. 6. 26",
                     title="로켓\n프레시 | 사과",
                     quantity=2,
                     status="배송|\n완료",
@@ -90,6 +93,7 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
             message="주문 1건을 찾았습니다.",
             orders=(
                 OrderListEntry(
+                    order_date="2026. 6. 26",
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",

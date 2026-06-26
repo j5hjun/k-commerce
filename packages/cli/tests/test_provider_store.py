@@ -6,6 +6,7 @@ import pytest
 import k_commerce_cli.providers.coupang as coupang_provider_module
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import Credentials, ProviderStore
+from k_commerce_cli.types import OrderListEntry
 
 
 def test_exposes_provider_paths(tmp_path: Path) -> None:
@@ -106,6 +107,90 @@ def test_write_session_metadata_persists_json(tmp_path: Path) -> None:
     assert json.loads(store.session_meta_path.read_text(encoding="utf-8")) == {
         "login_method": "automatic",
     }
+
+
+def test_write_order_cache_persists_orders_with_metadata(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+
+    store.write_order_cache(
+        (
+            OrderListEntry(
+                order_date="2026. 6. 26",
+                title="로켓프레시 사과",
+                quantity=2,
+                status="배송완료",
+            ),
+        )
+    )
+
+    assert json.loads(store.orders_path.read_text(encoding="utf-8")) == {
+        "orders": [
+            {
+                "order_date": "2026. 6. 26",
+                "title": "로켓프레시 사과",
+                "quantity": 2,
+                "status": "배송완료",
+            }
+        ]
+    }
+
+
+def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    store.write_order_cache(
+        (
+            OrderListEntry(
+                order_date="2026. 6. 26",
+                title="첫번째 상품",
+                quantity=1,
+                status="배송중",
+            ),
+            OrderListEntry(
+                order_date="2026. 6. 24",
+                title="두번째 상품",
+                quantity=1,
+                status="배송완료",
+            ),
+        )
+    )
+
+    merged = store.merge_order_cache(
+        (
+            OrderListEntry(
+                order_date="2026. 6. 27",
+                title="새상품",
+                quantity=1,
+                status="결제완료",
+            ),
+            OrderListEntry(
+                order_date="2026. 6. 26",
+                title="첫번째 상품",
+                quantity=1,
+                status="배송완료",
+            ),
+        )
+    )
+
+    assert merged == (
+        OrderListEntry(
+            order_date="2026. 6. 27",
+            title="새상품",
+            quantity=1,
+            status="결제완료",
+        ),
+        OrderListEntry(
+            order_date="2026. 6. 26",
+            title="첫번째 상품",
+            quantity=1,
+            status="배송완료",
+        ),
+        OrderListEntry(
+            order_date="2026. 6. 24",
+            title="두번째 상품",
+            quantity=1,
+            status="배송완료",
+        ),
+    )
 
 
 def test_has_profile_is_false_when_missing(tmp_path: Path) -> None:

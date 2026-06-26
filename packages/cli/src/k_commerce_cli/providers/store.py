@@ -75,6 +75,54 @@ class ProviderStore:
     def write_order_cache(self, orders: tuple[OrderListEntry, ...]) -> None:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.orders_path.write_text(
-            json.dumps([asdict(order) for order in orders], ensure_ascii=False, indent=2),
+            json.dumps({"orders": [asdict(order) for order in orders]}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def load_order_cache(self) -> tuple[OrderListEntry, ...]:
+        if not self.orders_path.exists():
+            return ()
+
+        data = json.loads(self.orders_path.read_text(encoding="utf-8"))
+        items = data.get("orders", []) if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return ()
+
+        orders: list[OrderListEntry] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                orders.append(
+                    OrderListEntry(
+                        order_date=str(item["order_date"]),
+                        title=str(item["title"]),
+                        quantity=int(item["quantity"]),
+                        status=str(item["status"]),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return tuple(orders)
+
+    def merge_order_cache(self, new_orders: tuple[OrderListEntry, ...]) -> tuple[OrderListEntry, ...]:
+        merged: dict[tuple[str, str, int], OrderListEntry] = {}
+
+        for order in self.load_order_cache():
+            merged[(order.order_date, order.title, order.quantity)] = order
+
+        for order in new_orders:
+            merged[(order.order_date, order.title, order.quantity)] = order
+
+        ordered_keys: list[tuple[str, str, int]] = []
+        seen_keys: set[tuple[str, str, int]] = set()
+        for order in new_orders + self.load_order_cache():
+            key = (order.order_date, order.title, order.quantity)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            ordered_keys.append(key)
+
+        merged_orders = tuple(merged[key] for key in ordered_keys if key in merged)
+        self.write_order_cache(merged_orders)
+        return merged_orders

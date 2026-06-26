@@ -38,6 +38,7 @@ class StatusResult:
 
 @dataclass(frozen=True)
 class OrderListEntry:
+    order_date: str
     title: str
     quantity: int
     status: OrderStatus
