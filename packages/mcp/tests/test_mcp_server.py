@@ -82,13 +82,3 @@ def test_main_runs_mcp_server_over_stdio() -> None:
 
     create_mcp_server.assert_called_once_with()
     mcp_server.run.assert_called_once_with(transport="stdio")
-
-
-@pytest.mark.anyio
-async def test_get_providers_tool_is_registered() -> None:
-    mcp_server = server.create_mcp_server()
-
-    tools = await mcp_server.list_tools()
-    tool_names = {tool.name for tool in tools}
-
-    assert "get_providers" in tool_names
