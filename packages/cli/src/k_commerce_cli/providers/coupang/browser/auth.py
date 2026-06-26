@@ -65,7 +65,37 @@ class CoupangAuthBrowser:
         await email_input.send_keys(email)
         await password_input.send_keys(password)
         await submit_button.click()
+        if await self._dismiss_data_request_failure_modal(session.tab):
+            await submit_button.click()
         return True
+
+    async def _dismiss_data_request_failure_modal(self, tab: BrowserTab) -> bool:
+        evaluate = getattr(tab, "evaluate", None)
+        if not callable(evaluate):
+            return False
+
+        await self.session_browser._sleep_ms(500)
+        try:
+            result = await evaluate(
+                """
+                (() => {
+                  const modal = [...document.querySelectorAll('div, p, span')]
+                    .find((node) => node.textContent?.includes('데이터 요청에 실패하였습니다.'));
+                  if (!modal) return false;
+
+                  const confirmButton = [...document.querySelectorAll('button')]
+                    .find((node) => node.textContent?.trim() === '확인');
+                  if (!confirmButton) return false;
+
+                  confirmButton.click();
+                  return true;
+                })()
+                """
+            )
+        except Exception:
+            return False
+
+        return bool(result)
 
     async def _read_login_state(self, tab: BrowserTab) -> LoginPageState:
         page_url = getattr(tab, "url", "")

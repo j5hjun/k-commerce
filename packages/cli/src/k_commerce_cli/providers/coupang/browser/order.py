@@ -112,7 +112,9 @@ class CoupangOrderBrowser:
         orders: list[OrderListEntry] = []
         seen_rows: set[str] = set()
         scope_labels = await self._scope_labels(tab)
-        await self._collect_current_scope_orders(tab, orders, seen_rows)
+        if not scope_labels:
+            await self._collect_current_scope_orders(tab, orders, seen_rows)
+            return tuple(orders)
         for scope_label in scope_labels:
             await self._activate_scope(tab, scope_label)
             await self._collect_current_scope_orders(tab, orders, seen_rows)
@@ -245,12 +247,12 @@ class CoupangOrderBrowser:
                 break
 
     async def _scope_labels(self, tab: BrowserTab) -> list[str]:
-        order_root = await self._order_root(tab)
-        if order_root is None:
+        scope_root = await self._scope_root(tab)
+        if scope_root is None:
             return []
 
         labels: list[str] = []
-        for control in await self._query_all(order_root, "button, a"):
+        for control in self._scope_controls(scope_root):
             label = self._normalize_text(control)
             if not ORDER_SCOPE_PATTERN.match(label):
                 continue
@@ -262,16 +264,59 @@ class CoupangOrderBrowser:
         return labels
 
     async def _activate_scope(self, tab: BrowserTab, scope_label: str) -> None:
-        order_root = await self._order_root(tab)
-        if order_root is None:
+        scope_root = await self._scope_root(tab)
+        if scope_root is None:
             return
 
-        for control in await self._query_all(order_root, "button, a"):
+        for control in self._scope_controls(scope_root):
             if self._normalize_text(control) != scope_label:
                 continue
             current_snapshot = await self._page_snapshot(tab)
             await self._click_and_settle(tab, control, current_snapshot)
             return
+
+    async def _scope_root(self, tab: BrowserTab) -> BrowserElement | None:
+        scope_root = await self._safe_select(tab, '[class*="my-area-body"]')
+        if scope_root is not None:
+            return scope_root
+        return await self._order_root(tab)
+
+    def _scope_controls(self, node: BrowserElement) -> list[BrowserElement]:
+        controls: list[BrowserElement] = []
+        self._collect_scope_controls(node, controls)
+        return controls
+
+    def _collect_scope_controls(
+        self,
+        node: BrowserElement,
+        controls: list[BrowserElement],
+    ) -> None:
+        text = self._normalize_text(node)
+        if ORDER_SCOPE_PATTERN.match(text) and self._is_clickable_scope_node(node):
+            controls.append(node)
+            return
+
+        for child in self._children(node):
+            self._collect_scope_controls(child, controls)
+
+    def _is_clickable_scope_node(self, node: BrowserElement) -> bool:
+        if callable(getattr(node, "click", None)):
+            return True
+        for attribute in ("role", "tabindex", "href", "onclick"):
+            value = self._get_attribute(node, attribute)
+            if value:
+                return True
+        return str(getattr(node, "cursor", "")).strip().lower() == "pointer"
+
+    def _get_attribute(self, node: BrowserElement, name: str) -> str:
+        getter = getattr(node, "get_attribute", None)
+        if callable(getter):
+            try:
+                value = getter(name)
+            except Exception:
+                return ""
+            return "" if value is None else str(value)
+        return ""
 
     async def _click_and_settle(
         self,

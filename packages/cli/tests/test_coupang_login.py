@@ -29,8 +29,13 @@ from k_commerce_cli.types import LoginResult, OrderListEntry, OrderListResult, O
 
 class _DummyElement:
     def __init__(self) -> None:
+        self.text_all = ""
+        self.children: list[_DummyElement] = []
         self.click = AsyncMock()
         self.send_keys = AsyncMock()
+
+    async def query_selector_all(self, _selector: str) -> list["_DummyElement"]:
+        return self.children
 
 
 class _DummyKeyboard:
@@ -194,7 +199,7 @@ async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() ->
 
 
 @pytest.mark.anyio
-async def test_fill_login_form_uses_selectors_without_evaluate() -> None:
+async def test_fill_login_form_submits_after_filling_credentials() -> None:
     browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     email_input = _DummyElement()
@@ -218,7 +223,61 @@ async def test_fill_login_form_uses_selectors_without_evaluate() -> None:
     email_input.send_keys.assert_awaited_once_with("user@example.com")
     password_input.send_keys.assert_awaited_once_with("secret")
     submit_button.click.assert_awaited_once_with()
-    assert tab.evaluate_calls == []
+    assert len(tab.evaluate_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_fill_login_form_retries_submit_after_data_request_failure_modal() -> None:
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    tab = _DummyTab()
+    email_input = _DummyElement()
+    password_input = _DummyElement()
+    submit_button = _DummyElement()
+    tab.select_map = {
+        'input[name="email"], input#login-email-input': email_input,
+        'input[name="password"], input#login-password-input': password_input,
+        'button[type="submit"], .login__button': submit_button,
+    }
+    tab.evaluate_result = True
+    session = CoupangBrowserSession(
+        browser=_DummyBrowser(tab),
+        tab=tab,
+        profile_dir=Path("/tmp/profile"),
+        cookies_file=Path("/tmp/cookies.dat"),
+    )
+
+    result = await browser.fill_login_form(session, "user@example.com", "secret")
+
+    assert result is True
+    assert submit_button.click.await_count == 2
+    assert len(tab.evaluate_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_fill_login_form_skips_retry_when_data_request_failure_modal_missing() -> None:
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    tab = _DummyTab()
+    email_input = _DummyElement()
+    password_input = _DummyElement()
+    submit_button = _DummyElement()
+    tab.select_map = {
+        'input[name="email"], input#login-email-input': email_input,
+        'input[name="password"], input#login-password-input': password_input,
+        'button[type="submit"], .login__button': submit_button,
+    }
+    tab.evaluate_result = False
+    session = CoupangBrowserSession(
+        browser=_DummyBrowser(tab),
+        tab=tab,
+        profile_dir=Path("/tmp/profile"),
+        cookies_file=Path("/tmp/cookies.dat"),
+    )
+
+    result = await browser.fill_login_form(session, "user@example.com", "secret")
+
+    assert result is True
+    submit_button.click.assert_awaited_once_with()
+    assert len(tab.evaluate_calls) == 1
 
 
 @pytest.mark.anyio

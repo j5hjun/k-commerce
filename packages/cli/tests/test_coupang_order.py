@@ -35,13 +35,29 @@ class _DummyOrderElement:
         *,
         children: list[object] | None = None,
         query_map: dict[str, list[object]] | None = None,
+        class_name: str | None = None,
+        role: str | None = None,
+        tabindex: str | None = None,
+        cursor: str | None = None,
     ) -> None:
         self.text_all = text
         self.children = children or []
         self._query_map = query_map or {}
+        self.class_name = class_name
+        self.role = role
+        self.tabindex = tabindex
+        self.cursor = cursor
 
     async def query_selector_all(self, selector: str):
         return list(self._query_map.get(selector, []))
+
+    def get_attribute(self, name: str):
+        mapping = {
+            "class": self.class_name,
+            "role": self.role,
+            "tabindex": self.tabindex,
+        }
+        return mapping.get(name)
 
 
 class _PaginatedOrderElement(_DummyOrderElement):
@@ -295,8 +311,7 @@ async def test_read_all_orders_collects_all_period_scopes() -> None:
             for label in scopes
         ]
         return _DummyOrderElement(
-            children=list(scopes[current_scope]),
-            query_map={"button, a": controls},
+            children=controls + list(scopes[current_scope]),
         )
 
     def select_scope(scope: str) -> None:
@@ -309,5 +324,116 @@ async def test_read_all_orders_collects_all_period_scopes() -> None:
 
     orders = await browser.read_all_orders(tab)
 
-    assert tuple(order.title for order in orders) == ("최근상품", "작년상품")
+    assert tuple(order.title for order in orders) == ("작년상품",)
+    assert clicked_scopes == ["2025"]
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_collects_period_scopes_outside_order_root() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+
+    def make_item(title: str, status: str) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{title} {status} 장바구니 담기",
+            query_map={"a": [_DummyOrderElement(title)]},
+        )
+
+    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{date} 주문 주문 상세보기 {item.text_all}",
+            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+        )
+
+    scopes = {
+        "최근 6개월": _DummyOrderElement(
+            children=[make_group("2026. 6. 26", make_item("최근상품", "배송완료"))]
+        ),
+        "2025": _DummyOrderElement(
+            children=[make_group("2025. 12. 24", make_item("작년상품", "배송중"))]
+        ),
+    }
+    current_scope = "최근 6개월"
+    clicked_scopes: list[str] = []
+
+    def select_scope(scope: str) -> None:
+        nonlocal current_scope
+        clicked_scopes.append(scope)
+        current_scope = scope
+        tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
+
+    scope_root = _DummyOrderElement(
+        children=[
+            _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
+            for label in scopes
+        ]
+    )
+    tab.select_map['[class*="my-area-body"]'] = scope_root
+    tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("작년상품",)
+    assert clicked_scopes == ["2025"]
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_collects_pointer_div_scopes_without_button_tags() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+
+    def make_item(title: str, status: str) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{title} {status} 장바구니 담기",
+            query_map={"a": [_DummyOrderElement(title)]},
+        )
+
+    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{date} 주문 주문 상세보기 {item.text_all}",
+            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+        )
+
+    scopes = {
+        "최근 6개월": _DummyOrderElement(
+            children=[make_group("2026. 6. 26", make_item("최근상품", "배송완료"))]
+        ),
+        "2025": _DummyOrderElement(
+            children=[make_group("2025. 12. 24", make_item("작년상품", "배송중"))]
+        ),
+    }
+    current_scope = "최근 6개월"
+    clicked_scopes: list[str] = []
+
+    def select_scope(scope: str) -> None:
+        nonlocal current_scope
+        clicked_scopes.append(scope)
+        current_scope = scope
+        tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
+
+    scope_nodes = [
+        _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
+        for label in scopes
+    ]
+    for node in scope_nodes:
+        node.cursor = "pointer"
+
+    search_root = _DummyOrderElement(
+        "주문한 상품을 검색할 수 있어요!",
+        children=[
+            _DummyOrderElement(
+                children=scope_nodes,
+                query_map={"*": scope_nodes},
+            )
+        ],
+        query_map={"*": scope_nodes},
+    )
+
+    tab.select_map['input[placeholder*="주문한 상품"]'] = _DummyOrderElement()
+    tab.select_map['[class*="my-area-body"]'] = search_root
+    tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("작년상품",)
     assert clicked_scopes == ["2025"]
