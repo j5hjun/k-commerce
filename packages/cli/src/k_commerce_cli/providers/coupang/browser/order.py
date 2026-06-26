@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
+
 from k_commerce_cli.types import OrderListEntry
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
-ORDER_EVALUATE_ATTEMPTS = 2
 
 
 class CoupangOrderBrowser:
@@ -11,197 +12,93 @@ class CoupangOrderBrowser:
         await session.tab.get(COUPANG_ORDER_LIST_URL)
 
     async def read_order_page_state(self, tab: object) -> dict[str, object]:
-        evaluate = getattr(tab, "evaluate", None)
-        if callable(evaluate):
-            try:
-                result = await evaluate(
-                    """
-                    (() => {
-                      const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
-                      const hasLoginPrompt =
-                        document.querySelector('input[type="password"], input[name="password"], form[action*="login"]') !== null;
-                      const hasOrderSignals =
-                        document.querySelector(
-                          '[data-testid*="order"], [class*="my-area-contents"], [class*="my-area-body"], [class*="order"], [id*="order"]'
-                        ) !== null ||
-                        /주문번호|배송중|배송완료|결제완료|취소|반품|교환/.test(text);
-                      const hasEmptyState =
-                        /주문 내역이 없|주문한 상품이 없|주문이 없습니다|구매 내역이 없/.test(text);
-                      const hasLoadingIndicator =
-                        document.querySelector('[aria-busy="true"], [class*="loading"], [class*="skeleton"], [class*="spinner"]') !== null;
-
-                      return {
-                        url: window.location.href,
-                        ready: !hasLoadingIndicator && (hasOrderSignals || hasEmptyState),
-                        has_login_prompt: hasLoginPrompt,
-                        has_order_signals: hasOrderSignals,
-                        has_empty_state: hasEmptyState,
-                        has_loading_indicator: hasLoadingIndicator,
-                      };
-                    })()
-                    """
-                )
-                decoded = self._decode_evaluate_value(result)
-                if isinstance(decoded, dict):
-                    return {
-                        "url": str(decoded.get("url", "")),
-                        "ready": bool(decoded.get("ready", False)),
-                        "has_login_prompt": bool(decoded.get("has_login_prompt", False)),
-                        "has_order_signals": bool(decoded.get("has_order_signals", False)),
-                        "has_empty_state": bool(decoded.get("has_empty_state", False)),
-                        "has_loading_indicator": bool(decoded.get("has_loading_indicator", False)),
-                    }
-            except Exception:
-                pass
-
         page_url = str(getattr(tab, "url", ""))
+        has_login_prompt = await self._selector_exists(
+            tab, 'input[type="password"], input[name="password"], form[action*="login"]'
+        )
+        has_order_signals = await self._selector_exists(
+            tab,
+            '[data-testid*="order"], [class*="my-area-contents"], [class*="my-area-body"], [class*="order"], [id*="order"]',
+        )
+        has_empty_state = await self._selector_exists(
+            tab,
+            '[class*="empty"], [class*="no-order"], [data-testid*="empty"]',
+        )
+        has_loading_indicator = await self._selector_exists(
+            tab,
+            '[aria-busy="true"], [class*="loading"], [class*="skeleton"], [class*="spinner"]',
+        )
         return {
             "url": page_url,
-            "ready": False,
-            "has_login_prompt": "login.coupang.com" in page_url,
-            "has_order_signals": False,
-            "has_empty_state": False,
-            "has_loading_indicator": False,
+            "ready": (not has_loading_indicator) and (has_order_signals or has_empty_state),
+            "has_login_prompt": has_login_prompt or "login.coupang.com" in page_url,
+            "has_order_signals": has_order_signals,
+            "has_empty_state": has_empty_state,
+            "has_loading_indicator": has_loading_indicator,
         }
 
     async def read_visible_orders(self, tab: object) -> tuple[OrderListEntry, ...]:
-        evaluate = getattr(tab, "evaluate", None)
-        if not callable(evaluate):
-            return ()
-
-        rows = None
-        for _attempt in range(ORDER_EVALUATE_ATTEMPTS):
-            try:
-                rows = await evaluate(
-                    """
-                    (() => {
-                      const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-                      const actionPattern = /주문 상세보기|배송 조회|교환, 반품 신청|리뷰 작성하기|판매자 문의|장바구니 담기|이전|다음/;
-                      const orderDatePattern = /^\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\s*주문/;
-                      const statusPattern = /(결제완료|상품준비중|배송중|배송완료|취소|반품|교환|배송시작)/;
-
-                      const orderRoot = document.querySelector('[class*="my-area-contents"] > div');
-                      const orderGroups = orderRoot
-                        ? [...orderRoot.children].filter((node) => {
-                            const text = normalize(node.innerText);
-                            return orderDatePattern.test(text) && /주문 상세보기/.test(text);
-                          })
-                        : [];
-
-                      const rows = [];
-                      const seenRows = new Set();
-
-                      const buildRow = (text, title, status, quantity, hasDetailLink) => ({
-                        title: normalize(title),
-                        quantity: quantity || '1',
-                        status: status || '',
-                        has_detail_link: hasDetailLink,
-                        raw_text: normalize(text),
-                      });
-
-                      for (const group of orderGroups) {
-                        const groupText = normalize(group.innerText);
-                        const groupHeaderMatch = groupText.match(/^\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\s*주문/);
-                        const groupHeader = groupHeaderMatch ? groupHeaderMatch[0] : '';
-                        const groupHasDetailLink = /주문 상세보기/.test(groupText);
-                        const orderIdMatch = groupText.match(/(?:주문번호|Order\\s*No\\.?)[^0-9]*([0-9-]+)/i);
-                        const itemNodes = [...group.querySelectorAll('tr, [class*="sc-5a139ee-0"], td')]
-                          .filter((node) => {
-                            const text = normalize(node.innerText);
-                            return text && /장바구니 담기/.test(text);
-                          });
-
-                        if (itemNodes.length === 0) {
-                          continue;
-                        }
-
-                        const seenItemTexts = new Set();
-                        for (const itemNode of itemNodes) {
-                          const text = normalize(itemNode.innerText);
-                          if (!text || seenItemTexts.has(text)) continue;
-                          seenItemTexts.add(text);
-
-                          const statusMatch = text.match(statusPattern);
-                          const quantityMatch = text.match(/(?:\\s|^)(\\d+)개(?:\\s|$)/);
-                          const productLinks = [...itemNode.querySelectorAll('a')]
-                            .map((el) => normalize(el.innerText))
-                            .filter((linkText) => {
-                              if (!linkText) return false;
-                              if (actionPattern.test(linkText)) return false;
-                              if (orderDatePattern.test(linkText)) return false;
-                              if (/\\d{1,3}(,\\d{3})*\\s*원/.test(linkText)) return false;
-                              return linkText.length >= 5;
-                            });
-
-                          const title = productLinks[0] || '';
-                          if (!title) continue;
-
-                          const row = buildRow(
-                            `${groupHeader} ${text}`,
-                            title,
-                            statusMatch ? statusMatch[1].trim() : '',
-                            quantityMatch ? quantityMatch[1] : '1',
-                            groupHasDetailLink,
-                          );
-                          const rowKey = [
-                            row.title,
-                            row.quantity,
-                            row.status,
-                          ].join('|');
-                          if (seenRows.has(rowKey)) continue;
-                          seenRows.add(rowKey);
-
-                          rows.push(
-                            row
-                          );
-                        }
-                      }
-
-                      return rows;
-                    })()
-                    """
-                )
-                break
-            except Exception:
-                rows = None
-
-        if not isinstance(rows, list):
+        order_root = await self._safe_select(tab, '[class*="my-area-contents"] > div')
+        if order_root is None:
+            order_root = await self._safe_select(tab, '[class*="my-area-contents"]')
+        if order_root is None:
             return ()
 
         orders: list[OrderListEntry] = []
-        for row in rows:
-            decoded_row = self._decode_evaluate_value(row)
-            if not isinstance(decoded_row, dict):
+        seen_rows: set[str] = set()
+        for group in self._children(order_root):
+            group_text = self._normalize_text(group)
+            if not self._looks_like_order_group(group_text):
                 continue
 
-            title = str(decoded_row.get("title", "")).strip()
-            if not title:
-                continue
+            group_header_match = re.match(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문", group_text)
+            group_header = group_header_match.group(0) if group_header_match else ""
+            item_nodes = await self._query_all(group, 'tr, [class*="sc-5a139ee-0"], td')
+            seen_item_texts: set[str] = set()
+            for item_node in item_nodes:
+                text = self._normalize_text(item_node)
+                if not text or "장바구니 담기" not in text or text in seen_item_texts:
+                    continue
+                seen_item_texts.add(text)
 
-            status = str(decoded_row.get("status", "")).strip()
-            has_detail_link = bool(decoded_row.get("has_detail_link", False))
-            raw_text = str(decoded_row.get("raw_text", title)).strip()
-            if not self._looks_like_order_row(
-                title=title,
-                status=status,
-                has_detail_link=has_detail_link,
-                raw_text=raw_text,
-            ):
-                continue
+                title = await self._extract_title(item_node)
+                if not title:
+                    continue
 
-            quantity_raw = decoded_row.get("quantity", 1)
-            try:
-                quantity = int(quantity_raw)
-            except (TypeError, ValueError):
-                quantity = 1
-
-            orders.append(
-                OrderListEntry(
-                    title=title,
-                    quantity=quantity,
-                    status=status,
+                status_match = re.search(
+                    r"(결제완료|상품준비중|배송중|배송완료|취소|반품|교환|배송시작)",
+                    text,
                 )
-            )
+                quantity_match = re.search(r"(?:\s|^)(\d+)개(?:\s|$)", text)
+                status = status_match.group(1).strip() if status_match else ""
+                raw_text = self._normalize_text(f"{group_header} {text}")
+                if not self._looks_like_order_row(
+                    title=title,
+                    status=status,
+                    has_detail_link="주문 상세보기" in group_text,
+                    raw_text=raw_text,
+                ):
+                    continue
+
+                quantity = 1
+                if quantity_match:
+                    try:
+                        quantity = int(quantity_match.group(1))
+                    except ValueError:
+                        quantity = 1
+
+                row_key = "|".join((title, str(quantity), status))
+                if row_key in seen_rows:
+                    continue
+                seen_rows.add(row_key)
+
+                orders.append(
+                    OrderListEntry(
+                        title=title,
+                        quantity=quantity,
+                        status=status,
+                    )
+                )
 
         return tuple(orders)
 
@@ -230,25 +127,52 @@ class CoupangOrderBrowser:
         starts_with_order_date = normalized[:32].count("주문") > 0 and normalized[:16].count(".") >= 2
         return starts_with_order_date and has_order_date and has_detail_link and has_known_status
 
-    def _decode_evaluate_value(self, value: object) -> object:
-        if isinstance(value, dict) and set(value.keys()) == {"type", "value"}:
-            return self._decode_evaluate_value(value["value"])
+    async def _extract_title(self, item_node: object) -> str:
+        action_pattern = re.compile(r"주문 상세보기|배송 조회|교환, 반품 신청|리뷰 작성하기|판매자 문의|장바구니 담기|이전|다음")
+        order_date_pattern = re.compile(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문")
+        price_pattern = re.compile(r"\d{1,3}(,\d{3})*\s*원")
+        for link in await self._query_all(item_node, "a"):
+            link_text = self._normalize_text(link)
+            if not link_text:
+                continue
+            if action_pattern.search(link_text) or order_date_pattern.search(link_text) or price_pattern.search(link_text):
+                continue
+            if len(link_text) >= 2:
+                return link_text
+        return ""
 
-        if isinstance(value, list):
-            if all(
-                isinstance(item, (list, tuple))
-                and len(item) == 2
-                and isinstance(item[0], str)
-                for item in value
-            ):
-                return {
-                    str(key): self._decode_evaluate_value(raw_value)
-                    for key, raw_value in value
-                }
+    def _children(self, node: object) -> list[object]:
+        children = getattr(node, "children", [])
+        return children if isinstance(children, list) else []
 
-            return [self._decode_evaluate_value(item) for item in value]
+    def _looks_like_order_group(self, text: str) -> bool:
+        return bool(re.match(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문", text)) and "주문 상세보기" in text
 
-        return value
+    def _normalize_text(self, value: object) -> str:
+        text = getattr(value, "text_all", value)
+        return " ".join(str(text or "").split())
+
+    async def _query_all(self, node: object, selector: str) -> list[object]:
+        query = getattr(node, "query_selector_all", None)
+        if not callable(query):
+            return []
+        try:
+            results = await query(selector)
+        except Exception:
+            return []
+        return results if isinstance(results, list) else []
+
+    async def _safe_select(self, tab: object, selector: str) -> object | None:
+        select = getattr(tab, "select", None)
+        if not callable(select):
+            return None
+        try:
+            return await select(selector, timeout=1)
+        except Exception:
+            return None
+
+    async def _selector_exists(self, tab: object, selector: str) -> bool:
+        return await self._safe_select(tab, selector) is not None
 
 
 __all__ = ["COUPANG_ORDER_LIST_URL", "CoupangOrderBrowser"]

@@ -47,35 +47,6 @@ class CoupangAuthBrowser:
         email: str,
         password: str,
     ) -> bool:
-        evaluate = getattr(session.tab, "evaluate", None)
-        if callable(evaluate):
-            try:
-                result = await evaluate(
-                    """
-                    ([email, password]) => {
-                      const emailInput = document.querySelector('input[name="email"], input#login-email-input');
-                      const passwordInput = document.querySelector('input[name="password"], input#login-password-input');
-                      const submitButton = document.querySelector('button[type="submit"], .login__button');
-                      if (!emailInput || !passwordInput || !submitButton) return false;
-                      emailInput.focus();
-                      emailInput.value = email;
-                      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-                      emailInput.dispatchEvent(new Event('change', { bubbles: true }));
-                      passwordInput.focus();
-                      passwordInput.value = password;
-                      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                      passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
-                      submitButton.click();
-                      return true;
-                    }
-                    """,
-                    [email, password],
-                )
-                if isinstance(result, bool):
-                    return result
-            except Exception:
-                pass
-
         email_input = await self.session_browser._safe_select(
             session.tab, 'input[name="email"], input#login-email-input'
         )
@@ -95,28 +66,6 @@ class CoupangAuthBrowser:
         return True
 
     async def _read_login_state(self, tab: object) -> dict[str, object]:
-        evaluate = getattr(tab, "evaluate", None)
-        if callable(evaluate):
-            try:
-                result = await evaluate(
-                    """
-                    (() => ({
-                      url: window.location.href,
-                      has_login_link: document.querySelector('a[href*="login/login.pang"]') !== null,
-                      has_mycoupang_link:
-                        document.querySelector('a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]') !== null
-                    }))()
-                    """
-                )
-                if isinstance(result, dict):
-                    return {
-                        "url": str(result.get("url", "")),
-                        "has_login_link": bool(result.get("has_login_link", False)),
-                        "has_mycoupang_link": bool(result.get("has_mycoupang_link", False)),
-                    }
-            except Exception:
-                pass
-
         page_url = getattr(tab, "url", "")
         login_link = await self.session_browser._safe_select(tab, COUPANG_LOGIN_LINK_SELECTOR)
         my_coupang_link = await self.session_browser._safe_select(tab, COUPANG_MYCOUPANG_SELECTOR)
