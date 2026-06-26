@@ -8,14 +8,21 @@ from k_commerce_cli.providers.store import Credentials, ProviderStore
 from k_commerce_cli.providers.base import AuthProvider
 from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
 
-from .browser import CoupangBrowser, CoupangBrowserSession
+from .browser import (
+    BrowserTab,
+    CoupangAuthBrowser,
+    CoupangBrowserSession,
+    CoupangSessionBrowser,
+)
 
 
 class CoupangAuthProvider(AuthProvider):
     name = ProviderName.COUPANG
 
     def __init__(self) -> None:
-        self.browser = CoupangBrowser()
+        self.session_browser = CoupangSessionBrowser()
+        self.auth_browser = CoupangAuthBrowser(self.session_browser)
+        self.browser = self
         self._browser_session: CoupangBrowserSession | None = None
         self._configure_paths()
 
@@ -134,3 +141,42 @@ class CoupangAuthProvider(AuthProvider):
             await self.browser.close(self._browser_session)
         finally:
             self._browser_session = None
+
+    async def launch(self, paths: ProviderPaths) -> CoupangBrowserSession:
+        return await self.session_browser.launch(paths)
+
+    async def open_home(self, session: CoupangBrowserSession) -> None:
+        await self.auth_browser.open_home(session)
+
+    async def open_login(self, session: CoupangBrowserSession) -> None:
+        await self.auth_browser.open_login(session)
+
+    async def open_login_entry(self, session: CoupangBrowserSession) -> None:
+        await self.auth_browser.open_login_entry(session)
+
+    async def is_logged_in(self, tab: BrowserTab) -> bool:
+        return await self.auth_browser.is_logged_in(tab)
+
+    async def wait_for_manual_login(
+        self,
+        session: CoupangBrowserSession,
+        poll_count: int = 300,
+    ) -> bool:
+        return await self.auth_browser.wait_for_manual_login(session, poll_count=poll_count)
+
+    async def fill_login_form(
+        self,
+        session: CoupangBrowserSession,
+        email: str,
+        password: str,
+    ) -> bool:
+        return await self.auth_browser.fill_login_form(session, email, password)
+
+    async def save_session(self, session: CoupangBrowserSession) -> None:
+        await self.session_browser.save_session(session)
+
+    async def close(self, session: CoupangBrowserSession) -> None:
+        await self.session_browser.close(session)
+
+    def _active_tab(self, session: CoupangBrowserSession) -> BrowserTab:
+        return self.session_browser._active_tab(session)

@@ -15,8 +15,9 @@ sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 from k_commerce_cli.providers.coupang.browser import (
     COUPANG_HOME_URL,
     COUPANG_LOGIN_URL,
-    CoupangBrowser,
+    CoupangAuthBrowser,
     CoupangBrowserSession,
+    CoupangSessionBrowser,
 )
 from k_commerce_cli.providers.coupang import CoupangAuthProvider, CoupangOrderProvider
 from k_commerce_cli.providers.constants import ProviderName
@@ -94,7 +95,7 @@ class _BrowserSpy:
 
 @pytest.mark.anyio
 async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangSessionBrowser()
     tab = _DummyTab()
     runtime_browser = _DummyBrowser(tab)
     nodriver_module = sys.modules["nodriver"]
@@ -121,7 +122,7 @@ async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
 
 @pytest.mark.anyio
 async def test_open_login_entry_opens_login_page_directly() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     session = CoupangBrowserSession(
         browser=_DummyBrowser(tab),
@@ -137,7 +138,7 @@ async def test_open_login_entry_opens_login_page_directly() -> None:
 
 @pytest.mark.anyio
 async def test_is_logged_in_checks_expected_selectors() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
@@ -150,7 +151,7 @@ async def test_is_logged_in_checks_expected_selectors() -> None:
 
 @pytest.mark.anyio
 async def test_is_logged_in_ignores_logout_link_on_logged_in_home() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
@@ -163,7 +164,7 @@ async def test_is_logged_in_ignores_logout_link_on_logged_in_home() -> None:
 
 @pytest.mark.anyio
 async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
@@ -177,7 +178,7 @@ async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> Non
 
 @pytest.mark.anyio
 async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.evaluate_error = RuntimeError("execution context changed")
@@ -193,7 +194,7 @@ async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() ->
 
 @pytest.mark.anyio
 async def test_fill_login_form_uses_selectors_without_evaluate() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangAuthBrowser(CoupangSessionBrowser())
     tab = _DummyTab()
     email_input = _DummyElement()
     password_input = _DummyElement()
@@ -221,7 +222,7 @@ async def test_fill_login_form_uses_selectors_without_evaluate() -> None:
 
 @pytest.mark.anyio
 async def test_active_tab_prefers_web_page_over_chrome_ui_tab() -> None:
-    browser = CoupangBrowser()
+    browser = CoupangSessionBrowser()
     coupang_tab = _DummyTab()
     coupang_tab.url = COUPANG_HOME_URL
     chrome_ui_tab = _DummyTab()
