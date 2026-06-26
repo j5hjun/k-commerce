@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 
 from k_commerce_mcp.tools.login import login
 from k_commerce_mcp.tools.login_status import login_status
-
+from k_commerce_mcp.tools.get_providers import get_providers
 
 def create_mcp_server() -> FastMCP:
     mcp_server = FastMCP("k-commerce")
@@ -11,6 +11,11 @@ def create_mcp_server() -> FastMCP:
         login_status,
         name="login_status",
         description="Check login status and whether you are logged in to a commerce provider such as Coupang.",
+    )
+    mcp_server.add_tool(
+        get_providers,
+        name="get_providers",
+        description="List supported commerce providers for login/logout.",
     )
     return mcp_server
 
