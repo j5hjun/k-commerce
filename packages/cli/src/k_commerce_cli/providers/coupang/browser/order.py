@@ -4,6 +4,7 @@ import asyncio
 from datetime import date
 import re
 from typing import cast
+from urllib.parse import urljoin
 
 from k_commerce_cli.types import OrderListEntry, OrderPageState, OrderStatus
 
@@ -69,7 +70,7 @@ class CoupangOrderBrowser:
                     continue
                 seen_item_texts.add(text)
 
-                title = await self._extract_title(item_node)
+                title, product_url = await self._extract_product_details(item_node)
                 if not title:
                     continue
 
@@ -106,6 +107,7 @@ class CoupangOrderBrowser:
                         title=title,
                         quantity=quantity,
                         status=cast(OrderStatus, status),
+                        product_url=product_url,
                     )
                 )
 
@@ -168,19 +170,27 @@ class CoupangOrderBrowser:
         starts_with_order_date = normalized[:32].count("주문") > 0 and normalized[:16].count(".") >= 2
         return starts_with_order_date and has_order_date and has_detail_link and has_known_status
 
-    async def _extract_title(self, item_node: BrowserElement) -> str:
+    async def _extract_product_details(self, item_node: BrowserElement) -> tuple[str, str]:
         action_pattern = re.compile(r"주문 상세보기|배송 조회|교환, 반품 신청|리뷰 작성하기|판매자 문의|장바구니 담기|이전|다음")
         order_date_pattern = re.compile(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문")
         price_pattern = re.compile(r"\d{1,3}(,\d{3})*\s*원")
+        fallback_title = ""
+        fallback_url = ""
         for link in await self._query_all(item_node, "a"):
             link_text = self._normalize_text(link)
+            href = self._get_attribute(link, "href")
+            product_url = urljoin("https://www.coupang.com", href) if href else ""
             if not link_text:
                 continue
             if action_pattern.search(link_text) or order_date_pattern.search(link_text) or price_pattern.search(link_text):
                 continue
             if len(link_text) >= 2:
-                return link_text
-        return ""
+                if not fallback_title:
+                    fallback_title = link_text
+                    fallback_url = product_url
+                if "sourceType=MyCoupang_my_orders_list_product_title" in href:
+                    return link_text, product_url
+        return fallback_title, fallback_url
 
     def _children(self, node: BrowserElement) -> list[BrowserElement]:
         children = getattr(node, "children", [])

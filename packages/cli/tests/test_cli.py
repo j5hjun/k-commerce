@@ -29,6 +29,7 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",
+                    product_url="https://www.coupang.com/vp/products/1",
                 ),
                 OrderListEntry(
                     order_date="2026. 6. 25",
@@ -45,7 +46,7 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
+        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/vp/products/1",
         "상품: 생수 2L | 수량: 1 | 상태: 배송중",
     ]
     get_provider.assert_called_once_with("coupang")

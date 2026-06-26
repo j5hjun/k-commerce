@@ -39,6 +39,7 @@ class _DummyOrderElement:
         role: str | None = None,
         tabindex: str | None = None,
         cursor: str | None = None,
+        href: str | None = None,
     ) -> None:
         self.text_all = text
         self.children = children or []
@@ -47,6 +48,7 @@ class _DummyOrderElement:
         self.role = role
         self.tabindex = tabindex
         self.cursor = cursor
+        self.href = href
 
     async def query_selector_all(self, selector: str):
         return list(self._query_map.get(selector, []))
@@ -56,6 +58,7 @@ class _DummyOrderElement:
             "class": self.class_name,
             "role": self.role,
             "tabindex": self.tabindex,
+            "href": self.href,
         }
         return mapping.get(name)
 
@@ -95,7 +98,20 @@ async def test_read_visible_orders_extracts_text_rows() -> None:
     item = _DummyOrderElement(
         "테스트 상품 3개 배송완료 장바구니 담기",
         query_map={
-            "a": [_DummyOrderElement("테스트 상품")],
+            "a": [
+                _DummyOrderElement(
+                    "",
+                    href="/ssr/sdp/link?vendorItemId=75478292828&sourceType=MyCoupang_my_orders_list_product_image",
+                ),
+                _DummyOrderElement(
+                    "RDS_LOGO_WOW_TODAY_MD테스트 상품",
+                    href="/ssr/sdp/link?vendorItemId=75478292828",
+                ),
+                _DummyOrderElement(
+                    "테스트 상품",
+                    href="/ssr/sdp/link?vendorItemId=75478292828&sourceType=MyCoupang_my_orders_list_product_title",
+                )
+            ],
         },
     )
     group = _DummyOrderElement(
@@ -114,6 +130,10 @@ async def test_read_visible_orders_extracts_text_rows() -> None:
     assert orders[0].title == "테스트 상품"
     assert orders[0].quantity == 3
     assert orders[0].status == "배송완료"
+    assert (
+        orders[0].product_url
+        == "https://www.coupang.com/ssr/sdp/link?vendorItemId=75478292828&sourceType=MyCoupang_my_orders_list_product_title"
+    )
     tab.evaluate.assert_not_awaited()
 
 

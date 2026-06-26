@@ -16,11 +16,14 @@ def _normalize_order_field(value: object) -> str:
 
 
 def _format_order_entry(entry: OrderListEntry) -> str:
-    return (
+    line = (
         f"상품: {_normalize_order_field(entry.title)} | "
         f"수량: {entry.quantity} | "
         f"상태: {_normalize_order_field(entry.status)}"
     )
+    if entry.product_url:
+        line += f" | URL: {_normalize_order_field(entry.product_url)}"
+    return line
 
 
 def _render_order_list(result: OrderListResult) -> tuple[str, ...]:

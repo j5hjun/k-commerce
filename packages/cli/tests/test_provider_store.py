@@ -119,6 +119,7 @@ def test_write_order_cache_persists_orders_with_metadata(tmp_path: Path) -> None
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+                product_url="https://www.coupang.com/vp/products/1",
             ),
         )
     )
@@ -130,9 +131,20 @@ def test_write_order_cache_persists_orders_with_metadata(tmp_path: Path) -> None
                 "title": "로켓프레시 사과",
                 "quantity": 2,
                 "status": "배송완료",
+                "product_url": "https://www.coupang.com/vp/products/1",
             }
         ]
     }
+
+    assert store.load_order_cache() == (
+        OrderListEntry(
+            order_date="2026. 6. 26",
+            title="로켓프레시 사과",
+            quantity=2,
+            status="배송완료",
+            product_url="https://www.coupang.com/vp/products/1",
+        ),
+    )
 
 
 def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_path: Path) -> None:
