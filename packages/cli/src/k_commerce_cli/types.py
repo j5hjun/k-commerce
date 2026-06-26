@@ -42,7 +42,7 @@ class OrderListEntry:
     title: str
     quantity: int
     status: OrderStatus
-    product_url: str = ""
+    product_url: str
 
 
 @dataclass(frozen=True)

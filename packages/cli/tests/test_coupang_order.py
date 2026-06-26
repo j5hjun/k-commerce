@@ -81,6 +81,14 @@ class _ClickableOrderElement(_DummyOrderElement):
         self._on_click()
 
 
+class _AttrOnlyOrderElement:
+    def __init__(self, **attrs: str) -> None:
+        self._attrs = attrs
+
+    def __getattr__(self, name: str):
+        return self._attrs.get(name)
+
+
 @pytest.mark.anyio
 async def test_open_order_list_opens_coupang_order_list_url() -> None:
     browser = CoupangOrderBrowser()
@@ -138,6 +146,55 @@ async def test_read_visible_orders_extracts_text_rows() -> None:
 
 
 @pytest.mark.anyio
+async def test_read_visible_orders_uses_title_link_for_title_and_product_url() -> None:
+    browser = CoupangOrderBrowser()
+    item = _DummyOrderElement(
+        "스카트 THE보송 오래쓰는 스마트 습기제거제, 300g, 12개 1개 배송완료 장바구니 담기",
+        query_map={
+            "a": [
+                _DummyOrderElement(
+                    "",
+                    href="/ssr/sdp/link?vendorItemId=75478292828&sourceType=MyCoupang_my_orders_list_product_image",
+                ),
+                _DummyOrderElement(
+                    "RDS_LOGO_WOW_TODAY_MD스카트 THE보송 오래쓰는 스마트 습기제거제, 300g, 12개",
+                    href=(
+                        "/ssr/sdp/link?vendorItemId=75478292828"
+                        "&sourceType=MyCoupang_my_orders_list_product_title"
+                    ),
+                ),
+            ],
+        },
+    )
+    group = _DummyOrderElement(
+        "2026. 6. 24 주문 주문 상세보기 스카트 THE보송 오래쓰는 스마트 습기제거제, 300g, 12개 1개 배송완료 장바구니 담기",
+        query_map={
+            'tr, [class*="sc-5a139ee-0"], td': [item],
+        },
+    )
+    order_root = _DummyOrderElement(children=[group])
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = order_root
+
+    orders = await browser.read_visible_orders(tab)
+
+    assert len(orders) == 1
+    assert orders[0].title == "스카트 THE보송 오래쓰는 스마트 습기제거제, 300g, 12개"
+    assert (
+        orders[0].product_url
+        == "https://www.coupang.com/ssr/sdp/link?vendorItemId=75478292828&sourceType=MyCoupang_my_orders_list_product_title"
+    )
+
+
+def test_get_attribute_reads_direct_element_attributes_without_getter() -> None:
+    browser = CoupangOrderBrowser()
+
+    assert browser._get_attribute(_AttrOnlyOrderElement(href="/ssr/sdp/link?vendorItemId=1"), "href") == (
+        "/ssr/sdp/link?vendorItemId=1"
+    )
+
+
+@pytest.mark.anyio
 async def test_read_visible_orders_filters_blank_titles_and_defaults_quantity() -> None:
     browser = CoupangOrderBrowser()
     blank_item = _DummyOrderElement(
@@ -146,7 +203,14 @@ async def test_read_visible_orders_filters_blank_titles_and_defaults_quantity() 
     )
     valid_item = _DummyOrderElement(
         "두번째 상품 배송중 장바구니 담기",
-        query_map={"a": [_DummyOrderElement("두번째 상품")]},
+        query_map={
+            "a": [
+                _DummyOrderElement(
+                    "두번째 상품",
+                    href="/ssr/sdp/link?vendorItemId=2&sourceType=MyCoupang_my_orders_list_product_title",
+                )
+            ]
+        },
     )
     group = _DummyOrderElement(
         "2026. 6. 24 주문 주문 상세보기 두번째 상품 배송중 장바구니 담기",
@@ -244,7 +308,14 @@ async def test_read_visible_orders_rejects_status_only_non_order_sections() -> N
     )
     valid_item = _DummyOrderElement(
         "상품명 배송중 장바구니 담기",
-        query_map={"a": [_DummyOrderElement("상품명")]},
+        query_map={
+            "a": [
+                _DummyOrderElement(
+                    "상품명",
+                    href="/ssr/sdp/link?vendorItemId=3&sourceType=MyCoupang_my_orders_list_product_title",
+                )
+            ]
+        },
     )
     valid_group = _DummyOrderElement(
         "2026. 6. 24 주문 주문 상세보기 상품명 배송중 장바구니 담기",
@@ -269,7 +340,14 @@ async def test_read_all_orders_follows_next_page_until_it_stops() -> None:
     def make_item(title: str, status: str) -> _DummyOrderElement:
         return _DummyOrderElement(
             f"{title} {status} 장바구니 담기",
-            query_map={"a": [_DummyOrderElement(title)]},
+            query_map={
+                "a": [
+                    _DummyOrderElement(
+                        title,
+                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                    )
+                ]
+            },
         )
 
     def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
@@ -309,7 +387,14 @@ async def test_read_orders_through_date_stops_after_crossing_cutoff() -> None:
     def make_item(title: str, status: str) -> _DummyOrderElement:
         return _DummyOrderElement(
             f"{title} {status} 장바구니 담기",
-            query_map={"a": [_DummyOrderElement(title)]},
+            query_map={
+                "a": [
+                    _DummyOrderElement(
+                        title,
+                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                    )
+                ]
+            },
         )
 
     def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
@@ -350,7 +435,14 @@ async def test_read_all_orders_collects_all_period_scopes() -> None:
     def make_item(title: str, status: str) -> _DummyOrderElement:
         return _DummyOrderElement(
             f"{title} {status} 장바구니 담기",
-            query_map={"a": [_DummyOrderElement(title)]},
+            query_map={
+                "a": [
+                    _DummyOrderElement(
+                        title,
+                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                    )
+                ]
+            },
         )
 
     def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
@@ -397,7 +489,14 @@ async def test_read_all_orders_collects_period_scopes_outside_order_root() -> No
     def make_item(title: str, status: str) -> _DummyOrderElement:
         return _DummyOrderElement(
             f"{title} {status} 장바구니 담기",
-            query_map={"a": [_DummyOrderElement(title)]},
+            query_map={
+                "a": [
+                    _DummyOrderElement(
+                        title,
+                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                    )
+                ]
+            },
         )
 
     def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
@@ -446,7 +545,14 @@ async def test_read_all_orders_collects_pointer_div_scopes_without_button_tags()
     def make_item(title: str, status: str) -> _DummyOrderElement:
         return _DummyOrderElement(
             f"{title} {status} 장바구니 담기",
-            query_map={"a": [_DummyOrderElement(title)]},
+            query_map={
+                "a": [
+                    _DummyOrderElement(
+                        title,
+                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                    )
+                ]
+            },
         )
 
     def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:

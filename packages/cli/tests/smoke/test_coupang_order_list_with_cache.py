@@ -22,12 +22,16 @@ def test_coupang_order_list_with_cache_smoke(tmp_path: Path) -> None:
                         "title": "로켓프레시 사과",
                         "quantity": 2,
                         "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     },
                     {
                         "order_date": "2026. 6. 25",
                         "title": "생수 2L",
                         "quantity": 1,
                         "status": "배송중",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     },
                 ]
             },
@@ -51,12 +55,16 @@ def test_coupang_order_list_with_cache_smoke(tmp_path: Path) -> None:
                 "title": "로켓프레시 사과",
                 "quantity": 2,
                 "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
             },
             {
                 "order_date": "2026. 6. 25",
                 "title": "생수 2L",
                 "quantity": 1,
                 "status": "배송중",
+"product_url": "https://www.coupang.com/placeholder"
+,
             },
         ]
     }

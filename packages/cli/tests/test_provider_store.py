@@ -156,12 +156,14 @@ def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_p
                 title="첫번째 상품",
                 quantity=1,
                 status="배송중",
+                product_url="https://www.coupang.com/placeholder",
             ),
             OrderListEntry(
                 order_date="2026. 6. 24",
                 title="두번째 상품",
                 quantity=1,
                 status="배송완료",
+                product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -173,12 +175,14 @@ def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_p
                 title="새상품",
                 quantity=1,
                 status="결제완료",
+                product_url="https://www.coupang.com/placeholder",
             ),
             OrderListEntry(
                 order_date="2026. 6. 26",
                 title="첫번째 상품",
                 quantity=1,
                 status="배송완료",
+                product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -189,20 +193,46 @@ def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_p
             title="새상품",
             quantity=1,
             status="결제완료",
+            product_url="https://www.coupang.com/placeholder",
         ),
         OrderListEntry(
             order_date="2026. 6. 26",
             title="첫번째 상품",
             quantity=1,
             status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
         ),
         OrderListEntry(
             order_date="2026. 6. 24",
             title="두번째 상품",
             quantity=1,
             status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
         ),
     )
+
+
+def test_load_order_cache_skips_orders_missing_product_url(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    store.base_dir.mkdir(parents=True)
+    store.orders_path.write_text(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "order_date": "2026. 6. 26",
+                        "title": "로켓프레시 사과",
+                        "quantity": 2,
+                        "status": "배송완료",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert store.load_order_cache() == ()
 
 
 def test_has_profile_is_false_when_missing(tmp_path: Path) -> None:

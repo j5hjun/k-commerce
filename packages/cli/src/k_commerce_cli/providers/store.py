@@ -74,14 +74,8 @@ class ProviderStore:
 
     def write_order_cache(self, orders: tuple[OrderListEntry, ...]) -> None:
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        payload_orders = []
-        for order in orders:
-            payload = asdict(order)
-            if not payload.get("product_url"):
-                payload.pop("product_url", None)
-            payload_orders.append(payload)
         self.orders_path.write_text(
-            json.dumps({"orders": payload_orders}, ensure_ascii=False, indent=2),
+            json.dumps({"orders": [asdict(order) for order in orders]}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -105,7 +99,7 @@ class ProviderStore:
                         title=str(item["title"]),
                         quantity=int(item["quantity"]),
                         status=str(item["status"]),
-                        product_url=str(item.get("product_url", "")),
+                        product_url=str(item["product_url"]),
                     )
                 )
             except (KeyError, TypeError, ValueError):

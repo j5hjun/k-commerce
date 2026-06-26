@@ -34,11 +34,15 @@ class CoupangOrderProvider(OrderProvider):
         self.auth_provider = auth_provider
         self.order_browser = CoupangOrderBrowser()
 
-    async def list(self, root_dir: Path | None = None) -> OrderListResult:
+    async def list(
+        self,
+        root_dir: Path | None = None,
+        refresh: bool = False,
+    ) -> OrderListResult:
         store = ProviderStore(
             ProviderPaths(self.auth_provider.name, root_dir or Path.home() / ".k-commerce")
         )
-        cached_orders = store.load_order_cache()
+        cached_orders = () if refresh else store.load_order_cache()
 
         restored_session = await self.auth_provider.restore_valid_session(root_dir)
         if restored_session is None:
@@ -75,7 +79,7 @@ class CoupangOrderProvider(OrderProvider):
                 )
 
             cutoff_order_date = self._refresh_cutoff_order_date(cached_orders)
-            if cutoff_order_date is None and not cached_orders:
+            if refresh or (cutoff_order_date is None and not cached_orders):
                 orders = await self.order_browser.read_all_orders(restored_session.tab)
             else:
                 orders = await self.order_browser.read_orders_through_date(

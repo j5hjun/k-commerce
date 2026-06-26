@@ -41,9 +41,15 @@ async def order() -> None:
 
 @order.command(name="list")
 @provider_argument_with_root_dir_option
-async def order_list(provider: str, root_dir: Path | None) -> None:
+@click.option(
+    "--refresh",
+    is_flag=True,
+    default=False,
+    help="Ignore cached orders and fetch a fresh order list.",
+)
+async def order_list(provider: str, root_dir: Path | None, refresh: bool) -> None:
     try:
-        result = await get_provider(provider).order.list(root_dir=root_dir)
+        result = await get_provider(provider).order.list(root_dir=root_dir, refresh=refresh)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
 

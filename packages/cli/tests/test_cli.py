@@ -36,6 +36,7 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
                     title="생수 2L",
                     quantity=1,
                     status="배송중",
+                    product_url="https://www.coupang.com/placeholder",
                 ),
             ),
         )
@@ -47,10 +48,10 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
         "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/vp/products/1",
-        "상품: 생수 2L | 수량: 1 | 상태: 배송중",
+        "상품: 생수 2L | 수량: 1 | 상태: 배송중 | URL: https://www.coupang.com/placeholder",
     ]
     get_provider.assert_called_once_with("coupang")
-    order_provider.list.assert_awaited_once_with(root_dir=None)
+    order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
 
 
 @pytest.mark.anyio
@@ -67,6 +68,7 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
                     title="로켓\n프레시 | 사과",
                     quantity=2,
                     status="배송|\n완료",
+                    product_url="https://www.coupang.com/placeholder",
                 ),
             ),
         )
@@ -78,10 +80,10 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료",
+        "상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료 | URL: https://www.coupang.com/placeholder",
     ]
     get_provider.assert_called_once_with("coupang")
-    order_provider.list.assert_awaited_once_with(root_dir=None)
+    order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
 
 
 @pytest.mark.anyio
@@ -98,6 +100,7 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
                     title="로켓프레시 사과",
                     quantity=2,
                     status="배송완료",
+                    product_url="https://www.coupang.com/placeholder",
                 ),
             ),
         )
@@ -109,10 +112,10 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료",
+        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/placeholder",
     ]
     get_provider.assert_called_once_with("coupang")
-    order_provider.list.assert_awaited_once_with(root_dir=None)
+    order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
 
 
 @pytest.mark.anyio
@@ -136,7 +139,29 @@ async def test_order_list_coupang_command_prints_empty_state_message(
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["조회된 주문이 없습니다."]
     get_provider.assert_called_once_with("coupang")
-    order_provider.list.assert_awaited_once_with(root_dir=tmp_path)
+    order_provider.list.assert_awaited_once_with(root_dir=tmp_path, refresh=False)
+
+
+@pytest.mark.anyio
+async def test_order_list_coupang_command_passes_refresh_flag() -> None:
+    order_provider = Mock()
+    order_provider.list = AsyncMock(
+        return_value=OrderListResult(
+            provider="coupang",
+            success=True,
+            message="주문 0건을 찾았습니다.",
+            orders=(),
+        )
+    )
+    provider = Mock(order=order_provider)
+
+    with patch("k_commerce_cli.commands.order.get_provider", return_value=provider) as get_provider:
+        result = await RUNNER.invoke(app, ["order", "list", "coupang", "--refresh"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["조회된 주문이 없습니다."]
+    get_provider.assert_called_once_with("coupang")
+    order_provider.list.assert_awaited_once_with(root_dir=None, refresh=True)
 
 
 @pytest.mark.anyio
@@ -159,7 +184,7 @@ async def test_order_list_coupang_command_surfaces_logged_out_failure_message() 
     assert result.stdout.splitlines() == ["쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."]
     assert "Error: 쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요." in result.stderr
     get_provider.assert_called_once_with("coupang")
-    order_provider.list.assert_awaited_once_with(root_dir=None)
+    order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
 
 
 @pytest.mark.anyio

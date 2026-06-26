@@ -18,4 +18,8 @@ class AuthProvider(Protocol):
 
 
 class OrderProvider(Protocol):
-    async def list(self, root_dir: Path | None = None) -> OrderListResult: ...
+    async def list(
+        self,
+        root_dir: Path | None = None,
+        refresh: bool = False,
+    ) -> OrderListResult: ...

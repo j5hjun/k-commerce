@@ -545,6 +545,8 @@ async def test_list_returns_cached_orders_without_launching_browser(
                         "title": "로켓프레시 사과",
                         "quantity": 2,
                         "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     }
                 ]
             },
@@ -566,6 +568,7 @@ async def test_list_returns_cached_orders_without_launching_browser(
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         ),
     )
@@ -595,12 +598,16 @@ async def test_list_refreshes_through_oldest_non_terminal_cached_order(
                         "title": "새상품",
                         "quantity": 1,
                         "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     },
                     {
                         "order_date": "2026. 6. 24",
                         "title": "진행상품",
                         "quantity": 1,
                         "status": "배송중",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     },
                 ]
             },
@@ -626,12 +633,14 @@ async def test_list_refreshes_through_oldest_non_terminal_cached_order(
                 title="추가주문",
                 quantity=1,
                 status="결제완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
             OrderListEntry(
                 order_date="2026. 6. 24",
                 title="진행상품",
                 quantity=1,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -643,6 +652,7 @@ async def test_list_refreshes_through_oldest_non_terminal_cached_order(
         title="추가주문",
         quantity=1,
         status="결제완료",
+    product_url="https://www.coupang.com/placeholder",
     )
     provider.order_browser.read_orders_through_date.assert_awaited_once_with(
         session.tab,
@@ -671,6 +681,8 @@ async def test_list_refreshes_from_newest_cached_order_when_all_cached_orders_ar
                         "title": "완료상품",
                         "quantity": 1,
                         "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
                     }
                 ]
             },
@@ -696,6 +708,7 @@ async def test_list_refreshes_from_newest_cached_order_when_all_cached_orders_ar
                 title="새주문",
                 quantity=1,
                 status="결제완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -706,6 +719,73 @@ async def test_list_refreshes_from_newest_cached_order_when_all_cached_orders_ar
         session.tab,
         "2026. 6. 27",
     )
+
+
+@pytest.mark.anyio
+async def test_list_with_refresh_ignores_cache_and_reads_all_orders(
+    tmp_path: Path,
+) -> None:
+    auth_provider = CoupangAuthProvider()
+    provider = CoupangOrderProvider(auth_provider)
+    session = types.SimpleNamespace(tab=types.SimpleNamespace())
+    auth_provider.restore_valid_session = AsyncMock(return_value=session)
+    auth_provider.close_session = AsyncMock()
+    cache_dir = tmp_path / "coupang"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "orders.json").write_text(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "order_date": "2026. 6. 24",
+                        "title": "진행상품",
+                        "quantity": 1,
+                        "status": "배송중",
+"product_url": "https://www.coupang.com/placeholder"
+,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    provider.order_browser.open_order_list = AsyncMock()
+    provider.order_browser.read_order_page_state = AsyncMock(
+        return_value=OrderPageState(
+            url="https://mc.coupang.com/ssr/desktop/order/list",
+            ready=True,
+            has_login_prompt=False,
+            has_order_signals=True,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
+    )
+    provider.order_browser.read_all_orders = AsyncMock(
+        return_value=(
+            OrderListEntry(
+                order_date="2026. 6. 28",
+                title="새주문",
+                quantity=1,
+                status="결제완료",
+            product_url="https://www.coupang.com/placeholder",
+            ),
+        )
+    )
+    provider.order_browser.read_orders_through_date = AsyncMock(return_value=())
+
+    result = await provider.list(root_dir=tmp_path, refresh=True)
+
+    assert result.orders[0] == OrderListEntry(
+        order_date="2026. 6. 28",
+        title="새주문",
+        quantity=1,
+        status="결제완료",
+    product_url="https://www.coupang.com/placeholder",
+    )
+    provider.order_browser.read_all_orders.assert_awaited_once_with(session.tab)
+    provider.order_browser.read_orders_through_date.assert_not_awaited()
+    auth_provider.close_session.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -737,6 +817,7 @@ async def test_list_opens_order_page_after_restoring_valid_session(
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -756,6 +837,7 @@ async def test_list_opens_order_page_after_restoring_valid_session(
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         ),
     )
@@ -773,6 +855,8 @@ async def test_list_opens_order_page_after_restoring_valid_session(
                 "title": "로켓프레시 사과",
                 "quantity": 2,
                 "status": "배송완료",
+"product_url": "https://www.coupang.com/placeholder"
+,
             }
         ]
     }
@@ -817,6 +901,7 @@ async def test_list_retries_until_order_page_becomes_ready(
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         )
     )
@@ -836,6 +921,7 @@ async def test_list_retries_until_order_page_becomes_ready(
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
+            product_url="https://www.coupang.com/placeholder",
             ),
         ),
     )
