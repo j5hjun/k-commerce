@@ -2,28 +2,36 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from k_commerce_cli.providers.base import OrderProvider
+from k_commerce_cli.providers.constants import ProviderName
 from k_commerce_cli.types import OrderListResult, OrderPageState
 from .browser.session import BrowserTab
+from .browser import CoupangBrowserSession
 from .browser.order import CoupangOrderBrowser
 
 ORDER_PAGE_STATE_ATTEMPTS = 3
 ORDER_PAGE_STATE_POLL_SECONDS = 0.2
 
-if TYPE_CHECKING:
-    from .auth import CoupangAuthProvider
+
+class OrderSessionProvider(Protocol):
+    name: ProviderName
+
+    async def restore_valid_session(
+        self, root_dir: Path | None = None
+    ) -> CoupangBrowserSession | None: ...
+
+    async def close_session(self) -> None: ...
 
 
 class CoupangOrderProvider(OrderProvider):
-    def __init__(self, auth_provider: "CoupangAuthProvider") -> None:
+    def __init__(self, auth_provider: OrderSessionProvider) -> None:
         self.auth_provider = auth_provider
         self.order_browser = CoupangOrderBrowser()
 
     async def list_orders(self, root_dir: Path | None = None) -> OrderListResult:
-        self.auth_provider._configure_paths(root_dir)
-        restored_session = await self.auth_provider._restore_session()
+        restored_session = await self.auth_provider.restore_valid_session(root_dir)
         if restored_session is None:
             return OrderListResult(
                 provider=self.auth_provider.name,
@@ -33,14 +41,6 @@ class CoupangOrderProvider(OrderProvider):
             )
 
         try:
-            if not await self.auth_provider._verify_session(restored_session):
-                return OrderListResult(
-                    provider=self.auth_provider.name,
-                    success=False,
-                    message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
-                    orders=(),
-                )
-
             await self.order_browser.open_order_list(restored_session)
             page_state = await self._wait_for_order_page(restored_session.tab)
             if page_state.has_login_prompt:
@@ -66,7 +66,7 @@ class CoupangOrderProvider(OrderProvider):
                 orders=orders,
             )
         finally:
-            await self.auth_provider._close_browser_session()
+            await self.auth_provider.close_session()
 
     async def _wait_for_order_page(self, tab: BrowserTab) -> OrderPageState:
         page_state = OrderPageState(

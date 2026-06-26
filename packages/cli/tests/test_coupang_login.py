@@ -287,6 +287,26 @@ async def test_restore_session_skips_launch_without_cookies_file() -> None:
 
 
 @pytest.mark.anyio
+async def test_restore_valid_session_returns_none_for_invalid_session(tmp_path: Path) -> None:
+    provider = CoupangAuthProvider()
+    browser = _BrowserSpy()
+    session = types.SimpleNamespace(tab=object())
+    browser.launch = AsyncMock(return_value=session)
+    browser.is_logged_in = AsyncMock(return_value=False)
+    provider.browser = browser
+    cookies_file = tmp_path / "coupang" / "cookies.dat"
+    cookies_file.parent.mkdir(parents=True)
+    cookies_file.write_text("cookies", encoding="utf-8")
+
+    restored = await provider.restore_valid_session(root_dir=tmp_path)
+
+    assert restored is None
+    browser.launch.assert_awaited_once_with(provider.store.paths)
+    browser.open_home.assert_awaited_once_with(session)
+    browser.is_logged_in.assert_awaited_once_with(session.tab)
+
+
+@pytest.mark.anyio
 async def test_login_with_credentials_uses_browser_form_submission() -> None:
     provider = CoupangAuthProvider()
     browser = _BrowserSpy()

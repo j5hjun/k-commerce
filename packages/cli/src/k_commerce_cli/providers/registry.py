@@ -1,13 +1,12 @@
-from k_commerce_cli.providers.base import Provider
 from k_commerce_cli.providers.coupang import CoupangProvider
 
 
-_PROVIDER_CLASSES: dict[str, type[Provider]] = {
+_PROVIDER_CLASSES: dict[str, type[CoupangProvider]] = {
     CoupangProvider.name.value: CoupangProvider,
 }
 
 
-def get_provider(name: str) -> Provider:
+def get_provider(name: str) -> CoupangProvider:
     normalized_name = name.lower().strip()
 
     try:

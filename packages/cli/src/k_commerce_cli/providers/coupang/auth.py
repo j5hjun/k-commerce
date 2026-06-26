@@ -87,6 +87,21 @@ class CoupangAuthProvider(AuthProvider):
         self.store.clear_session()
         return LogoutResult(provider=self.name, success=True, message="쿠팡 로그아웃 완료")
 
+    async def restore_valid_session(
+        self, root_dir: Path | None = None
+    ) -> CoupangBrowserSession | None:
+        self._configure_paths(root_dir)
+        session = await self._restore_session()
+        if session is None:
+            return None
+        if await self._verify_session(session):
+            return session
+        await self._close_browser_session()
+        return None
+
+    async def close_session(self) -> None:
+        await self._close_browser_session()
+
     def _configure_paths(self, root_dir: Path | None = None) -> None:
         self.store = ProviderStore(
             ProviderPaths(self.name, root_dir or Path.home() / ".k-commerce")
