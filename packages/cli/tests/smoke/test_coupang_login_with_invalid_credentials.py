@@ -17,7 +17,7 @@ async def test_coupang_login_with_invalid_credentials_smoke(tmp_path, monkeypatc
     async def fail_login(*args, **kwargs):
         return False
 
-    monkeypatch.setattr(provider.browser, "wait_for_manual_login", fail_login)
+    monkeypatch.setattr(provider.auth.browser, "wait_for_manual_login", fail_login)
 
     with patch("k_commerce_cli.commands.login.get_provider", return_value=provider):
         result = await invoke_login(root_dir)

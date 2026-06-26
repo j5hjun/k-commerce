@@ -18,11 +18,11 @@ async def test_login_coupang_command_succeeds_with_manual_login_when_credentials
 
     with (
         patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,
-        patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(provider.auth.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(provider.auth.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider.auth.browser, "wait_for_manual_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,
+        patch.object(provider.auth.browser, "save_session", new=AsyncMock()) as save_session,
+        patch.object(provider.auth.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
@@ -32,7 +32,7 @@ async def test_login_coupang_command_succeeds_with_manual_login_when_credentials
         "브라우저에서 직접 로그인해주세요...",
         "쿠팡 로그인 성공",
     ]
-    launch.assert_awaited_once_with(provider.store.paths)
+    launch.assert_awaited_once_with(provider.auth.store.paths)
     open_login_entry.assert_awaited_once_with(session)
     wait_for_manual_login.assert_awaited_once_with(session)
     save_session.assert_awaited_once_with(session)

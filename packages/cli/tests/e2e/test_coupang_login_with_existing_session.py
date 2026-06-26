@@ -17,19 +17,19 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
 
     with (
         patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_home", new=AsyncMock()) as open_home,
-        patch.object(provider.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
-        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock()) as wait_for_manual_login,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(provider.auth.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(provider.auth.browser, "open_home", new=AsyncMock()) as open_home,
+        patch.object(provider.auth.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
+        patch.object(provider.auth.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider.auth.browser, "wait_for_manual_login", new=AsyncMock()) as wait_for_manual_login,
+        patch.object(provider.auth.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "쿠팡 로그인 성공"]
-    launch.assert_awaited_once_with(provider.store.paths)
-    assert provider.store.paths == paths
+    launch.assert_awaited_once_with(provider.auth.store.paths)
+    assert provider.auth.store.paths == paths
     open_home.assert_awaited_once_with(session)
     is_logged_in.assert_awaited_once_with(session.tab)
     open_login_entry.assert_not_awaited()
