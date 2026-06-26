@@ -3,4 +3,4 @@ from k_commerce_cli.types import LogoutResult
 
 
 async def logout(provider: str) -> LogoutResult:
-    return await get_provider(provider).logout()
+    return await get_provider(provider).auth.logout()

@@ -3,4 +3,4 @@ from k_commerce_cli.types import LoginResult
 
 
 async def login(provider: str) -> LoginResult:
-    return await get_provider(provider).login()
+    return await get_provider(provider).auth.login()
