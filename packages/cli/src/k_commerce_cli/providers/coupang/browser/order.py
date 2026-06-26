@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import re
 from typing import cast
 
@@ -59,6 +60,7 @@ class CoupangOrderBrowser:
 
             group_header_match = re.match(r"^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*주문", group_text)
             group_header = group_header_match.group(0) if group_header_match else ""
+            order_date = group_header.removesuffix(" 주문").strip()
             item_nodes = await self._query_all(group, 'tr, [class*="sc-5a139ee-0"], td')
             seen_item_texts: set[str] = set()
             for item_node in item_nodes:
@@ -100,6 +102,7 @@ class CoupangOrderBrowser:
 
                 orders.append(
                     OrderListEntry(
+                        order_date=order_date,
                         title=title,
                         quantity=quantity,
                         status=cast(OrderStatus, status),
@@ -118,6 +121,25 @@ class CoupangOrderBrowser:
         for scope_label in scope_labels:
             await self._activate_scope(tab, scope_label)
             await self._collect_current_scope_orders(tab, orders, seen_rows)
+
+        return tuple(orders)
+
+    async def read_orders_through_date(
+        self,
+        tab: BrowserTab,
+        cutoff_order_date: str | None,
+    ) -> tuple[OrderListEntry, ...]:
+        orders: list[OrderListEntry] = []
+        seen_rows: set[str] = set()
+        cutoff_date = self._parse_order_date(cutoff_order_date)
+
+        if await self._collect_scope_orders_through_date(tab, orders, seen_rows, cutoff_date):
+            return tuple(orders)
+
+        for scope_label in await self._scope_labels(tab):
+            await self._activate_scope(tab, scope_label)
+            if await self._collect_scope_orders_through_date(tab, orders, seen_rows, cutoff_date):
+                break
 
         return tuple(orders)
 
@@ -246,6 +268,35 @@ class CoupangOrderBrowser:
             if not await self._go_to_next_page(tab, next_control, current_snapshot):
                 break
 
+    async def _collect_scope_orders_through_date(
+        self,
+        tab: BrowserTab,
+        orders: list[OrderListEntry],
+        seen_rows: set[str],
+        cutoff_date: date | None,
+    ) -> bool:
+        for _ in range(ORDER_PAGE_MAX_PAGES):
+            visible_orders = await self.read_visible_orders(tab)
+            for order in visible_orders:
+                row_key = "|".join((order.title, str(order.quantity), order.status))
+                if row_key in seen_rows:
+                    continue
+                seen_rows.add(row_key)
+                orders.append(order)
+
+            if self._should_stop_after_orders(visible_orders, cutoff_date):
+                return True
+
+            next_control = await self._find_next_page_control(tab)
+            if next_control is None:
+                return False
+
+            current_snapshot = await self._page_snapshot(tab)
+            if not await self._go_to_next_page(tab, next_control, current_snapshot):
+                return False
+
+        return False
+
     async def _scope_labels(self, tab: BrowserTab) -> list[str]:
         scope_root = await self._scope_root(tab)
         if scope_root is None:
@@ -344,6 +395,36 @@ class CoupangOrderBrowser:
         for child in self._children(node):
             parts.append(self._snapshot_text(child))
         return " ".join(part for part in parts if part).strip()
+
+    def _should_stop_after_orders(
+        self,
+        orders: tuple[OrderListEntry, ...],
+        cutoff_date: date | None,
+    ) -> bool:
+        if cutoff_date is None or not orders:
+            return False
+
+        oldest_visible = min(
+            (
+                parsed
+                for parsed in (self._parse_order_date(order.order_date) for order in orders)
+                if parsed is not None
+            ),
+            default=None,
+        )
+        return oldest_visible is not None and oldest_visible < cutoff_date
+
+    def _parse_order_date(self, raw: str | None) -> date | None:
+        if not raw:
+            return None
+        match = re.match(r"^\s*(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\s*$", raw)
+        if match is None:
+            return None
+        year, month, day = (int(part) for part in match.groups())
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
 
 
 __all__ = ["COUPANG_ORDER_LIST_URL", "CoupangOrderBrowser"]

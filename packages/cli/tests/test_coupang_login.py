@@ -527,6 +527,188 @@ async def test_list_returns_logged_out_when_session_is_not_valid(
 
 
 @pytest.mark.anyio
+async def test_list_returns_cached_orders_without_launching_browser(
+    tmp_path: Path,
+) -> None:
+    auth_provider = CoupangAuthProvider()
+    provider = CoupangOrderProvider(auth_provider)
+    browser = _BrowserSpy()
+    auth_provider.browser = browser
+    cache_dir = tmp_path / "coupang"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "orders.json").write_text(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "order_date": "2026. 6. 26",
+                        "title": "로켓프레시 사과",
+                        "quantity": 2,
+                        "status": "배송완료",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    auth_provider.restore_valid_session = AsyncMock(return_value=None)
+
+    result = await provider.list(root_dir=tmp_path)
+
+    assert result == OrderListResult(
+        provider=ProviderName.COUPANG,
+        success=True,
+        message="주문 1건을 찾았습니다.",
+        orders=(
+            OrderListEntry(
+                order_date="2026. 6. 26",
+                title="로켓프레시 사과",
+                quantity=2,
+                status="배송완료",
+            ),
+        ),
+    )
+    auth_provider.restore_valid_session.assert_awaited_once_with(tmp_path)
+    browser.launch.assert_not_awaited()
+    browser.open_home.assert_not_awaited()
+    browser.close.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_list_refreshes_through_oldest_non_terminal_cached_order(
+    tmp_path: Path,
+) -> None:
+    auth_provider = CoupangAuthProvider()
+    provider = CoupangOrderProvider(auth_provider)
+    session = types.SimpleNamespace(tab=types.SimpleNamespace())
+    auth_provider.restore_valid_session = AsyncMock(return_value=session)
+    auth_provider.close_session = AsyncMock()
+    cache_dir = tmp_path / "coupang"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "orders.json").write_text(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "order_date": "2026. 6. 27",
+                        "title": "새상품",
+                        "quantity": 1,
+                        "status": "배송완료",
+                    },
+                    {
+                        "order_date": "2026. 6. 24",
+                        "title": "진행상품",
+                        "quantity": 1,
+                        "status": "배송중",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    provider.order_browser.open_order_list = AsyncMock()
+    provider.order_browser.read_order_page_state = AsyncMock(
+        return_value=OrderPageState(
+            url="https://mc.coupang.com/ssr/desktop/order/list",
+            ready=True,
+            has_login_prompt=False,
+            has_order_signals=True,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
+    )
+    provider.order_browser.read_orders_through_date = AsyncMock(
+        return_value=(
+            OrderListEntry(
+                order_date="2026. 6. 28",
+                title="추가주문",
+                quantity=1,
+                status="결제완료",
+            ),
+            OrderListEntry(
+                order_date="2026. 6. 24",
+                title="진행상품",
+                quantity=1,
+                status="배송완료",
+            ),
+        )
+    )
+
+    result = await provider.list(root_dir=tmp_path)
+
+    assert result.orders[0] == OrderListEntry(
+        order_date="2026. 6. 28",
+        title="추가주문",
+        quantity=1,
+        status="결제완료",
+    )
+    provider.order_browser.read_orders_through_date.assert_awaited_once_with(
+        session.tab,
+        "2026. 6. 24",
+    )
+    auth_provider.close_session.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_list_refreshes_from_newest_cached_order_when_all_cached_orders_are_terminal(
+    tmp_path: Path,
+) -> None:
+    auth_provider = CoupangAuthProvider()
+    provider = CoupangOrderProvider(auth_provider)
+    session = types.SimpleNamespace(tab=types.SimpleNamespace())
+    auth_provider.restore_valid_session = AsyncMock(return_value=session)
+    auth_provider.close_session = AsyncMock()
+    cache_dir = tmp_path / "coupang"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "orders.json").write_text(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "order_date": "2026. 6. 27",
+                        "title": "완료상품",
+                        "quantity": 1,
+                        "status": "배송완료",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    provider.order_browser.open_order_list = AsyncMock()
+    provider.order_browser.read_order_page_state = AsyncMock(
+        return_value=OrderPageState(
+            url="https://mc.coupang.com/ssr/desktop/order/list",
+            ready=True,
+            has_login_prompt=False,
+            has_order_signals=True,
+            has_empty_state=False,
+            has_loading_indicator=False,
+        )
+    )
+    provider.order_browser.read_orders_through_date = AsyncMock(
+        return_value=(
+            OrderListEntry(
+                order_date="2026. 6. 28",
+                title="새주문",
+                quantity=1,
+                status="결제완료",
+            ),
+        )
+    )
+
+    await provider.list(root_dir=tmp_path)
+
+    provider.order_browser.read_orders_through_date.assert_awaited_once_with(
+        session.tab,
+        "2026. 6. 27",
+    )
+
+
+@pytest.mark.anyio
 async def test_list_opens_order_page_after_restoring_valid_session(
     tmp_path: Path,
 ) -> None:
@@ -551,6 +733,7 @@ async def test_list_opens_order_page_after_restoring_valid_session(
     provider.order_browser.read_all_orders = AsyncMock(
         return_value=(
             OrderListEntry(
+                order_date="2026. 6. 26",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -569,6 +752,7 @@ async def test_list_opens_order_page_after_restoring_valid_session(
         message="주문 1건을 찾았습니다.",
         orders=(
             OrderListEntry(
+                order_date="2026. 6. 26",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -582,9 +766,16 @@ async def test_list_opens_order_page_after_restoring_valid_session(
     provider.order_browser.read_order_page_state.assert_awaited_once_with(session.tab)
     provider.order_browser.read_all_orders.assert_awaited_once_with(session.tab)
     browser.close.assert_awaited_once_with(session)
-    assert json.loads((tmp_path / "coupang" / "orders.json").read_text(encoding="utf-8")) == [
-        {"title": "로켓프레시 사과", "quantity": 2, "status": "배송완료"}
-    ]
+    assert json.loads((tmp_path / "coupang" / "orders.json").read_text(encoding="utf-8")) == {
+        "orders": [
+            {
+                "order_date": "2026. 6. 26",
+                "title": "로켓프레시 사과",
+                "quantity": 2,
+                "status": "배송완료",
+            }
+        ]
+    }
 
 
 @pytest.mark.anyio
@@ -622,6 +813,7 @@ async def test_list_retries_until_order_page_becomes_ready(
     provider.order_browser.read_all_orders = AsyncMock(
         return_value=(
             OrderListEntry(
+                order_date="2026. 6. 26",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -640,6 +832,7 @@ async def test_list_retries_until_order_page_becomes_ready(
         message="주문 1건을 찾았습니다.",
         orders=(
             OrderListEntry(
+                order_date="2026. 6. 26",
                 title="로켓프레시 사과",
                 quantity=2,
                 status="배송완료",
@@ -673,7 +866,7 @@ async def test_list_returns_logged_out_when_order_page_redirects_to_login(
             has_loading_indicator=False,
         )
     )
-    provider.order_browser.read_all_orders = AsyncMock(return_value=())
+    provider.order_browser.read_orders_through_date = AsyncMock(return_value=())
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
@@ -687,7 +880,7 @@ async def test_list_returns_logged_out_when_order_page_redirects_to_login(
         orders=(),
     )
     provider.order_browser.read_order_page_state.assert_awaited_once_with(session.tab)
-    provider.order_browser.read_all_orders.assert_not_awaited()
+    provider.order_browser.read_orders_through_date.assert_not_awaited()
     browser.close.assert_awaited_once_with(session)
 
 
@@ -731,7 +924,7 @@ async def test_list_returns_failure_when_order_page_never_becomes_ready(
             ),
         ]
     )
-    provider.order_browser.read_all_orders = AsyncMock(return_value=())
+    provider.order_browser.read_orders_through_date = AsyncMock(return_value=())
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
@@ -745,7 +938,7 @@ async def test_list_returns_failure_when_order_page_never_becomes_ready(
         orders=(),
     )
     assert provider.order_browser.read_order_page_state.await_count == 3
-    provider.order_browser.read_all_orders.assert_not_awaited()
+    provider.order_browser.read_orders_through_date.assert_not_awaited()
     browser.close.assert_awaited_once_with(session)
 
 

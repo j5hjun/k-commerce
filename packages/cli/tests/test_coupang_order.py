@@ -282,6 +282,47 @@ async def test_read_all_orders_follows_next_page_until_it_stops() -> None:
 
 
 @pytest.mark.anyio
+async def test_read_orders_through_date_stops_after_crossing_cutoff() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+
+    def make_item(title: str, status: str) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{title} {status} 장바구니 담기",
+            query_map={"a": [_DummyOrderElement(title)]},
+        )
+
+    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+        return _DummyOrderElement(
+            f"{date} 주문 주문 상세보기 {item.text_all}",
+            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+        )
+
+    page_index = 0
+    roots = [
+        _DummyOrderElement(children=[make_group("2026. 6. 27", make_item("새상품", "결제완료"))]),
+        _DummyOrderElement(children=[make_group("2026. 6. 24", make_item("진행상품", "배송중"))]),
+        _DummyOrderElement(children=[make_group("2026. 6. 23", make_item("이전상품", "배송완료"))]),
+    ]
+
+    def advance_page() -> None:
+        nonlocal page_index
+        if page_index + 1 < len(roots):
+            page_index += 1
+            tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
+            roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+        else:
+            roots[page_index]._query_map["button, a"] = []
+
+    tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
+    roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+
+    orders = await browser.read_orders_through_date(tab, "2026. 6. 24")
+
+    assert tuple(order.title for order in orders) == ("새상품", "진행상품")
+
+
+@pytest.mark.anyio
 async def test_read_all_orders_collects_all_period_scopes() -> None:
     browser = CoupangOrderBrowser()
     tab = _DummyOrderTab()
