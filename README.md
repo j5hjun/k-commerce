@@ -21,7 +21,7 @@ uv sync
 
 The workspace currently includes:
 
-- a Coupang authentication flow in the CLI with `login`, `login status`, and `logout` commands
+- a Coupang CLI flow with `login`, `login status`, `logout`, and `order list` commands
 - an MCP package that exposes `login` and `login_status` tools on top of the shared provider registry
 
 ## Supported Providers

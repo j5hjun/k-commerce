@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncclick as click
 
 from k_commerce_cli.commands.login import login
+from k_commerce_cli.commands.order import order
 from k_commerce_cli.commands.logout import logout
 
 
@@ -12,6 +13,7 @@ async def app() -> None:
 
 
 app.add_command(login)
+app.add_command(order)
 app.add_command(logout)
 
 
