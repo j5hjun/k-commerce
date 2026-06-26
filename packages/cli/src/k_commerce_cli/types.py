@@ -24,7 +24,6 @@ class StatusResult:
 
 @dataclass(frozen=True)
 class OrderListEntry:
-    order_id: str
     title: str
     quantity: int
     status: str

@@ -19,10 +19,11 @@ class CoupangOrderBrowser:
                     (() => {
                       const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
                       const hasLoginPrompt =
-                        /로그인|회원가입|아이디|비밀번호/.test(text) &&
-                        document.querySelector('input[type="password"], input[name="password"], form[action*="login"], a[href*="login"]') !== null;
+                        document.querySelector('input[type="password"], input[name="password"], form[action*="login"]') !== null;
                       const hasOrderSignals =
-                        document.querySelector('[data-testid*="order"], [class*="order"], [id*="order"]') !== null ||
+                        document.querySelector(
+                          '[data-testid*="order"], [class*="my-area-contents"], [class*="my-area-body"], [class*="order"], [id*="order"]'
+                        ) !== null ||
                         /주문번호|배송중|배송완료|결제완료|취소|반품|교환/.test(text);
                       const hasEmptyState =
                         /주문 내역이 없|주문한 상품이 없|주문이 없습니다|구매 내역이 없/.test(text);
@@ -31,7 +32,7 @@ class CoupangOrderBrowser:
 
                       return {
                         url: window.location.href,
-                        ready: hasOrderSignals || hasEmptyState,
+                        ready: !hasLoadingIndicator && (hasOrderSignals || hasEmptyState),
                         has_login_prompt: hasLoginPrompt,
                         has_order_signals: hasOrderSignals,
                         has_empty_state: hasEmptyState,
@@ -40,14 +41,15 @@ class CoupangOrderBrowser:
                     })()
                     """
                 )
-                if isinstance(result, dict):
+                decoded = self._decode_evaluate_value(result)
+                if isinstance(decoded, dict):
                     return {
-                        "url": str(result.get("url", "")),
-                        "ready": bool(result.get("ready", False)),
-                        "has_login_prompt": bool(result.get("has_login_prompt", False)),
-                        "has_order_signals": bool(result.get("has_order_signals", False)),
-                        "has_empty_state": bool(result.get("has_empty_state", False)),
-                        "has_loading_indicator": bool(result.get("has_loading_indicator", False)),
+                        "url": str(decoded.get("url", "")),
+                        "ready": bool(decoded.get("ready", False)),
+                        "has_login_prompt": bool(decoded.get("has_login_prompt", False)),
+                        "has_order_signals": bool(decoded.get("has_order_signals", False)),
+                        "has_empty_state": bool(decoded.get("has_empty_state", False)),
+                        "has_loading_indicator": bool(decoded.get("has_loading_indicator", False)),
                     }
             except Exception:
                 pass
@@ -73,38 +75,89 @@ class CoupangOrderBrowser:
                 rows = await evaluate(
                     """
                     (() => {
-                      const selectors = [
-                        '[data-testid*="order"]',
-                        'article',
-                        'section',
-                        'li',
-                      ];
-                      const seen = new Set();
-                      const candidates = selectors.flatMap((selector) =>
-                        [...document.querySelectorAll(selector)]
-                      );
+                      const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                      const actionPattern = /주문 상세보기|배송 조회|교환, 반품 신청|리뷰 작성하기|판매자 문의|장바구니 담기|이전|다음/;
+                      const orderDatePattern = /^\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\s*주문/;
+                      const statusPattern = /(결제완료|상품준비중|배송중|배송완료|취소|반품|교환|배송시작)/;
 
-                      return candidates
-                        .map((node) => {
-                          const text = (node.innerText || '').replace(/\\s+/g, ' ').trim();
-                          if (!text || seen.has(text)) return null;
-                          seen.add(text);
+                      const orderRoot = document.querySelector('[class*="my-area-contents"] > div');
+                      const orderGroups = orderRoot
+                        ? [...orderRoot.children].filter((node) => {
+                            const text = normalize(node.innerText);
+                            return orderDatePattern.test(text) && /주문 상세보기/.test(text);
+                          })
+                        : [];
 
-                          const orderIdMatch = text.match(/(?:주문번호|Order\\s*No\\.?)[^0-9]*([0-9-]+)/i);
-                          const quantityMatch = text.match(/(?:수량|구매수량)[^0-9]*([0-9]+)/);
-                          const statusMatch = text.match(/(결제완료|상품준비중|배송중|배송완료|취소|반품|교환)/);
-                          const titleNode =
-                            node.querySelector('strong, h3, h4, [data-testid*="item-name"], [class*="name"]');
-                          const title = (titleNode?.innerText || text).replace(/\\s+/g, ' ').trim();
+                      const rows = [];
+                      const seenRows = new Set();
 
-                          return {
-                            order_id: orderIdMatch ? orderIdMatch[1].trim() : '',
+                      const buildRow = (text, title, status, quantity, hasDetailLink) => ({
+                        title: normalize(title),
+                        quantity: quantity || '1',
+                        status: status || '',
+                        has_detail_link: hasDetailLink,
+                        raw_text: normalize(text),
+                      });
+
+                      for (const group of orderGroups) {
+                        const groupText = normalize(group.innerText);
+                        const groupHeaderMatch = groupText.match(/^\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\s*주문/);
+                        const groupHeader = groupHeaderMatch ? groupHeaderMatch[0] : '';
+                        const groupHasDetailLink = /주문 상세보기/.test(groupText);
+                        const orderIdMatch = groupText.match(/(?:주문번호|Order\\s*No\\.?)[^0-9]*([0-9-]+)/i);
+                        const itemNodes = [...group.querySelectorAll('tr, [class*="sc-5a139ee-0"], td')]
+                          .filter((node) => {
+                            const text = normalize(node.innerText);
+                            return text && /장바구니 담기/.test(text);
+                          });
+
+                        if (itemNodes.length === 0) {
+                          continue;
+                        }
+
+                        const seenItemTexts = new Set();
+                        for (const itemNode of itemNodes) {
+                          const text = normalize(itemNode.innerText);
+                          if (!text || seenItemTexts.has(text)) continue;
+                          seenItemTexts.add(text);
+
+                          const statusMatch = text.match(statusPattern);
+                          const quantityMatch = text.match(/(?:\\s|^)(\\d+)개(?:\\s|$)/);
+                          const productLinks = [...itemNode.querySelectorAll('a')]
+                            .map((el) => normalize(el.innerText))
+                            .filter((linkText) => {
+                              if (!linkText) return false;
+                              if (actionPattern.test(linkText)) return false;
+                              if (orderDatePattern.test(linkText)) return false;
+                              if (/\\d{1,3}(,\\d{3})*\\s*원/.test(linkText)) return false;
+                              return linkText.length >= 5;
+                            });
+
+                          const title = productLinks[0] || '';
+                          if (!title) continue;
+
+                          const row = buildRow(
+                            `${groupHeader} ${text}`,
                             title,
-                            quantity: quantityMatch ? quantityMatch[1] : '1',
-                            status: statusMatch ? statusMatch[1].trim() : '',
-                          };
-                        })
-                        .filter((row) => row && row.title);
+                            statusMatch ? statusMatch[1].trim() : '',
+                            quantityMatch ? quantityMatch[1] : '1',
+                            groupHasDetailLink,
+                          );
+                          const rowKey = [
+                            row.title,
+                            row.quantity,
+                            row.status,
+                          ].join('|');
+                          if (seenRows.has(rowKey)) continue;
+                          seenRows.add(rowKey);
+
+                          rows.push(
+                            row
+                          );
+                        }
+                      }
+
+                      return rows;
                     })()
                     """
                 )
@@ -117,19 +170,26 @@ class CoupangOrderBrowser:
 
         orders: list[OrderListEntry] = []
         for row in rows:
-            if not isinstance(row, dict):
+            decoded_row = self._decode_evaluate_value(row)
+            if not isinstance(decoded_row, dict):
                 continue
 
-            title = str(row.get("title", "")).strip()
+            title = str(decoded_row.get("title", "")).strip()
             if not title:
                 continue
 
-            order_id = str(row.get("order_id", "")).strip()
-            status = str(row.get("status", "")).strip()
-            if not self._looks_like_order_row(title=title, order_id=order_id, status=status):
+            status = str(decoded_row.get("status", "")).strip()
+            has_detail_link = bool(decoded_row.get("has_detail_link", False))
+            raw_text = str(decoded_row.get("raw_text", title)).strip()
+            if not self._looks_like_order_row(
+                title=title,
+                status=status,
+                has_detail_link=has_detail_link,
+                raw_text=raw_text,
+            ):
                 continue
 
-            quantity_raw = row.get("quantity", 1)
+            quantity_raw = decoded_row.get("quantity", 1)
             try:
                 quantity = int(quantity_raw)
             except (TypeError, ValueError):
@@ -137,7 +197,6 @@ class CoupangOrderBrowser:
 
             orders.append(
                 OrderListEntry(
-                    order_id=order_id,
                     title=title,
                     quantity=quantity,
                     status=status,
@@ -146,11 +205,17 @@ class CoupangOrderBrowser:
 
         return tuple(orders)
 
-    def _looks_like_order_row(self, *, title: str, order_id: str, status: str) -> bool:
+    def _looks_like_order_row(
+        self,
+        *,
+        title: str,
+        status: str,
+        has_detail_link: bool,
+        raw_text: str,
+    ) -> bool:
         if not title:
             return False
 
-        has_order_id = any(character.isdigit() for character in order_id)
         has_known_status = status in {
             "결제완료",
             "상품준비중",
@@ -160,7 +225,30 @@ class CoupangOrderBrowser:
             "반품",
             "교환",
         }
-        return has_order_id or has_known_status
+        normalized = " ".join(raw_text.split())
+        has_order_date = "주문" in normalized and any(character.isdigit() for character in normalized)
+        starts_with_order_date = normalized[:32].count("주문") > 0 and normalized[:16].count(".") >= 2
+        return starts_with_order_date and has_order_date and has_detail_link and has_known_status
+
+    def _decode_evaluate_value(self, value: object) -> object:
+        if isinstance(value, dict) and set(value.keys()) == {"type", "value"}:
+            return self._decode_evaluate_value(value["value"])
+
+        if isinstance(value, list):
+            if all(
+                isinstance(item, (list, tuple))
+                and len(item) == 2
+                and isinstance(item[0], str)
+                for item in value
+            ):
+                return {
+                    str(key): self._decode_evaluate_value(raw_value)
+                    for key, raw_value in value
+                }
+
+            return [self._decode_evaluate_value(item) for item in value]
+
+        return value
 
 
 __all__ = ["COUPANG_ORDER_LIST_URL", "CoupangOrderBrowser"]
