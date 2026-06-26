@@ -15,7 +15,7 @@ def create_mcp_server() -> FastMCP:
     mcp_server.add_tool(
         get_providers,
         name="get_providers",
-        description="List supported commerce providers for login/logout.",
+        description="List supported commerce providers",
     )
     return mcp_server
 
