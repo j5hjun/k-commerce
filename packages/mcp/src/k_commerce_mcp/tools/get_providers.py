@@ -1,4 +1,4 @@
-from k_commerce_cli.providers.registry import list_providers
+from k_commerce_cli.services.registry import list_providers
 
 
 async def get_providers() -> list[str]:
