@@ -3,9 +3,10 @@ from pathlib import Path
 
 import pytest
 
-import k_commerce_cli.providers.coupang as coupang_provider_module
-from k_commerce_cli.providers.paths import ProviderPaths
-from k_commerce_cli.providers.store import Credentials, ProviderStore
+import k_commerce_cli.services.providers.coupang as coupang_provider_module
+from k_commerce_cli.services.models import Credentials
+from k_commerce_cli.services.paths import ProviderPaths
+from k_commerce_cli.services.store import ProviderStore
 
 
 def test_exposes_provider_paths(tmp_path: Path) -> None:

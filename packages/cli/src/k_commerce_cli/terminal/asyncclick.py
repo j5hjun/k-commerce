@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncclick as click
 
 
-class ClickTerminal:
+class AsyncClickTerminal:
     def echo(self, message: str) -> None:
         click.echo(message)
 

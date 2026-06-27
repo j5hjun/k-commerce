@@ -1,7 +1,7 @@
 import pytest
 
-from k_commerce_cli.providers.coupang import CoupangProvider
-from k_commerce_cli.providers.registry import get_provider, list_providers
+from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.registry import get_provider, list_providers
 
 
 def test_get_provider_returns_coupang_provider_instance() -> None:

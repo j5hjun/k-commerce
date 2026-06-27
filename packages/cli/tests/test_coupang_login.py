@@ -12,17 +12,17 @@ import pytest
 
 sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 
-from k_commerce_cli.providers.coupang.browser import (
+from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.providers.coupang.auth import (
     COUPANG_HOME_URL,
     COUPANG_LOGIN_URL,
-    CoupangAuthBrowser,
-    CoupangBrowserSession,
-    CoupangSessionBrowser,
+    COUPANG_LOGIN_LINK_SELECTOR,
+    COUPANG_MYCOUPANG_SELECTOR,
+    CoupangAuthService,
 )
-from k_commerce_cli.providers.coupang import CoupangProvider
-from k_commerce_cli.providers.coupang.auth import CoupangAuthService
-from k_commerce_cli.providers.paths import ProviderPaths
-from k_commerce_cli.providers.store import ProviderStore
+from k_commerce_cli.services.browser import NodriverBrowser, NodriverBrowserSession
+from k_commerce_cli.services.paths import ProviderPaths
+from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.types import LoginResult, StatusResult
 
 
@@ -89,22 +89,24 @@ class _DummyBrowser:
 class _BrowserSpy:
     def __init__(self) -> None:
         self.launch = AsyncMock()
-        self.open_login_entry = AsyncMock()
-        self.open_home = AsyncMock()
-        self.is_logged_in = AsyncMock()
-        self.wait_for_manual_login = AsyncMock()
-        self.fill_login_form = AsyncMock()
         self.save_session = AsyncMock()
         self.close = AsyncMock()
+        self.select = AsyncMock()
 
 
 def _make_auth_provider():
-    return CoupangAuthService(provider_name="coupang")
+    browser = NodriverBrowser()
+    store = ProviderStore(ProviderPaths("coupang"))
+    return CoupangAuthService(
+        provider_name="coupang",
+        store=store,
+        browser=browser,
+    )
 
 
 @pytest.mark.anyio
 async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
-    browser = CoupangSessionBrowser()
+    browser = NodriverBrowser()
     tab = _DummyTab()
     runtime_browser = _DummyBrowser(tab)
     nodriver_module = sys.modules["nodriver"]
@@ -125,69 +127,62 @@ async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
 
     assert start_mock.await_args.kwargs["user_data_dir"] == str(paths.profile_dir)
     runtime_browser.cookies.load.assert_awaited_once_with(file=str(cookies_file))
-    assert session.profile_dir == paths.profile_dir
-    assert session.cookies_file == cookies_file
 
 
 @pytest.mark.anyio
 async def test_open_login_entry_opens_login_page_directly() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
-    session = CoupangBrowserSession(
-        browser=_DummyBrowser(tab),
-        tab=tab,
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
-    )
+    session = NodriverBrowserSession(browser=_DummyBrowser(tab), tab=tab)
 
-    await browser.open_login_entry(session)
+    await provider._open_login_entry(session)
 
     assert tab.get_calls == [COUPANG_LOGIN_URL]
 
 
 @pytest.mark.anyio
 async def test_is_logged_in_checks_expected_selectors() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
-        'a[href*="login/login.pang"]': None,
-        'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
+        COUPANG_LOGIN_LINK_SELECTOR: None,
+        COUPANG_MYCOUPANG_SELECTOR: object(),
     }
 
-    assert await browser.is_logged_in(tab) is True
+    assert await provider._is_logged_in(tab) is True
 
 
 @pytest.mark.anyio
 async def test_is_logged_in_ignores_logout_link_on_logged_in_home() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
         'a[href*="login.coupang.com"]': object(),
-        'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
+        COUPANG_MYCOUPANG_SELECTOR: object(),
     }
 
-    assert await browser.is_logged_in(tab) is True
+    assert await provider._is_logged_in(tab) is True
 
 
 @pytest.mark.anyio
 async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.select_map = {
-        'a[href*="login/login.pang"]': None,
-        'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': object(),
+        COUPANG_LOGIN_LINK_SELECTOR: None,
+        COUPANG_MYCOUPANG_SELECTOR: object(),
     }
 
-    assert await browser.is_logged_in(tab) is True
+    assert await provider._is_logged_in(tab) is True
     assert tab.evaluate_calls == []
 
 
 @pytest.mark.anyio
 async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
     tab.evaluate_error = RuntimeError("execution context changed")
@@ -195,15 +190,15 @@ async def test_is_logged_in_ignores_stale_selector_errors_during_navigation() ->
         'a[href*="login.coupang.com"]': None,
     }
     tab.select_errors = {
-        'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]': RuntimeError("stale node"),
+        COUPANG_MYCOUPANG_SELECTOR: RuntimeError("stale node"),
     }
 
-    assert await browser.is_logged_in(tab) is False
+    assert await provider._is_logged_in(tab) is False
 
 
 @pytest.mark.anyio
 async def test_fill_login_form_submits_after_filling_credentials() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     email_input = _DummyElement()
     password_input = _DummyElement()
@@ -213,14 +208,12 @@ async def test_fill_login_form_submits_after_filling_credentials() -> None:
         'input[name="password"], input#login-password-input': password_input,
         'button[type="submit"], .login__button': submit_button,
     }
-    session = CoupangBrowserSession(
+    session = NodriverBrowserSession(
         browser=_DummyBrowser(tab),
         tab=tab,
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
     )
 
-    result = await browser.fill_login_form(session, "user@example.com", "secret")
+    result = await provider._fill_login_form(session, "user@example.com", "secret")
 
     assert result is True
     email_input.send_keys.assert_awaited_once_with("user@example.com")
@@ -231,7 +224,7 @@ async def test_fill_login_form_submits_after_filling_credentials() -> None:
 
 @pytest.mark.anyio
 async def test_fill_login_form_retries_submit_after_data_request_failure_modal() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     email_input = _DummyElement()
     password_input = _DummyElement()
@@ -242,14 +235,12 @@ async def test_fill_login_form_retries_submit_after_data_request_failure_modal()
         'button[type="submit"], .login__button': submit_button,
     }
     tab.evaluate_result = True
-    session = CoupangBrowserSession(
+    session = NodriverBrowserSession(
         browser=_DummyBrowser(tab),
         tab=tab,
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
     )
 
-    result = await browser.fill_login_form(session, "user@example.com", "secret")
+    result = await provider._fill_login_form(session, "user@example.com", "secret")
 
     assert result is True
     assert submit_button.click.await_count == 2
@@ -258,7 +249,7 @@ async def test_fill_login_form_retries_submit_after_data_request_failure_modal()
 
 @pytest.mark.anyio
 async def test_fill_login_form_skips_retry_when_data_request_failure_modal_missing() -> None:
-    browser = CoupangAuthBrowser(CoupangSessionBrowser())
+    provider = _make_auth_provider()
     tab = _DummyTab()
     email_input = _DummyElement()
     password_input = _DummyElement()
@@ -269,14 +260,12 @@ async def test_fill_login_form_skips_retry_when_data_request_failure_modal_missi
         'button[type="submit"], .login__button': submit_button,
     }
     tab.evaluate_result = False
-    session = CoupangBrowserSession(
+    session = NodriverBrowserSession(
         browser=_DummyBrowser(tab),
         tab=tab,
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
     )
 
-    result = await browser.fill_login_form(session, "user@example.com", "secret")
+    result = await provider._fill_login_form(session, "user@example.com", "secret")
 
     assert result is True
     submit_button.click.assert_awaited_once_with()
@@ -284,22 +273,20 @@ async def test_fill_login_form_skips_retry_when_data_request_failure_modal_missi
 
 
 @pytest.mark.anyio
-async def test_active_tab_prefers_web_page_over_chrome_ui_tab() -> None:
-    browser = CoupangSessionBrowser()
+async def test_login_tab_prefers_web_page_over_chrome_ui_tab() -> None:
+    provider = _make_auth_provider()
     coupang_tab = _DummyTab()
     coupang_tab.url = COUPANG_HOME_URL
     chrome_ui_tab = _DummyTab()
     chrome_ui_tab.url = "chrome://omnibox-popup.top-chrome/"
     runtime_browser = _DummyBrowser(coupang_tab)
     runtime_browser.tabs = [coupang_tab, chrome_ui_tab]
-    session = CoupangBrowserSession(
+    session = NodriverBrowserSession(
         browser=runtime_browser,
         tab=coupang_tab,
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
     )
 
-    assert browser._active_tab(session) is coupang_tab
+    assert provider._login_tab(session) is coupang_tab
 
 
 def test_default_store_uses_provider_paths() -> None:
@@ -311,10 +298,10 @@ def test_default_store_uses_provider_paths() -> None:
     assert provider.store.base_dir == Path.home() / ".k-commerce" / "coupang"
 
 
-def test_configure_paths_uses_overridden_root_dir(tmp_path: Path) -> None:
+def test_store_can_be_replaced_with_overridden_root_dir(tmp_path: Path) -> None:
     provider = _make_auth_provider()
 
-    provider._configure_paths(tmp_path)
+    provider.store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
 
     assert isinstance(provider.store, ProviderStore)
     assert provider.store.paths.base_dir == tmp_path / "coupang"
@@ -353,17 +340,17 @@ async def test_restore_session_skips_launch_without_cookies_file() -> None:
 async def test_login_with_credentials_uses_browser_form_submission() -> None:
     provider = _make_auth_provider()
     browser = _BrowserSpy()
-    session = object()
+    session = types.SimpleNamespace(tab=_DummyTab())
     browser.launch = AsyncMock(return_value=session)
-    browser.fill_login_form = AsyncMock(return_value=True)
-    browser.wait_for_manual_login = AsyncMock(return_value=True)
     provider.browser = browser
+    provider._fill_login_form = AsyncMock(return_value=True)
+    provider._wait_for_session_login = AsyncMock(return_value=True)
 
     result = await provider._login_with_credentials(type("Creds", (), {"email": "user@example.com", "password": "secret"})())
 
     assert result is True
-    browser.open_login_entry.assert_awaited_once_with(session)
-    browser.fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
+    assert session.tab.get_calls == [COUPANG_LOGIN_URL]
+    provider._fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
 
 
 
@@ -379,7 +366,7 @@ async def test_persist_session_saves_cookies_and_metadata() -> None:
         await provider._persist_session("automatic")
         metadata = provider.store.session_meta_path.read_text(encoding="utf-8")
 
-    browser.save_session.assert_awaited_once_with(session)
+    browser.save_session.assert_awaited_once_with(session, provider.store.cookies_file)
     assert '"login_method": "automatic"' in metadata
 
 
@@ -387,23 +374,21 @@ async def test_persist_session_saves_cookies_and_metadata() -> None:
 async def test_wait_for_manual_login_delegates_to_browser() -> None:
     provider = _make_auth_provider()
     browser = _BrowserSpy()
-    session = object()
+    session = types.SimpleNamespace(tab=object())
     provider.browser = browser
     provider._browser_session = session
-    browser.wait_for_manual_login = AsyncMock(return_value=True)
+    provider._is_logged_in = AsyncMock(return_value=True)
 
     assert await provider._wait_for_manual_login() is True
-    browser.wait_for_manual_login.assert_awaited_once_with(session)
+    provider._is_logged_in.assert_awaited_once_with(session.tab)
 
 
 @pytest.mark.anyio
 async def test_close_browser_session_handles_non_awaitable_stop() -> None:
     provider = _make_auth_provider()
-    session = CoupangBrowserSession(
+    session = NodriverBrowserSession(
         browser=types.SimpleNamespace(stop=lambda: None),
         tab=_DummyTab(),
-        profile_dir=Path("/tmp/profile"),
-        cookies_file=Path("/tmp/cookies.dat"),
     )
     provider._browser_session = session
 
@@ -418,10 +403,10 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
 ) -> None:
     provider = _make_auth_provider()
     browser = _BrowserSpy()
-    session = types.SimpleNamespace(tab=object())
+    session = types.SimpleNamespace(tab=_DummyTab())
     browser.launch = AsyncMock(return_value=session)
-    browser.is_logged_in = AsyncMock(return_value=True)
     provider.browser = browser
+    provider._is_logged_in = AsyncMock(return_value=True)
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
@@ -434,8 +419,8 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
         message="쿠팡 로그인 상태입니다",
     )
     browser.launch.assert_awaited_once_with(provider.store.paths)
-    browser.open_home.assert_awaited_once_with(session)
-    browser.is_logged_in.assert_awaited_once_with(session.tab)
+    assert session.tab.get_calls == [COUPANG_HOME_URL]
+    provider._is_logged_in.assert_awaited_once_with(session.tab)
     browser.close.assert_awaited_once_with(session)
 
 
@@ -445,10 +430,10 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
 ) -> None:
     provider = _make_auth_provider()
     browser = _BrowserSpy()
-    session = types.SimpleNamespace(tab=object())
+    session = types.SimpleNamespace(tab=_DummyTab())
     browser.launch = AsyncMock(return_value=session)
-    browser.open_home = AsyncMock(side_effect=RuntimeError("boom"))
     provider.browser = browser
+    session.tab.get = AsyncMock(side_effect=RuntimeError("boom"))
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
@@ -466,6 +451,7 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     provider = _make_auth_provider()
     browser = _BrowserSpy()
     provider.browser = browser
+    provider.store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
 
     result = await provider.status(root_dir=tmp_path)
 

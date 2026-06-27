@@ -1,14 +1,8 @@
 import json
 import shutil
-from dataclasses import dataclass
 
-from k_commerce_cli.providers.paths import ProviderPaths
-
-
-@dataclass(frozen=True)
-class Credentials:
-    email: str
-    password: str
+from k_commerce_cli.services.models import Credentials
+from k_commerce_cli.services.paths import ProviderPaths
 
 
 class ProviderStore:

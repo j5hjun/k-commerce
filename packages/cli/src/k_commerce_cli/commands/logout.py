@@ -5,14 +5,13 @@ from pathlib import Path
 import asyncclick as click
 
 from k_commerce_cli.commands.options import provider_argument_with_root_dir_option
-from k_commerce_cli.commands.terminal import ClickTerminal
-from k_commerce_cli.providers.registry import get_provider
+from k_commerce_cli.services.registry import get_provider
 
 
 @click.command()
 @provider_argument_with_root_dir_option
-async def logout(provider: str, root_dir: Path | None) -> None:
-    terminal = ClickTerminal()
+async def logout(ctx: click.Context, provider: str, root_dir: Path | None) -> None:
+    terminal = ctx.obj.get("terminal") if ctx.obj is not None else None
     try:
         result = await get_provider(provider).logout(root_dir=root_dir, terminal=terminal)
     except ValueError as error:

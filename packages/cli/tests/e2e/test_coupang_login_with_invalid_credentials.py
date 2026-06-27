@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers.registry import get_provider
+from k_commerce_cli.services.registry import get_provider
 
 from ._helpers import RUNNER, ensure_session_root, make_session
 
@@ -23,9 +23,9 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
     with (
         patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
         patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider.browser, "fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
-        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock(side_effect=[False, False])) as wait_for_manual_login,
+        patch.object(provider._auth, "_open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider._auth, "_fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
+        patch.object(provider._auth, "_wait_for_session_login", new=AsyncMock(side_effect=[False, False])) as wait_for_manual_login,
         patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
         patch.object(provider.browser, "close", new=AsyncMock()) as close,
     ):

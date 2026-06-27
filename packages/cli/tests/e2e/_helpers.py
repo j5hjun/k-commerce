@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from asyncclick.testing import CliRunner
-from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.services.paths import ProviderPaths
 
 RUNNER = CliRunner()
 

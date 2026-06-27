@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from k_commerce_cli.providers.paths import ProviderPaths
+from k_commerce_cli.services.paths import ProviderPaths
 
 LOCAL_PROVIDER_SOURCE_ROOT = Path.home() / ".k-commerce"
 CHROME_PROFILE_IGNORE_NAMES = {

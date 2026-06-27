@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from k_commerce_cli.providers.coupang import CoupangProvider
-from k_commerce_cli.providers.paths import ProviderPaths
-from k_commerce_cli.providers.store import ProviderStore
+from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.paths import ProviderPaths
+from k_commerce_cli.services.store import ProviderStore
 
 
 @pytest.mark.anyio

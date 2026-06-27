@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from k_commerce_cli.cli import app
-from k_commerce_cli.providers.registry import get_provider
+from k_commerce_cli.services.registry import get_provider
 
 from ._helpers import RUNNER, ensure_existing_session, make_session
 
@@ -18,10 +18,10 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
     with (
         patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
         patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider.browser, "open_home", new=AsyncMock()) as open_home,
-        patch.object(provider.browser, "is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
-        patch.object(provider.browser, "open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider.browser, "wait_for_manual_login", new=AsyncMock()) as wait_for_manual_login,
+        patch.object(provider._auth, "_open_home", new=AsyncMock()) as open_home,
+        patch.object(provider._auth, "_is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
+        patch.object(provider._auth, "_open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider._auth, "_wait_for_session_login", new=AsyncMock()) as wait_for_manual_login,
         patch.object(provider.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
