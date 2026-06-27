@@ -86,7 +86,10 @@ class CoupangOrderProvider(OrderProvider):
                     restored_session.tab,
                     cutoff_order_date,
                 )
-            orders = store.merge_order_cache(orders)
+            if refresh:
+                store.write_order_cache(orders)
+            else:
+                orders = store.merge_order_cache(orders)
             return OrderListResult(
                 provider=self.auth_provider.name,
                 success=True,

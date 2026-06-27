@@ -776,13 +776,26 @@ async def test_list_with_refresh_ignores_cache_and_reads_all_orders(
 
     result = await provider.list(root_dir=tmp_path, refresh=True)
 
-    assert result.orders[0] == OrderListEntry(
-        order_date="2026. 6. 28",
-        title="새주문",
-        quantity=1,
-        status="결제완료",
-    product_url="https://www.coupang.com/placeholder",
+    assert result.orders == (
+        OrderListEntry(
+            order_date="2026. 6. 28",
+            title="새주문",
+            quantity=1,
+            status="결제완료",
+            product_url="https://www.coupang.com/placeholder",
+        ),
     )
+    assert json.loads((cache_dir / "orders.json").read_text(encoding="utf-8")) == {
+        "orders": [
+            {
+                "order_date": "2026. 6. 28",
+                "title": "새주문",
+                "quantity": 1,
+                "status": "결제완료",
+                "product_url": "https://www.coupang.com/placeholder",
+            }
+        ]
+    }
     provider.order_browser.read_all_orders.assert_awaited_once_with(session.tab)
     provider.order_browser.read_orders_through_date.assert_not_awaited()
     auth_provider.close_session.assert_awaited_once()
