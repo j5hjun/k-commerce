@@ -54,10 +54,6 @@ def invoke_login(
     )
 
 
-def invoke_order_list(root_dir: Path) -> subprocess.CompletedProcess[str]:
-    return invoke_cli(["order", "list", "coupang", "--root-dir", str(root_dir)])
-
-
 def provider_paths(root_dir: Path) -> ProviderPaths:
     return ProviderPaths("coupang", root_dir=root_dir)
 

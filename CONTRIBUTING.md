@@ -71,12 +71,6 @@ Smoke inputs by case:
   - starts from an empty temporary root directory
   - requires you to complete the browser login flow during the smoke run
 
-Order-list cache notes:
-
-- `uv run k-commerce order list coupang` refreshes `<root-dir>/coupang/orders.json`
-- the command walks each available period scope before following pagination
-- when `--root-dir` is omitted, the default cache path is `~/.k-commerce/coupang/orders.json`
-
 ## Branch Strategy
 
 Use short-lived branches and treat `dev` as the main integration branch.

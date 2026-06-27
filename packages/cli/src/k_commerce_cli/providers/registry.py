@@ -2,22 +2,20 @@ from k_commerce_cli.providers.coupang import CoupangProvider
 
 
 _PROVIDER_CLASSES: dict[str, type[CoupangProvider]] = {
-    CoupangProvider.name.value: CoupangProvider,
+    "coupang": CoupangProvider,
 }
 
 
 def get_provider(name: str) -> CoupangProvider:
-    normalized_name = name.lower().strip()
-
     try:
-        provider_class = _PROVIDER_CLASSES[normalized_name]
+        provider_class = _PROVIDER_CLASSES[name]
     except KeyError as exc:
         supported = ", ".join(list_providers())
         raise ValueError(
             f"Unsupported provider: {name}. Supported providers: {supported}"
         ) from exc
 
-    return provider_class()
+    return provider_class(provider_name=name)
 
 
 def list_providers() -> list[str]:

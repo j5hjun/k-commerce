@@ -21,10 +21,8 @@ uv sync
 
 The workspace currently includes:
 
-- a Coupang CLI flow with `login`, `login status`, `logout`, and `order list` commands
+- a Coupang CLI flow with `login`, `login status`, and `logout` commands
 - an MCP package that exposes `login` and `login_status` tools on top of the shared provider registry
-
-The Coupang `order list` command now walks every available period scope on the order-list page, follows each paginated result set, and refreshes a local cache file at `~/.k-commerce/coupang/orders.json` by default.
 
 ## Supported Providers
 

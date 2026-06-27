@@ -37,24 +37,17 @@ Remove saved local Coupang session artifacts while preserving `credentials.json`
 uv run k-commerce logout coupang
 ```
 
-Read the full Coupang order list by walking every available period button and each paginated result using a saved logged-in session:
-
-```bash
-uv run k-commerce order list coupang
-```
-
 To isolate credentials and session data under a custom directory:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to login status, logout, and order list commands:
+The same `--root-dir` option also applies to login status and logout commands:
 
 ```bash
 uv run k-commerce login status coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -120,7 +113,6 @@ Files created there:
 
 - `chrome-profile/`: persistent browser profile used to restore login state
 - `cookies.dat`: saved browser cookies
-- `orders.json`: cached order-list snapshot refreshed by `order list`
 - `session-meta.json`: metadata about the last successful login method
 - `credentials.json`: optional credentials for automatic login
 
@@ -128,15 +120,3 @@ The `logout` command removes saved session artifacts such as `chrome-profile/`, 
 `session-meta.json`, but preserves `credentials.json`.
 
 These files are local machine state and should be treated as sensitive.
-
-## Order List
-
-The `order list` command reuses the saved Coupang session, opens the order list page, walks each available
-period scope button such as `최근 6개월` and yearly filters, then prints the aggregated orders from each
-available result page in a human-readable terminal format.
-
-Each successful run also refreshes the local cache file at `~/.k-commerce/coupang/orders.json`.
-When `--root-dir` is provided, the cache path becomes `<root-dir>/coupang/orders.json`.
-
-If the saved session is no longer logged in, the command fails with a clear login-required message
-instead of reporting an empty order list.

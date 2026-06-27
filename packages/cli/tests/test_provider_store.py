@@ -6,7 +6,6 @@ import pytest
 import k_commerce_cli.providers.coupang as coupang_provider_module
 from k_commerce_cli.providers.paths import ProviderPaths
 from k_commerce_cli.providers.store import Credentials, ProviderStore
-from k_commerce_cli.types import OrderListEntry
 
 
 def test_exposes_provider_paths(tmp_path: Path) -> None:
@@ -109,132 +108,6 @@ def test_write_session_metadata_persists_json(tmp_path: Path) -> None:
     }
 
 
-def test_write_order_cache_persists_orders_with_metadata(tmp_path: Path) -> None:
-    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-
-    store.write_order_cache(
-        (
-            OrderListEntry(
-                order_date="2026. 6. 26",
-                title="로켓프레시 사과",
-                quantity=2,
-                status="배송완료",
-                product_url="https://www.coupang.com/vp/products/1",
-            ),
-        )
-    )
-
-    assert json.loads(store.orders_path.read_text(encoding="utf-8")) == {
-        "orders": [
-            {
-                "order_date": "2026. 6. 26",
-                "title": "로켓프레시 사과",
-                "quantity": 2,
-                "status": "배송완료",
-                "product_url": "https://www.coupang.com/vp/products/1",
-            }
-        ]
-    }
-
-    assert store.load_order_cache() == (
-        OrderListEntry(
-            order_date="2026. 6. 26",
-            title="로켓프레시 사과",
-            quantity=2,
-            status="배송완료",
-            product_url="https://www.coupang.com/vp/products/1",
-        ),
-    )
-
-
-def test_merge_order_cache_updates_existing_status_and_prepends_new_orders(tmp_path: Path) -> None:
-    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-    store.write_order_cache(
-        (
-            OrderListEntry(
-                order_date="2026. 6. 26",
-                title="첫번째 상품",
-                quantity=1,
-                status="배송중",
-                product_url="https://www.coupang.com/placeholder",
-            ),
-            OrderListEntry(
-                order_date="2026. 6. 24",
-                title="두번째 상품",
-                quantity=1,
-                status="배송완료",
-                product_url="https://www.coupang.com/placeholder",
-            ),
-        )
-    )
-
-    merged = store.merge_order_cache(
-        (
-            OrderListEntry(
-                order_date="2026. 6. 27",
-                title="새상품",
-                quantity=1,
-                status="결제완료",
-                product_url="https://www.coupang.com/placeholder",
-            ),
-            OrderListEntry(
-                order_date="2026. 6. 26",
-                title="첫번째 상품",
-                quantity=1,
-                status="배송완료",
-                product_url="https://www.coupang.com/placeholder",
-            ),
-        )
-    )
-
-    assert merged == (
-        OrderListEntry(
-            order_date="2026. 6. 27",
-            title="새상품",
-            quantity=1,
-            status="결제완료",
-            product_url="https://www.coupang.com/placeholder",
-        ),
-        OrderListEntry(
-            order_date="2026. 6. 26",
-            title="첫번째 상품",
-            quantity=1,
-            status="배송완료",
-            product_url="https://www.coupang.com/placeholder",
-        ),
-        OrderListEntry(
-            order_date="2026. 6. 24",
-            title="두번째 상품",
-            quantity=1,
-            status="배송완료",
-            product_url="https://www.coupang.com/placeholder",
-        ),
-    )
-
-
-def test_load_order_cache_skips_orders_missing_product_url(tmp_path: Path) -> None:
-    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-    store.base_dir.mkdir(parents=True)
-    store.orders_path.write_text(
-        json.dumps(
-            {
-                "orders": [
-                    {
-                        "order_date": "2026. 6. 26",
-                        "title": "로켓프레시 사과",
-                        "quantity": 2,
-                        "status": "배송완료",
-                    }
-                ]
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    assert store.load_order_cache() == ()
-
-
 def test_has_profile_is_false_when_missing(tmp_path: Path) -> None:
     store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
 
@@ -294,9 +167,5 @@ def test_clear_session_returns_false_when_session_is_missing(tmp_path: Path) -> 
 
 
 def test_coupang_package_exports_only_provider_types() -> None:
-    assert coupang_provider_module.__all__ == [
-        "CoupangAuthProvider",
-        "CoupangOrderProvider",
-        "CoupangProvider",
-    ]
+    assert coupang_provider_module.__all__ == ["CoupangProvider"]
     assert not hasattr(coupang_provider_module, "CoupangCredentials")

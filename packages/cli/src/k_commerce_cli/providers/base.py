@@ -1,25 +1,32 @@
 from pathlib import Path
 from typing import Protocol
 
-from k_commerce_cli.types import (
-    LoginResult,
-    LogoutResult,
-    OrderListResult,
-    StatusResult,
-)
+from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
 
 
-class AuthProvider(Protocol):
-    async def login(self, root_dir: Path | None = None) -> LoginResult: ...
+class Terminal(Protocol):
+    def echo(self, message: str) -> None: ...
 
-    async def status(self, root_dir: Path | None = None) -> StatusResult: ...
+    def info(self, message: str) -> None: ...
 
-    async def logout(self, root_dir: Path | None = None) -> LogoutResult: ...
+    def warn(self, message: str) -> None: ...
 
 
-class OrderProvider(Protocol):
-    async def list(
+class Provider(Protocol):
+    async def login(
         self,
         root_dir: Path | None = None,
-        refresh: bool = False,
-    ) -> OrderListResult: ...
+        terminal: Terminal | None = None,
+    ) -> LoginResult: ...
+
+    async def status(
+        self,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+    ) -> StatusResult: ...
+
+    async def logout(
+        self,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+    ) -> LogoutResult: ...
