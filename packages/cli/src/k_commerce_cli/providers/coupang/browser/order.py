@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import date
 import re
 from typing import cast
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 from k_commerce_cli.types import OrderListEntry, OrderPageState, OrderStatus
 
 from .session import BrowserElement, BrowserTab, CoupangBrowserSession
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
-ORDER_PAGE_TURN_ATTEMPTS = 10
-ORDER_PAGE_TURN_POLL_SECONDS = 0.2
 ORDER_PAGE_MAX_PAGES = 32
 ORDER_SCOPE_PATTERN = re.compile(r"^(최근\s*\d+개월|20\d{2})$")
 
@@ -118,11 +115,10 @@ class CoupangOrderBrowser:
         seen_rows: set[str] = set()
         scope_labels = await self._scope_labels(tab)
         if not scope_labels:
-            await self._collect_current_scope_orders(tab, orders, seen_rows)
+            await self._collect_scope_orders_by_url(tab, "최근 6개월", orders, seen_rows, None)
             return tuple(orders)
         for scope_label in scope_labels:
-            await self._activate_scope(tab, scope_label)
-            await self._collect_current_scope_orders(tab, orders, seen_rows)
+            await self._collect_scope_orders_by_url(tab, scope_label, orders, seen_rows, None)
 
         return tuple(orders)
 
@@ -134,13 +130,12 @@ class CoupangOrderBrowser:
         orders: list[OrderListEntry] = []
         seen_rows: set[str] = set()
         cutoff_date = self._parse_order_date(cutoff_order_date)
+        scope_labels = await self._scope_labels(tab)
+        if not scope_labels:
+            scope_labels = ["최근 6개월"]
 
-        if await self._collect_scope_orders_through_date(tab, orders, seen_rows, cutoff_date):
-            return tuple(orders)
-
-        for scope_label in await self._scope_labels(tab):
-            await self._activate_scope(tab, scope_label)
-            if await self._collect_scope_orders_through_date(tab, orders, seen_rows, cutoff_date):
+        for scope_label in scope_labels:
+            if await self._collect_scope_orders_by_url(tab, scope_label, orders, seen_rows, cutoff_date):
                 break
 
         return tuple(orders)
@@ -243,62 +238,44 @@ class CoupangOrderBrowser:
             return str(getattr(tab, "url", ""))
         return self._snapshot_text(order_root)
 
-    async def _go_to_next_page(
+    async def _collect_scope_orders_by_url(
         self,
         tab: BrowserTab,
-        control: BrowserElement,
-        current_snapshot: str,
-    ) -> bool:
-        return await self._click_and_settle(tab, control, current_snapshot)
-
-    async def _collect_current_scope_orders(
-        self,
-        tab: BrowserTab,
-        orders: list[OrderListEntry],
-        seen_rows: set[str],
-    ) -> None:
-        for _ in range(ORDER_PAGE_MAX_PAGES):
-            visible_orders = await self.read_visible_orders(tab)
-            for order in visible_orders:
-                row_key = "|".join((order.title, str(order.quantity), order.status))
-                if row_key in seen_rows:
-                    continue
-                seen_rows.add(row_key)
-                orders.append(order)
-
-            next_control = await self._find_next_page_control(tab)
-            if next_control is None:
-                break
-
-            current_snapshot = await self._page_snapshot(tab)
-            if not await self._go_to_next_page(tab, next_control, current_snapshot):
-                break
-
-    async def _collect_scope_orders_through_date(
-        self,
-        tab: BrowserTab,
+        scope_label: str,
         orders: list[OrderListEntry],
         seen_rows: set[str],
         cutoff_date: date | None,
     ) -> bool:
-        for _ in range(ORDER_PAGE_MAX_PAGES):
+        previous_page_rows: tuple[str, ...] | None = None
+
+        for page_index in range(1, ORDER_PAGE_MAX_PAGES + 1):
+            await tab.get(self._scope_url(scope_label, page_index))
             visible_orders = await self.read_visible_orders(tab)
+            page_rows = tuple(
+                "|".join((order.order_date, order.title, str(order.quantity), order.status))
+                for order in visible_orders
+            )
+            if previous_page_rows is not None and page_rows == previous_page_rows:
+                return False
+            previous_page_rows = page_rows
+
+            added_count = 0
             for order in visible_orders:
                 row_key = "|".join((order.title, str(order.quantity), order.status))
                 if row_key in seen_rows:
                     continue
                 seen_rows.add(row_key)
                 orders.append(order)
+                added_count += 1
 
             if self._should_stop_after_orders(visible_orders, cutoff_date):
                 return True
 
-            next_control = await self._find_next_page_control(tab)
-            if next_control is None:
+            if not visible_orders or added_count == 0:
                 return False
 
-            current_snapshot = await self._page_snapshot(tab)
-            if not await self._go_to_next_page(tab, next_control, current_snapshot):
+            next_control = await self._find_next_page_control(tab)
+            if next_control is None:
                 return False
 
         return False
@@ -313,24 +290,10 @@ class CoupangOrderBrowser:
             label = self._normalize_text(control)
             if not ORDER_SCOPE_PATTERN.match(label):
                 continue
-            if label == "최근 6개월":
-                continue
             if label in labels:
                 continue
             labels.append(label)
         return labels
-
-    async def _activate_scope(self, tab: BrowserTab, scope_label: str) -> None:
-        scope_root = await self._scope_root(tab)
-        if scope_root is None:
-            return
-
-        for control in self._scope_controls(scope_root):
-            if self._normalize_text(control) != scope_label:
-                continue
-            current_snapshot = await self._page_snapshot(tab)
-            await self._click_and_settle(tab, control, current_snapshot)
-            return
 
     async def _scope_root(self, tab: BrowserTab) -> BrowserElement | None:
         scope_root = await self._safe_select(tab, '[class*="my-area-body"]')
@@ -349,21 +312,12 @@ class CoupangOrderBrowser:
         controls: list[BrowserElement],
     ) -> None:
         text = self._normalize_text(node)
-        if ORDER_SCOPE_PATTERN.match(text) and self._is_clickable_scope_node(node):
+        if ORDER_SCOPE_PATTERN.match(text):
             controls.append(node)
             return
 
         for child in self._children(node):
             self._collect_scope_controls(child, controls)
-
-    def _is_clickable_scope_node(self, node: BrowserElement) -> bool:
-        if callable(getattr(node, "click", None)):
-            return True
-        for attribute in ("role", "tabindex", "href", "onclick"):
-            value = self._get_attribute(node, attribute)
-            if value:
-                return True
-        return str(getattr(node, "cursor", "")).strip().lower() == "pointer"
 
     def _get_attribute(self, node: BrowserElement, name: str) -> str:
         getter = getattr(node, "get_attribute", None)
@@ -381,32 +335,21 @@ class CoupangOrderBrowser:
             return str(value)
         return ""
 
-    async def _click_and_settle(
-        self,
-        tab: BrowserTab,
-        control: BrowserElement,
-        current_snapshot: str,
-    ) -> bool:
-        click = getattr(control, "click", None)
-        if not callable(click):
-            return False
-
-        try:
-            await click()
-        except Exception:
-            return False
-
-        for _ in range(ORDER_PAGE_TURN_ATTEMPTS):
-            await asyncio.sleep(ORDER_PAGE_TURN_POLL_SECONDS)
-            if await self._page_snapshot(tab) != current_snapshot:
-                return True
-        return False
-
     def _snapshot_text(self, node: BrowserElement) -> str:
         parts = [self._normalize_text(node)]
         for child in self._children(node):
             parts.append(self._snapshot_text(child))
         return " ".join(part for part in parts if part).strip()
+
+    def _scope_url(self, scope_label: str, page_index: int) -> str:
+        query: dict[str, str] = {}
+        if scope_label != "최근 6개월":
+            query["requestYear"] = scope_label
+        if page_index > 1:
+            query["pageIndex"] = str(page_index - 1)
+        if not query:
+            return COUPANG_ORDER_LIST_URL
+        return f"{COUPANG_ORDER_LIST_URL}?{urlencode(query)}"
 
     def _should_stop_after_orders(
         self,

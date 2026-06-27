@@ -21,11 +21,19 @@ class _DummyOrderTab:
         self.select_map: dict[str, object | None] = {}
         self.select_errors: dict[str, Exception] = {}
         self.evaluate = AsyncMock()
+        self.visited_urls: list[str] = []
+        self.on_get = None
 
     async def select(self, selector: str, timeout: int = 0):
         if selector in self.select_errors:
             raise self.select_errors[selector]
         return self.select_map.get(selector)
+
+    async def get(self, url: str):
+        self.url = url
+        self.visited_urls.append(url)
+        if callable(self.on_get):
+            self.on_get(url)
 
 
 class _DummyOrderElement:
@@ -61,24 +69,6 @@ class _DummyOrderElement:
             "href": self.href,
         }
         return mapping.get(name)
-
-
-class _PaginatedOrderElement(_DummyOrderElement):
-    def __init__(self, on_click) -> None:
-        super().__init__("다음")
-        self._on_click = on_click
-
-    async def click(self) -> None:
-        self._on_click()
-
-
-class _ClickableOrderElement(_DummyOrderElement):
-    def __init__(self, text: str, on_click) -> None:
-        super().__init__(text)
-        self._on_click = on_click
-
-    async def click(self) -> None:
-        self._on_click()
 
 
 class _AttrOnlyOrderElement:
@@ -332,275 +322,183 @@ async def test_read_visible_orders_rejects_status_only_non_order_sections() -> N
     assert orders[0].title == "상품명"
 
 
+def _make_item(title: str, status: str) -> _DummyOrderElement:
+    return _DummyOrderElement(
+        f"{title} {status} 장바구니 담기",
+        query_map={
+            "a": [
+                _DummyOrderElement(
+                    title,
+                    href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
+                )
+            ]
+        },
+    )
+
+
+def _make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
+    return _DummyOrderElement(
+        f"{date} 주문 주문 상세보기 {item.text_all}",
+        query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
+    )
+
+
+def _make_page(*groups: _DummyOrderElement, has_next: bool = False) -> _DummyOrderElement:
+    controls = [_DummyOrderElement("다음")] if has_next else []
+    return _DummyOrderElement(children=[*groups], query_map={"button, a": controls})
+
+
 @pytest.mark.anyio
-async def test_read_all_orders_follows_next_page_until_it_stops() -> None:
+async def test_scope_labels_collects_recent_period_and_years_from_order_root() -> None:
     browser = CoupangOrderBrowser()
     tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-contents"] > div'] = _DummyOrderElement(
+        children=[
+            _DummyOrderElement("최근 6개월", href="/ssr/desktop/order/list"),
+            _DummyOrderElement("2026", href="/ssr/desktop/order/list?requestYear=2026"),
+            _DummyOrderElement("2025", href="/ssr/desktop/order/list?requestYear=2025"),
+            _DummyOrderElement("배송조회", href="/foo"),
+        ]
+    )
 
-    def make_item(title: str, status: str) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{title} {status} 장바구니 담기",
-            query_map={
-                "a": [
-                    _DummyOrderElement(
-                        title,
-                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
-                    )
-                ]
-            },
-        )
+    labels = await browser._scope_labels(tab)
 
-    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{date} 주문 주문 상세보기 {item.text_all}",
-            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
-        )
+    assert labels == ["최근 6개월", "2026", "2025"]
 
-    page_index = 0
-    roots = [
-        _DummyOrderElement(children=[make_group("2026. 6. 26", make_item("첫번째 상품", "배송완료"))]),
-        _DummyOrderElement(children=[make_group("2026. 6. 25", make_item("두번째 상품", "배송중"))]),
+
+@pytest.mark.anyio
+async def test_scope_labels_collects_scopes_outside_order_root() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+    tab.select_map['[class*="my-area-body"]'] = _DummyOrderElement(
+        children=[
+            _DummyOrderElement("최근 6개월", href="/ssr/desktop/order/list"),
+            _DummyOrderElement("2026", href="/ssr/desktop/order/list?requestYear=2026"),
+            _DummyOrderElement("2025", href="/ssr/desktop/order/list?requestYear=2025"),
+        ]
+    )
+    tab.select_map['[class*="my-area-contents"] > div'] = _DummyOrderElement()
+
+    labels = await browser._scope_labels(tab)
+
+    assert labels == ["최근 6개월", "2026", "2025"]
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_collects_all_scopes_via_urls() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+    initial_root = _DummyOrderElement(
+        children=[
+            _DummyOrderElement("최근 6개월", href="/ssr/desktop/order/list"),
+            _DummyOrderElement("2025", href="/ssr/desktop/order/list?requestYear=2025"),
+        ]
+    )
+    pages = {
+        COUPANG_ORDER_LIST_URL: _make_page(
+            _make_group("2026. 6. 26", _make_item("최근상품", "배송완료")),
+            has_next=False,
+        ),
+        f"{COUPANG_ORDER_LIST_URL}?requestYear=2025": _make_page(
+            _make_group("2025. 12. 24", _make_item("작년상품", "배송중")),
+            has_next=False,
+        ),
+    }
+
+    def on_get(url: str) -> None:
+        tab.select_map['[class*="my-area-contents"] > div'] = pages[url]
+
+    tab.on_get = on_get
+    tab.select_map['[class*="my-area-contents"] > div'] = initial_root
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("최근상품", "작년상품")
+    assert tab.visited_urls == [
+        COUPANG_ORDER_LIST_URL,
+        f"{COUPANG_ORDER_LIST_URL}?requestYear=2025",
     ]
 
-    def advance_page() -> None:
-        nonlocal page_index
-        if page_index + 1 < len(roots):
-            page_index += 1
-            tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
-            roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
-        else:
-            roots[page_index]._query_map["button, a"] = []
 
-    tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
-    roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+@pytest.mark.anyio
+async def test_read_all_orders_paginates_scope_via_page_index_until_next_disappears() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+    initial_root = _DummyOrderElement(
+        children=[_DummyOrderElement("2026", href="/ssr/desktop/order/list?requestYear=2026")]
+    )
+    page_one = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026"
+    page_two = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026&pageIndex=1"
+    pages = {
+        page_one: _make_page(_make_group("2026. 6. 26", _make_item("첫번째 상품", "배송완료")), has_next=True),
+        page_two: _make_page(_make_group("2026. 6. 25", _make_item("두번째 상품", "배송중")), has_next=False),
+    }
+
+    def on_get(url: str) -> None:
+        tab.select_map['[class*="my-area-contents"] > div'] = pages[url]
+
+    tab.on_get = on_get
+    tab.select_map['[class*="my-area-contents"] > div'] = initial_root
 
     orders = await browser.read_all_orders(tab)
 
     assert tuple(order.title for order in orders) == ("첫번째 상품", "두번째 상품")
+    assert tab.visited_urls == [page_one, page_two]
+
+
+@pytest.mark.anyio
+async def test_read_all_orders_stops_when_next_page_repeats_same_orders() -> None:
+    browser = CoupangOrderBrowser()
+    tab = _DummyOrderTab()
+    initial_root = _DummyOrderElement(
+        children=[_DummyOrderElement("2026", href="/ssr/desktop/order/list?requestYear=2026")]
+    )
+    page_one = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026"
+    page_two = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026&pageIndex=1"
+    repeated_page = _make_page(
+        _make_group("2026. 6. 26", _make_item("첫번째 상품", "배송완료")),
+        has_next=True,
+    )
+    pages = {
+        page_one: repeated_page,
+        page_two: repeated_page,
+    }
+
+    def on_get(url: str) -> None:
+        tab.select_map['[class*="my-area-contents"] > div'] = pages[url]
+
+    tab.on_get = on_get
+    tab.select_map['[class*="my-area-contents"] > div'] = initial_root
+
+    orders = await browser.read_all_orders(tab)
+
+    assert tuple(order.title for order in orders) == ("첫번째 상품",)
+    assert tab.visited_urls == [page_one, page_two]
 
 
 @pytest.mark.anyio
 async def test_read_orders_through_date_stops_after_crossing_cutoff() -> None:
     browser = CoupangOrderBrowser()
     tab = _DummyOrderTab()
+    initial_root = _DummyOrderElement(
+        children=[_DummyOrderElement("2026", href="/ssr/desktop/order/list?requestYear=2026")]
+    )
+    page_one = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026"
+    page_two = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026&pageIndex=1"
+    page_three = f"{COUPANG_ORDER_LIST_URL}?requestYear=2026&pageIndex=2"
+    pages = {
+        page_one: _make_page(_make_group("2026. 6. 27", _make_item("새상품", "결제완료")), has_next=True),
+        page_two: _make_page(_make_group("2026. 6. 24", _make_item("진행상품", "배송중")), has_next=True),
+        page_three: _make_page(_make_group("2026. 6. 23", _make_item("이전상품", "배송완료")), has_next=False),
+    }
 
-    def make_item(title: str, status: str) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{title} {status} 장바구니 담기",
-            query_map={
-                "a": [
-                    _DummyOrderElement(
-                        title,
-                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
-                    )
-                ]
-            },
-        )
+    def on_get(url: str) -> None:
+        tab.select_map['[class*="my-area-contents"] > div'] = pages[url]
 
-    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{date} 주문 주문 상세보기 {item.text_all}",
-            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
-        )
-
-    page_index = 0
-    roots = [
-        _DummyOrderElement(children=[make_group("2026. 6. 27", make_item("새상품", "결제완료"))]),
-        _DummyOrderElement(children=[make_group("2026. 6. 24", make_item("진행상품", "배송중"))]),
-        _DummyOrderElement(children=[make_group("2026. 6. 23", make_item("이전상품", "배송완료"))]),
-    ]
-
-    def advance_page() -> None:
-        nonlocal page_index
-        if page_index + 1 < len(roots):
-            page_index += 1
-            tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
-            roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
-        else:
-            roots[page_index]._query_map["button, a"] = []
-
-    tab.select_map['[class*="my-area-contents"] > div'] = roots[page_index]
-    roots[page_index]._query_map["button, a"] = [_PaginatedOrderElement(advance_page)]
+    tab.on_get = on_get
+    tab.select_map['[class*="my-area-contents"] > div'] = initial_root
 
     orders = await browser.read_orders_through_date(tab, "2026. 6. 24")
 
     assert tuple(order.title for order in orders) == ("새상품", "진행상품")
-
-
-@pytest.mark.anyio
-async def test_read_all_orders_collects_all_period_scopes() -> None:
-    browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab()
-
-    def make_item(title: str, status: str) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{title} {status} 장바구니 담기",
-            query_map={
-                "a": [
-                    _DummyOrderElement(
-                        title,
-                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
-                    )
-                ]
-            },
-        )
-
-    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{date} 주문 주문 상세보기 {item.text_all}",
-            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
-        )
-
-    scopes = {
-        "최근 6개월": [make_group("2026. 6. 26", make_item("최근상품", "배송완료"))],
-        "2025": [make_group("2025. 12. 24", make_item("작년상품", "배송중"))],
-    }
-    current_scope = "최근 6개월"
-    clicked_scopes: list[str] = []
-
-    def render_root() -> _DummyOrderElement:
-        controls = [
-            _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
-            for label in scopes
-        ]
-        return _DummyOrderElement(
-            children=controls + list(scopes[current_scope]),
-        )
-
-    def select_scope(scope: str) -> None:
-        nonlocal current_scope
-        clicked_scopes.append(scope)
-        current_scope = scope
-        tab.select_map['[class*="my-area-contents"] > div'] = render_root()
-
-    tab.select_map['[class*="my-area-contents"] > div'] = render_root()
-
-    orders = await browser.read_all_orders(tab)
-
-    assert tuple(order.title for order in orders) == ("작년상품",)
-    assert clicked_scopes == ["2025"]
-
-
-@pytest.mark.anyio
-async def test_read_all_orders_collects_period_scopes_outside_order_root() -> None:
-    browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab()
-
-    def make_item(title: str, status: str) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{title} {status} 장바구니 담기",
-            query_map={
-                "a": [
-                    _DummyOrderElement(
-                        title,
-                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
-                    )
-                ]
-            },
-        )
-
-    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{date} 주문 주문 상세보기 {item.text_all}",
-            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
-        )
-
-    scopes = {
-        "최근 6개월": _DummyOrderElement(
-            children=[make_group("2026. 6. 26", make_item("최근상품", "배송완료"))]
-        ),
-        "2025": _DummyOrderElement(
-            children=[make_group("2025. 12. 24", make_item("작년상품", "배송중"))]
-        ),
-    }
-    current_scope = "최근 6개월"
-    clicked_scopes: list[str] = []
-
-    def select_scope(scope: str) -> None:
-        nonlocal current_scope
-        clicked_scopes.append(scope)
-        current_scope = scope
-        tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
-
-    scope_root = _DummyOrderElement(
-        children=[
-            _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
-            for label in scopes
-        ]
-    )
-    tab.select_map['[class*="my-area-body"]'] = scope_root
-    tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
-
-    orders = await browser.read_all_orders(tab)
-
-    assert tuple(order.title for order in orders) == ("작년상품",)
-    assert clicked_scopes == ["2025"]
-
-
-@pytest.mark.anyio
-async def test_read_all_orders_collects_pointer_div_scopes_without_button_tags() -> None:
-    browser = CoupangOrderBrowser()
-    tab = _DummyOrderTab()
-
-    def make_item(title: str, status: str) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{title} {status} 장바구니 담기",
-            query_map={
-                "a": [
-                    _DummyOrderElement(
-                        title,
-                        href=f"/ssr/sdp/link?vendorItemId={title}&sourceType=MyCoupang_my_orders_list_product_title",
-                    )
-                ]
-            },
-        )
-
-    def make_group(date: str, item: _DummyOrderElement) -> _DummyOrderElement:
-        return _DummyOrderElement(
-            f"{date} 주문 주문 상세보기 {item.text_all}",
-            query_map={'tr, [class*="sc-5a139ee-0"], td': [item]},
-        )
-
-    scopes = {
-        "최근 6개월": _DummyOrderElement(
-            children=[make_group("2026. 6. 26", make_item("최근상품", "배송완료"))]
-        ),
-        "2025": _DummyOrderElement(
-            children=[make_group("2025. 12. 24", make_item("작년상품", "배송중"))]
-        ),
-    }
-    current_scope = "최근 6개월"
-    clicked_scopes: list[str] = []
-
-    def select_scope(scope: str) -> None:
-        nonlocal current_scope
-        clicked_scopes.append(scope)
-        current_scope = scope
-        tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
-
-    scope_nodes = [
-        _ClickableOrderElement(label, lambda selected=label: select_scope(selected))
-        for label in scopes
-    ]
-    for node in scope_nodes:
-        node.cursor = "pointer"
-
-    search_root = _DummyOrderElement(
-        "주문한 상품을 검색할 수 있어요!",
-        children=[
-            _DummyOrderElement(
-                children=scope_nodes,
-                query_map={"*": scope_nodes},
-            )
-        ],
-        query_map={"*": scope_nodes},
-    )
-
-    tab.select_map['input[placeholder*="주문한 상품"]'] = _DummyOrderElement()
-    tab.select_map['[class*="my-area-body"]'] = search_root
-    tab.select_map['[class*="my-area-contents"] > div'] = scopes[current_scope]
-
-    orders = await browser.read_all_orders(tab)
-
-    assert tuple(order.title for order in orders) == ("작년상품",)
-    assert clicked_scopes == ["2025"]
+    assert tab.visited_urls == [page_one, page_two, page_three]
