@@ -17,6 +17,7 @@ def _normalize_order_field(value: object) -> str:
 
 def _format_order_entry(entry: OrderListEntry) -> str:
     line = (
+        f"주문일: {_normalize_order_field(entry.order_date)} | "
         f"상품: {_normalize_order_field(entry.title)} | "
         f"수량: {entry.quantity} | "
         f"상태: {_normalize_order_field(entry.status)}"
@@ -59,3 +60,4 @@ async def order_list(provider: str, root_dir: Path | None, refresh: bool) -> Non
 
     for line in _render_order_list(result):
         click.echo(line)
+    click.echo(result.message)

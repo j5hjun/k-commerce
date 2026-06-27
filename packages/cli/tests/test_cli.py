@@ -47,8 +47,9 @@ async def test_order_list_coupang_command_renders_readable_order_lines() -> None
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/vp/products/1",
-        "상품: 생수 2L | 수량: 1 | 상태: 배송중 | URL: https://www.coupang.com/placeholder",
+        "주문일: 2026. 6. 26 | 상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/vp/products/1",
+        "주문일: 2026. 6. 25 | 상품: 생수 2L | 수량: 1 | 상태: 배송중 | URL: https://www.coupang.com/placeholder",
+        "주문 2건을 찾았습니다.",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
@@ -80,7 +81,8 @@ async def test_order_list_coupang_command_normalizes_separator_characters() -> N
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료 | URL: https://www.coupang.com/placeholder",
+        "주문일: 2026. 6. 26 | 상품: 로켓 프레시 사과 | 수량: 2 | 상태: 배송 완료 | URL: https://www.coupang.com/placeholder",
+        "주문 1건을 찾았습니다.",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
@@ -112,7 +114,8 @@ async def test_order_coupang_command_uses_list_as_default_subcommand() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == [
-        "상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/placeholder",
+        "주문일: 2026. 6. 26 | 상품: 로켓프레시 사과 | 수량: 2 | 상태: 배송완료 | URL: https://www.coupang.com/placeholder",
+        "주문 1건을 찾았습니다.",
     ]
     get_provider.assert_called_once_with("coupang")
     order_provider.list.assert_awaited_once_with(root_dir=None, refresh=False)
@@ -137,7 +140,7 @@ async def test_order_list_coupang_command_prints_empty_state_message(
         result = await RUNNER.invoke(app, ["order", "list", "coupang", "--root-dir", str(tmp_path)])
 
     assert result.exit_code == 0
-    assert result.stdout.splitlines() == ["조회된 주문이 없습니다."]
+    assert result.stdout.splitlines() == ["조회된 주문이 없습니다.", "주문 0건을 찾았습니다."]
     get_provider.assert_called_once_with("coupang")
     order_provider.list.assert_awaited_once_with(root_dir=tmp_path, refresh=False)
 
@@ -159,7 +162,7 @@ async def test_order_list_coupang_command_passes_refresh_flag() -> None:
         result = await RUNNER.invoke(app, ["order", "list", "coupang", "--refresh"])
 
     assert result.exit_code == 0
-    assert result.stdout.splitlines() == ["조회된 주문이 없습니다."]
+    assert result.stdout.splitlines() == ["조회된 주문이 없습니다.", "주문 0건을 찾았습니다."]
     get_provider.assert_called_once_with("coupang")
     order_provider.list.assert_awaited_once_with(root_dir=None, refresh=True)
 
