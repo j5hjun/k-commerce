@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
 

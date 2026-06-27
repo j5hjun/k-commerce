@@ -12,7 +12,8 @@ import pytest
 
 sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 
-from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.browser.nodriver import NodriverBrowser, NodriverBrowserSession
+from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 from k_commerce_cli.services.providers.coupang.auth import (
     COUPANG_HOME_URL,
     COUPANG_LOGIN_URL,
@@ -20,7 +21,6 @@ from k_commerce_cli.services.providers.coupang.auth import (
     COUPANG_MYCOUPANG_SELECTOR,
     CoupangAuthService,
 )
-from k_commerce_cli.services.browser import NodriverBrowser, NodriverBrowserSession
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.types import LoginResult, StatusResult

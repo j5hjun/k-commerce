@@ -1,4 +1,4 @@
-from k_commerce_cli.services.providers.coupang import CoupangProvider
+from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 
 
 _PROVIDER_CLASSES: dict[str, type[CoupangProvider]] = {

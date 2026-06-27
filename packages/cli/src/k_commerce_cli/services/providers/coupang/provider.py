@@ -4,7 +4,7 @@ from pathlib import Path
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Provider
-from k_commerce_cli.services.browser import NodriverBrowser
+from k_commerce_cli.services.browser.nodriver import NodriverBrowser
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult

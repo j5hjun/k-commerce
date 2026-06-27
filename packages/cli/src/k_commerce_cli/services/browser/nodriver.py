@@ -11,8 +11,6 @@ import nodriver as uc
 from k_commerce_cli.services.base import Browser, BrowserElement, BrowserSession, BrowserTab
 from k_commerce_cli.services.paths import ProviderPaths
 
-DEFAULT_VIEWPORT = {"width": 1440, "height": 900}
-
 
 class BrowserCookies(Protocol):
     async def save(self, *, file: str) -> None: ...
@@ -46,7 +44,7 @@ class NodriverBrowser(Browser):
             headless=False,
             user_data_dir=str(profile_dir),
             browser_args=[
-                f"--window-size={DEFAULT_VIEWPORT['width']},{DEFAULT_VIEWPORT['height']}",
+                f"--window-size=1440,900",
                 "--lang=ko-KR",
             ],
             lang="ko-KR",

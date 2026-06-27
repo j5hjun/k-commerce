@@ -4,7 +4,7 @@ import asyncclick as click
 
 from k_commerce_cli.commands.login import login
 from k_commerce_cli.commands.logout import logout
-from k_commerce_cli.terminal import AsyncClickTerminal
+from k_commerce_cli.terminal.asyncclick import AsyncClickTerminal
 
 
 @click.group(help="CLI for K-Commerce workflows.")
