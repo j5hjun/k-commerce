@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncclick as click
 
+from k_commerce_cli.base import Terminal
 
-class AsyncClickTerminal:
+
+class AsyncClickTerminal(Terminal):
     def echo(self, message: str) -> None:
         click.echo(message)
 

@@ -8,7 +8,7 @@ from typing import Protocol
 
 import nodriver as uc
 
-from k_commerce_cli.services.base import BrowserElement, BrowserTab
+from k_commerce_cli.services.base import Browser, BrowserElement, BrowserSession, BrowserTab
 from k_commerce_cli.services.paths import ProviderPaths
 
 DEFAULT_VIEWPORT = {"width": 1440, "height": 900}
@@ -31,12 +31,12 @@ class BrowserRuntime(Protocol):
 
 
 @dataclass(frozen=True)
-class NodriverBrowserSession:
+class NodriverBrowserSession(BrowserSession):
     browser: BrowserRuntime
     tab: BrowserTab
 
 
-class NodriverBrowser:
+class NodriverBrowser(Browser):
     async def launch(self, paths: ProviderPaths) -> NodriverBrowserSession:
         profile_dir = paths.profile_dir
         cookies_file = paths.cookies_file
