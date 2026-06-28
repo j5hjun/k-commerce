@@ -6,7 +6,7 @@ import sys
 import tempfile
 import types
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -23,7 +23,7 @@ from k_commerce_cli.services.providers.coupang.auth import (
 )
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.types import LoginResult, StatusResult
+from k_commerce_cli.services.types.auth import LoginResult, StatusResult
 
 
 class _DummyElement:
@@ -299,9 +299,11 @@ def test_default_store_uses_provider_paths() -> None:
 
 
 def test_store_can_be_replaced_with_overridden_root_dir(tmp_path: Path) -> None:
-    provider = _make_auth_provider()
-
-    provider.store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    provider = CoupangAuthService(
+        provider_name="coupang",
+        store=ProviderStore(ProviderPaths("coupang", root_dir=tmp_path)),
+        browser=NodriverBrowser(),
+    )
 
     assert isinstance(provider.store, ProviderStore)
     assert provider.store.paths.base_dir == tmp_path / "coupang"
@@ -401,66 +403,68 @@ async def test_close_browser_session_handles_non_awaitable_stop() -> None:
 async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     tmp_path: Path,
 ) -> None:
-    provider = _make_auth_provider()
-    browser = _BrowserSpy()
+    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
     session = types.SimpleNamespace(tab=_DummyTab())
-    browser.launch = AsyncMock(return_value=session)
-    provider.browser = browser
-    provider._is_logged_in = AsyncMock(return_value=True)
+    provider._auth._is_logged_in = AsyncMock(return_value=True)
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    result = await provider.status(root_dir=tmp_path)
+    with (
+        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+    ):
+        result = await provider.status()
 
     assert result == StatusResult(
         provider="coupang",
         logged_in=True,
         message="쿠팡 로그인 상태입니다",
     )
-    browser.launch.assert_awaited_once_with(provider.store.paths)
+    launch.assert_awaited_once_with(provider.store.paths)
     assert session.tab.get_calls == [COUPANG_HOME_URL]
-    provider._is_logged_in.assert_awaited_once_with(session.tab)
-    browser.close.assert_awaited_once_with(session)
+    provider._auth._is_logged_in.assert_awaited_once_with(session.tab)
+    close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
 async def test_login_status_closes_browser_session_when_home_check_fails(
     tmp_path: Path,
 ) -> None:
-    provider = _make_auth_provider()
-    browser = _BrowserSpy()
+    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
     session = types.SimpleNamespace(tab=_DummyTab())
-    browser.launch = AsyncMock(return_value=session)
-    provider.browser = browser
     session.tab.get = AsyncMock(side_effect=RuntimeError("boom"))
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="boom"):
-        await provider.status(root_dir=tmp_path)
+    with (
+        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)),
+        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+        pytest.raises(RuntimeError, match="boom"),
+    ):
+        await provider.status()
 
-    browser.close.assert_awaited_once_with(session)
+    close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
 async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     tmp_path: Path,
 ) -> None:
-    provider = _make_auth_provider()
-    browser = _BrowserSpy()
-    provider.browser = browser
-    provider.store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-
-    result = await provider.status(root_dir=tmp_path)
+    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
+    with (
+        patch.object(provider._browser, "launch", new=AsyncMock()) as launch,
+        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+    ):
+        result = await provider.status()
 
     assert result == StatusResult(
         provider="coupang",
         logged_in=False,
         message="쿠팡 로그인 상태가 아닙니다",
     )
-    browser.launch.assert_not_awaited()
-    browser.close.assert_not_awaited()
+    launch.assert_not_awaited()
+    close.assert_not_awaited()
     assert provider.store.base_dir == tmp_path / "coupang"
     assert not provider.store.base_dir.exists()

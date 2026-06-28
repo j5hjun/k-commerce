@@ -15,7 +15,7 @@ def _resolve_root_dir(root_dir: str | None) -> Path | None:
 @click.argument("provider")
 @click.option("--root-dir", "--root_dir", default=None, help="Override the provider root directory.")
 @click.pass_context
-async def logout(ctx: click.Context, provider: str, root_dir: str | None) -> None:
+async def status(ctx: click.Context, provider: str, root_dir: str | None) -> None:
     terminal = ctx.obj["terminal"]
     try:
         provider_service = get_provider(
@@ -26,4 +26,4 @@ async def logout(ctx: click.Context, provider: str, root_dir: str | None) -> Non
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
 
-    await provider_service.logout()
+    await provider_service.status()

@@ -14,73 +14,41 @@ from .orders import CoupangOrderService
 
 
 class CoupangProvider(Provider):
-    def __init__(self, provider_name: str) -> None:
+    def __init__(
+        self,
+        provider_name: str,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+    ) -> None:
         self.provider_name = provider_name
-        self.store = ProviderStore(ProviderPaths(provider_name, Path.home() / ".k-commerce"))
+        self.terminal = terminal
+        self.store = ProviderStore(
+            ProviderPaths(provider_name, root_dir or Path.home() / ".k-commerce")
+        )
         self._browser = NodriverBrowser()
         self._auth = CoupangAuthService(
             provider_name=provider_name,
             store=self.store,
             browser=self._browser,
+            terminal=terminal,
         )
         self._orders = CoupangOrderService(
             provider_name=provider_name,
             store=self.store,
             browser=self._browser,
-        )
-
-    def _configure_paths(self, root_dir: Path | None = None) -> None:
-        self.store = ProviderStore(
-            ProviderPaths(self.provider_name, root_dir or Path.home() / ".k-commerce")
-        )
-        self._auth.store = self.store
-        self._orders.store = self.store
-
-    @property
-    def browser(self):
-        return self._browser
-
-    @browser.setter
-    def browser(self, value) -> None:
-        self._browser = value
-        self._auth.browser = value
-        self._orders.browser = value
-
-    async def login(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LoginResult:
-        self._configure_paths(root_dir)
-        return await self._auth.login(root_dir=root_dir, terminal=terminal)
-
-    async def status(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> StatusResult:
-        self._configure_paths(root_dir)
-        return await self._auth.status(root_dir=root_dir, terminal=terminal)
-
-    async def logout(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LogoutResult:
-        self._configure_paths(root_dir)
-        return await self._auth.logout(root_dir=root_dir, terminal=terminal)
-
-    async def list_orders(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-        refresh: bool = False,
-    ) -> OrderResult:
-        self._configure_paths(root_dir)
-        return await self._orders.list_orders(
-            root_dir=root_dir,
             terminal=terminal,
-            refresh=refresh,
         )
+
+    async def login(self) -> LoginResult:
+        return await self._auth.login()
+
+    async def status(self) -> StatusResult:
+        return await self._auth.status()
+
+    async def logout(self) -> LogoutResult:
+        return await self._auth.logout()
+
+    async def list_orders(self, refresh: bool = False) -> OrderResult:
+        return await self._orders.list_orders(refresh=refresh)
 
 __all__ = ["CoupangProvider"]

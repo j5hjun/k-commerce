@@ -1,15 +1,27 @@
 import asyncio
-from pathlib import Path
+import asyncclick as click
+from dataclasses import dataclass
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, Store
 from k_commerce_cli.services.models import Credentials
-from k_commerce_cli.types import LoginPageState, LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import (
+    LoginResult,
+    LogoutResult,
+    StatusResult,
+)
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
 COUPANG_LOGIN_LINK_SELECTOR = 'a[href*="login/login.pang"]'
 COUPANG_MYCOUPANG_SELECTOR = 'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
+
+
+@dataclass(frozen=True)
+class LoginPageState:
+    url: str
+    has_login_link: bool
+    has_mycoupang_link: bool
 
 
 class CoupangAuthService:
@@ -18,9 +30,11 @@ class CoupangAuthService:
         provider_name: str,
         store: Store,
         browser: Browser,
+        terminal: Terminal | None = None,
     ) -> None:
         self.provider_name = provider_name
         self.store = store
+        self.terminal = terminal
         self.browser = browser
         self._browser_session: BrowserSession | None = None
 
@@ -40,11 +54,8 @@ class CoupangAuthService:
     def _browser_session(self, value: BrowserSession | None) -> None:
         self.__browser_session = value
 
-    async def login(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LoginResult:
+    async def login(self) -> LoginResult:
+        terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 로그인을 시작합니다...")
         try:
@@ -52,66 +63,113 @@ class CoupangAuthService:
             restored_session = await self._restore_session()
 
             if restored_session is not None and await self._verify_session(restored_session):
-                return LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공")
+                return self._emit_login_result(
+                    terminal,
+                    LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+                )
 
             if credentials is not None:
                 if terminal is not None:
                     terminal.info("자동 로그인을 시도합니다...")
                 if await self._login_with_credentials(credentials):
                     await self._persist_session("automatic")
-                    return LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공")
+                    return self._emit_login_result(
+                        terminal,
+                        LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+                    )
 
             if terminal is not None:
                 terminal.warn("브라우저에서 직접 로그인해주세요...")
             if not await self._wait_for_manual_login():
-                return LoginResult(provider=self.provider_name, success=False, message="쿠팡 로그인 실패")
+                return self._emit_login_result(
+                    terminal,
+                    LoginResult(provider=self.provider_name, success=False, message="쿠팡 로그인 실패"),
+                )
 
             await self._persist_session("manual")
-            return LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공")
+            return self._emit_login_result(
+                terminal,
+                LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+            )
         finally:
             await self._close_browser_session()
 
-    async def status(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> StatusResult:
+    async def status(self) -> StatusResult:
+        terminal = self.terminal
         if not self.store.has_session():
-            return StatusResult(
-                provider=self.provider_name,
-                logged_in=False,
-                message="쿠팡 로그인 상태가 아닙니다",
+            return self._emit_status_result(
+                terminal,
+                StatusResult(
+                    provider=self.provider_name,
+                    logged_in=False,
+                    message="쿠팡 로그인 상태가 아닙니다",
+                ),
             )
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             await self._open_home(self._browser_session)
             logged_in = await self._is_logged_in(self._browser_session.tab)
-            return StatusResult(
-                provider=self.provider_name,
-                logged_in=logged_in,
-                message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
+            return self._emit_status_result(
+                terminal,
+                StatusResult(
+                    provider=self.provider_name,
+                    logged_in=logged_in,
+                    message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
+                ),
             )
         finally:
             await self._close_browser_session()
 
-    async def logout(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LogoutResult:
+    async def logout(self) -> LogoutResult:
+        terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 로그아웃을 시작합니다...")
 
         if not self.store.has_session():
-            return LogoutResult(
-                provider=self.provider_name,
-                success=True,
-                message="저장된 쿠팡 세션이 없습니다",
+            return self._emit_logout_result(
+                terminal,
+                LogoutResult(
+                    provider=self.provider_name,
+                    success=True,
+                    message="저장된 쿠팡 세션이 없습니다",
+                ),
             )
 
         self.store.clear_session()
-        return LogoutResult(provider=self.provider_name, success=True, message="쿠팡 로그아웃 완료")
+        return self._emit_logout_result(
+            terminal,
+            LogoutResult(provider=self.provider_name, success=True, message="쿠팡 로그아웃 완료"),
+        )
+
+    def _emit_login_result(
+        self,
+        terminal: Terminal | None,
+        result: LoginResult,
+    ) -> LoginResult:
+        if terminal is not None:
+            terminal.echo(result.message)
+        if not result.success:
+            raise click.ClickException(result.message)
+        return result
+
+    def _emit_status_result(
+        self,
+        terminal: Terminal | None,
+        result: StatusResult,
+    ) -> StatusResult:
+        if terminal is not None:
+            terminal.echo(result.message)
+        return result
+
+    def _emit_logout_result(
+        self,
+        terminal: Terminal | None,
+        result: LogoutResult,
+    ) -> LogoutResult:
+        if terminal is not None:
+            terminal.echo(result.message)
+        return result
 
     def _load_credentials(self) -> Credentials | None:
         return self.store.load_credentials()

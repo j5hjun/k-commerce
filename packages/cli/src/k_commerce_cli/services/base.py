@@ -69,27 +69,10 @@ class Store(Protocol):
 
 
 class Provider(Protocol):
-    async def login(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LoginResult: ...
+    async def login(self) -> LoginResult: ...
 
-    async def status(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> StatusResult: ...
+    async def status(self) -> StatusResult: ...
 
-    async def logout(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-    ) -> LogoutResult: ...
+    async def logout(self) -> LogoutResult: ...
 
-    async def list_orders(
-        self,
-        root_dir: Path | None = None,
-        terminal: Terminal | None = None,
-        refresh: bool = False,
-    ) -> OrderResult: ...
+    async def list_orders(self, refresh: bool = False) -> OrderResult: ...

@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
 from k_commerce_mcp import server
 
 
@@ -12,8 +12,10 @@ async def test_create_mcp_server_registers_login_and_login_status_tools() -> Non
     tools = await mcp_server.list_tools()
     tool_names = {tool.name for tool in tools}
 
+    assert "get_providers" in tool_names
     assert "login" in tool_names
     assert "login_status" in tool_names
+    assert "logout" in tool_names
 
 
 @pytest.mark.anyio

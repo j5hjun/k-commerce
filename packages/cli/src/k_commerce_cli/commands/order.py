@@ -4,35 +4,32 @@ from pathlib import Path
 
 import asyncclick as click
 
-from k_commerce_cli.commands.options import provider_argument_with_root_dir_option
 from k_commerce_cli.services.registry import get_provider
+
+
+def _resolve_root_dir(root_dir: str | None) -> Path | None:
+    return Path(root_dir) if root_dir is not None else None
 
 
 @click.group()
 async def order() -> None:
-    """Order commands."""
+    pass
 
 
-@order.command(name="list")
-@provider_argument_with_root_dir_option
-@click.option(
-    "--refresh",
-    is_flag=True,
-    default=False,
-    help="Ignore previous comparison and recreate orders.json from the latest collection.",
-)
-async def order_list(
-    ctx: click.Context,
-    provider: str,
-    root_dir: Path | None,
-    refresh: bool,
-) -> None:
-    terminal = ctx.obj.get("terminal") if ctx.obj is not None else None
+@order.command("list")
+@click.argument("provider")
+@click.option("--refresh", is_flag=True, default=False, help="Rebuild the local order snapshot.")
+@click.option("--root-dir", "--root_dir", default=None, help="Override the provider root directory.")
+@click.pass_context
+async def order_list(ctx: click.Context, provider: str, refresh: bool, root_dir: str | None) -> None:
+    terminal = ctx.obj["terminal"]
     try:
-        await get_provider(provider).list_orders(
-            root_dir=root_dir,
+        provider_service = get_provider(
+            provider,
+            root_dir=_resolve_root_dir(root_dir),
             terminal=terminal,
-            refresh=refresh,
         )
-    except ValueError as error:
-        raise click.BadParameter(str(error)) from error
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="provider") from exc
+
+    await provider_service.list_orders(refresh=refresh)

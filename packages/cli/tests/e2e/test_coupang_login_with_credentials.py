@@ -11,8 +11,8 @@ from ._helpers import RUNNER, ensure_session_root, make_session
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Path) -> None:
-    provider = get_provider("coupang")
     root_dir = tmp_path
+    provider = get_provider("coupang", root_dir=root_dir)
     paths = ensure_session_root(root_dir)
     paths.credentials_path.write_text(
         json.dumps({"email": "merchant@example.com", "password": "secret"}),
@@ -20,14 +20,21 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
     )
     session = make_session()
 
+    def provide(*_args, **kwargs):
+        terminal = kwargs.get("terminal")
+        provider.terminal = terminal
+        provider._auth.terminal = terminal
+        provider._orders.terminal = terminal
+        return provider
+
     with (
-        patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch("k_commerce_cli.commands.login.get_provider", side_effect=provide),
+        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(provider._auth, "_open_login_entry", new=AsyncMock()) as open_login_entry,
         patch.object(provider._auth, "_fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
         patch.object(provider._auth, "_wait_for_session_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,
-        patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(provider._browser, "save_session", new=AsyncMock()) as save_session,
+        patch.object(provider._browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 

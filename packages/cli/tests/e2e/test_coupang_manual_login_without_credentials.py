@@ -11,18 +11,25 @@ from ._helpers import RUNNER, make_session, provider_paths
 
 @pytest.mark.anyio
 async def test_login_coupang_command_succeeds_with_manual_login_when_credentials_missing(tmp_path: Path) -> None:
-    provider = get_provider("coupang")
     root_dir = tmp_path
+    provider = get_provider("coupang", root_dir=root_dir)
     paths = provider_paths(root_dir)
     session = make_session()
 
+    def provide(*_args, **kwargs):
+        terminal = kwargs.get("terminal")
+        provider.terminal = terminal
+        provider._auth.terminal = terminal
+        provider._orders.terminal = terminal
+        return provider
+
     with (
-        patch("k_commerce_cli.commands.login.get_provider", return_value=provider),
-        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch("k_commerce_cli.commands.login.get_provider", side_effect=provide),
+        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(provider._auth, "_open_login_entry", new=AsyncMock()) as open_login_entry,
         patch.object(provider._auth, "_wait_for_session_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,
-        patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
-        patch.object(provider.browser, "close", new=AsyncMock()) as close,
+        patch.object(provider._browser, "save_session", new=AsyncMock()) as save_session,
+        patch.object(provider._browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
