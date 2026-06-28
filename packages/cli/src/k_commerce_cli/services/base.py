@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
-from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, OrderResult
 from k_commerce_cli.base import Terminal
 
 class BrowserElement(Protocol):
@@ -23,6 +23,8 @@ class BrowserTab(Protocol):
     async def get(self, url: str) -> None: ...
 
     async def select(self, selector: str, timeout: int = 0) -> BrowserElement | None: ...
+
+    async def evaluate(self, expression: str) -> Any: ...
 
 
 class BrowserSession(Protocol):
@@ -51,6 +53,7 @@ class Store(Protocol):
     cookies_file: Path
     credentials_path: Path
     session_meta_path: Path
+    orders_path: Path
 
     def load_credentials(self) -> Credentials | None: ...
 
@@ -59,6 +62,10 @@ class Store(Protocol):
     def clear_session(self) -> bool: ...
 
     def write_session_metadata(self, payload: dict[str, str]) -> None: ...
+
+    def load_orders(self) -> dict[str, Any] | None: ...
+
+    def write_orders(self, payload: dict[str, Any]) -> None: ...
 
 
 class Provider(Protocol):
@@ -79,3 +86,10 @@ class Provider(Protocol):
         root_dir: Path | None = None,
         terminal: Terminal | None = None,
     ) -> LogoutResult: ...
+
+    async def list_orders(
+        self,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+        refresh: bool = False,
+    ) -> OrderResult: ...

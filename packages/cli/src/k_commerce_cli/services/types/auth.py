@@ -23,10 +23,3 @@ class StatusResult:
     provider: ProviderName
     logged_in: bool
     message: str
-
-
-@dataclass(frozen=True)
-class LoginPageState:
-    url: str
-    has_login_link: bool
-    has_mycoupang_link: bool

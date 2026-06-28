@@ -7,9 +7,10 @@ from k_commerce_cli.services.base import Provider
 from k_commerce_cli.services.browser.nodriver import NodriverBrowser
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.types import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, OrderResult
 
 from .auth import CoupangAuthService
+from .orders import CoupangOrderService
 
 
 class CoupangProvider(Provider):
@@ -22,12 +23,18 @@ class CoupangProvider(Provider):
             store=self.store,
             browser=self._browser,
         )
+        self._orders = CoupangOrderService(
+            provider_name=provider_name,
+            store=self.store,
+            browser=self._browser,
+        )
 
     def _configure_paths(self, root_dir: Path | None = None) -> None:
         self.store = ProviderStore(
             ProviderPaths(self.provider_name, root_dir or Path.home() / ".k-commerce")
         )
         self._auth.store = self.store
+        self._orders.store = self.store
 
     @property
     def browser(self):
@@ -37,6 +44,7 @@ class CoupangProvider(Provider):
     def browser(self, value) -> None:
         self._browser = value
         self._auth.browser = value
+        self._orders.browser = value
 
     async def login(
         self,
@@ -61,5 +69,18 @@ class CoupangProvider(Provider):
     ) -> LogoutResult:
         self._configure_paths(root_dir)
         return await self._auth.logout(root_dir=root_dir, terminal=terminal)
+
+    async def list_orders(
+        self,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+        refresh: bool = False,
+    ) -> OrderResult:
+        self._configure_paths(root_dir)
+        return await self._orders.list_orders(
+            root_dir=root_dir,
+            terminal=terminal,
+            refresh=refresh,
+        )
 
 __all__ = ["CoupangProvider"]

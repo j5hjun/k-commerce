@@ -35,14 +35,9 @@ async def login() -> None:
 async def login_run(ctx: click.Context, provider: str, root_dir: Path | None) -> None:
     terminal = ctx.obj.get("terminal") if ctx.obj is not None else None
     try:
-        result = await get_provider(provider).login(root_dir=root_dir, terminal=terminal)
+        await get_provider(provider).login(root_dir=root_dir, terminal=terminal)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
-
-    click.echo(result.message)
-
-    if not result.success:
-        raise click.ClickException(result.message)
 
 
 @login.command(name="status")
@@ -50,8 +45,6 @@ async def login_run(ctx: click.Context, provider: str, root_dir: Path | None) ->
 async def login_status(ctx: click.Context, provider: str, root_dir: Path | None) -> None:
     terminal = ctx.obj.get("terminal") if ctx.obj is not None else None
     try:
-        result = await get_provider(provider).status(root_dir=root_dir, terminal=terminal)
+        await get_provider(provider).status(root_dir=root_dir, terminal=terminal)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
-
-    click.echo(result.message)

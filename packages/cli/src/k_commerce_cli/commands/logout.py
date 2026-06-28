@@ -13,11 +13,6 @@ from k_commerce_cli.services.registry import get_provider
 async def logout(ctx: click.Context, provider: str, root_dir: Path | None) -> None:
     terminal = ctx.obj.get("terminal") if ctx.obj is not None else None
     try:
-        result = await get_provider(provider).logout(root_dir=root_dir, terminal=terminal)
+        await get_provider(provider).logout(root_dir=root_dir, terminal=terminal)
     except ValueError as error:
         raise click.BadParameter(str(error)) from error
-
-    click.echo(result.message)
-
-    if not result.success:
-        raise click.ClickException(result.message)
