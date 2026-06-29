@@ -1,18 +1,8 @@
-from __future__ import annotations
-
 import asyncio
-from collections.abc import Sequence
-from typing import Any, Protocol
-
 import questionary
+from typing import Any
+from collections.abc import Sequence
 
-
-class Prompts(Protocol):
-    async def select(self, message: str, choices: Sequence[Any]) -> Any: ...
-
-    async def text(self, message: str) -> str: ...
-
-    async def print_message(self, message: str, *, style: str = "fg:red") -> None: ...
 
 
 class QuestionaryPrompts:

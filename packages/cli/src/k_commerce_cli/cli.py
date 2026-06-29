@@ -7,7 +7,7 @@ from k_commerce_cli.commands.logout import logout
 from k_commerce_cli.commands.review import review
 from k_commerce_cli.commands.status import status
 from k_commerce_cli.terminal.asyncclick import AsyncClickTerminal
-from k_commerce_cli.terminal.prompts import QuestionaryPrompts
+from k_commerce_cli.prompts import QuestionaryPrompts
 
 
 @click.group(help="CLI for K-Commerce workflows.")
