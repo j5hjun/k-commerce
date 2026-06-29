@@ -1,5 +1,4 @@
 import asyncio
-import asyncclick as click
 from dataclasses import dataclass
 
 from k_commerce_cli.base import Terminal
@@ -150,7 +149,9 @@ class CoupangAuthService:
         if terminal is not None:
             terminal.echo(result.message)
         if not result.success:
-            raise click.ClickException(result.message)
+            if terminal is not None:
+                terminal.abort(result.message)
+            raise RuntimeError(result.message)
         return result
 
     def _emit_status_result(

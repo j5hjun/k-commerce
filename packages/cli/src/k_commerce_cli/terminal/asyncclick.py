@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncclick as click
+from typing import NoReturn
 
 from k_commerce_cli.base import Terminal
 
@@ -14,3 +15,6 @@ class AsyncClickTerminal(Terminal):
 
     def warn(self, message: str) -> None:
         click.secho(message, fg="yellow")
+
+    def abort(self, message: str) -> NoReturn:
+        raise click.ClickException(message)
