@@ -6,7 +6,7 @@ import sys
 import tempfile
 import types
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -397,6 +397,33 @@ async def test_close_browser_session_handles_non_awaitable_stop() -> None:
     await provider._close_browser_session()
 
     assert provider._browser_session is None
+
+
+@pytest.mark.anyio
+async def test_browser_close_waits_for_subprocess_exit() -> None:
+    browser = NodriverBrowser()
+    process = Mock()
+    process.returncode = None
+    process.wait = AsyncMock(return_value=0)
+    process.terminate = Mock()
+    browser_mock = types.SimpleNamespace(
+        aclose=AsyncMock(),
+        _process=process,
+        _process_pid=12345,
+        stop=lambda: None,
+    )
+    session = NodriverBrowserSession(
+        browser=browser_mock,
+        tab=object(),
+    )
+
+    await browser.close(session)
+
+    browser_mock.aclose.assert_awaited_once()
+    process.terminate.assert_called_once()
+    process.wait.assert_awaited_once()
+    assert browser_mock._process is None
+    assert browser_mock._process_pid is None
 
 
 @pytest.mark.anyio
