@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,12 +61,34 @@ class NodriverBrowser(Browser):
             await save(file=str(cookies_file))
 
     async def close(self, session: NodriverBrowserSession) -> None:
-        stop = getattr(session.browser, "stop", None)
+        browser = session.browser
+
+        aclose = getattr(browser, "aclose", None)
+        if callable(aclose):
+            with contextlib.suppress(Exception):
+                await aclose()
+
+        process = getattr(browser, "_process", None)
+        if process is not None:
+            with contextlib.suppress(Exception):
+                if process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
+            browser._process = None
+            if hasattr(browser, "_process_pid"):
+                browser._process_pid = None
+            return
+
+        stop = getattr(browser, "stop", None)
         if stop is not None:
             result = stop()
             if inspect.isawaitable(result):
-                await result
-        await asyncio.sleep(1)
+                with contextlib.suppress(Exception):
+                    await result
 
     async def select(
         self,

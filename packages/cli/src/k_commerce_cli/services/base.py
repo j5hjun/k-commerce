@@ -4,7 +4,7 @@ from typing import Any, Protocol
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
-from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, ListReviewableResult, ReviewUploadRequest, ReviewUploadResult
 
 class BrowserElement(Protocol):
     text_all: str
@@ -69,3 +69,7 @@ class Provider(Protocol):
     async def status(self) -> StatusResult: ...
 
     async def logout(self) -> LogoutResult: ...
+
+    async def list_reviewable(self) -> ListReviewableResult: ...
+
+    async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
