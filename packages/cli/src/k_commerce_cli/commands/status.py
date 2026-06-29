@@ -13,7 +13,7 @@ def _resolve_root_dir(root_dir: str | None) -> Path | None:
 
 @click.command()
 @click.argument("provider")
-@click.option("--root-dir", "--root_dir", default=None, help="Override the provider root directory.")
+@click.option("--root-dir", "--root_dir", type=click.Path(file_okay=False, dir_okay=True), default=None, help="Override the provider root directory.")
 @click.pass_context
 async def status(ctx: click.Context, provider: str, root_dir: str | None) -> None:
     terminal = ctx.obj["terminal"]
