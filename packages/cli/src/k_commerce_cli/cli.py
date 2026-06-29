@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncclick as click
 
 from k_commerce_cli.commands.login import login
+from k_commerce_cli.commands.order import order
 from k_commerce_cli.commands.logout import logout
 from k_commerce_cli.commands.review import review
 from k_commerce_cli.commands.status import status
@@ -20,6 +21,7 @@ async def app(ctx: click.Context) -> None:
 
 app.add_command(login)
 app.add_command(status)
+app.add_command(order)
 app.add_command(logout)
 app.add_command(review)
 

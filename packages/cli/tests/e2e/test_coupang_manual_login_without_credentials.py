@@ -20,6 +20,7 @@ async def test_login_coupang_command_succeeds_with_manual_login_when_credentials
         terminal = kwargs.get("terminal")
         provider.terminal = terminal
         provider._auth.terminal = terminal
+        provider._orders.terminal = terminal
         return provider
 
     with (

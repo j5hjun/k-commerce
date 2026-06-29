@@ -24,6 +24,7 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
         terminal = kwargs.get("terminal")
         provider.terminal = terminal
         provider._auth.terminal = terminal
+        provider._orders.terminal = terminal
         return provider
 
     with (

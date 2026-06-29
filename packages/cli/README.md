@@ -73,13 +73,26 @@ Delete a review interactively:
 uv run k-commerce review delete coupang
 ```
 
+Collect visible-year Coupang orders except the `최근 6개월` tab and update `orders.json` with a
+diff summary:
+
+```bash
+uv run k-commerce order list coupang
+```
+
+Ignore the previous snapshot comparison and recreate `orders.json` from the latest collection:
+
+```bash
+uv run k-commerce order list coupang --refresh
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status, logout, and review commands:
+The same `--root-dir` option also applies to status, logout, review, and order list commands:
 
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
@@ -90,6 +103,7 @@ uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -211,8 +225,22 @@ Files created there:
 - `cookies.dat`: saved browser cookies
 - `session-meta.json`: metadata about the last successful login method
 - `credentials.json`: optional credentials for automatic login
+- `orders.json`: local order snapshot with collection metadata and nested Coupang orders
 
 The `logout` command removes saved session artifacts such as `chrome-profile/`, `cookies.dat`, and
 `session-meta.json`, but preserves `credentials.json`.
 
 These files are local machine state and should be treated as sensitive.
+
+## Order Snapshot
+
+The `order list` command opens the saved Coupang session, discovers the year tabs visible in the
+current account, skips `최근 6개월`, and walks each visible year page-by-page.
+
+Default mode compares the newly collected data against the previous `orders.json` and prints an
+order-count summary such as total orders plus added, changed, and deleted orders. `--refresh`
+skips that comparison and prints only the total order count for the rebuilt snapshot.
+
+If one or more pages still fail after three retries, the CLI saves the successfully collected
+orders and includes the failed year/page pairs in both the terminal summary and `orders.json`
+metadata.

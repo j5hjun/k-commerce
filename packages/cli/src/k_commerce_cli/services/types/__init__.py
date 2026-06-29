@@ -1,4 +1,5 @@
 from .auth import LoginResult, LogoutResult, ProviderName, StatusResult
+from .order import OrderResult
 from k_commerce_cli.services.providers.coupang.review.type import (
     EditableReviewItem,
     ListEditableReviewsResult,
@@ -17,6 +18,7 @@ __all__ = [
     "LogoutResult",
     "ProviderName",
     "StatusResult",
+    "OrderResult",
     "EditableReviewItem",
     "ListEditableReviewsResult",
     "ListReviewableResult",

@@ -12,6 +12,7 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
+    OrderResult,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -22,6 +23,7 @@ from k_commerce_cli.services.types import (
 )
 
 from .auth import CoupangAuthService
+from .orders import CoupangOrderService
 from .review.service import CoupangReviewService
 
 
@@ -45,6 +47,12 @@ class CoupangProvider(Provider):
             terminal=terminal,
         )
         self._review = CoupangReviewService(
+            provider_name=provider_name,
+            store=self.store,
+            browser=self._browser,
+            terminal=terminal,
+        )
+        self._orders = CoupangOrderService(
             provider_name=provider_name,
             store=self.store,
             browser=self._browser,
@@ -75,5 +83,7 @@ class CoupangProvider(Provider):
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult:
         return await self._review.delete_review(request)
 
+    async def list_orders(self, refresh: bool = False) -> OrderResult:
+        return await self._orders.list_orders(refresh=refresh)
 
 __all__ = ["CoupangProvider"]

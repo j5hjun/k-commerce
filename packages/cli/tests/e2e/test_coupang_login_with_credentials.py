@@ -24,6 +24,7 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
         terminal = kwargs.get("terminal")
         provider.terminal = terminal
         provider._auth.terminal = terminal
+        provider._orders.terminal = terminal
         return provider
 
     with (

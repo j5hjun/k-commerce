@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Any, Protocol
 
-from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.types import (
@@ -9,6 +8,7 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
+    OrderResult,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -65,6 +65,7 @@ class Store(Protocol):
     cookies_file: Path
     credentials_path: Path
     session_meta_path: Path
+    orders_path: Path
 
     def load_credentials(self) -> Credentials | None: ...
 
@@ -73,6 +74,10 @@ class Store(Protocol):
     def clear_session(self) -> bool: ...
 
     def write_session_metadata(self, payload: dict[str, str]) -> None: ...
+
+    def load_orders(self) -> dict[str, Any] | None: ...
+
+    def write_orders(self, payload: dict[str, Any]) -> None: ...
 
 
 class Provider(Protocol):
@@ -91,3 +96,5 @@ class Provider(Protocol):
     async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult: ...
 
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...
+
+    async def list_orders(self, refresh: bool = False) -> OrderResult: ...
