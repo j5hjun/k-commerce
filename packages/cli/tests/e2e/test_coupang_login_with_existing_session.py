@@ -18,23 +18,23 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
     def provide(*_args, **kwargs):
         terminal = kwargs.get("terminal")
         provider.terminal = terminal
-        provider._auth.terminal = terminal
-        provider._orders.terminal = terminal
+        provider.auth_service.terminal = terminal
+        provider.order_service.terminal = terminal
         return provider
 
     with (
         patch("k_commerce_cli.commands.login.get_provider", side_effect=provide),
-        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider._auth, "_open_home", new=AsyncMock()) as open_home,
-        patch.object(provider._auth, "_is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
-        patch.object(provider._auth, "_open_login_entry", new=AsyncMock()) as open_login_entry,
-        patch.object(provider._auth, "_wait_for_session_login", new=AsyncMock()) as wait_for_manual_login,
-        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+        patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(provider.auth_service, "_open_home", new=AsyncMock()) as open_home,
+        patch.object(provider.auth_service, "_is_logged_in", new=AsyncMock(return_value=True)) as is_logged_in,
+        patch.object(provider.auth_service, "_open_login_entry", new=AsyncMock()) as open_login_entry,
+        patch.object(provider.auth_service, "_wait_for_session_login", new=AsyncMock()) as wait_for_manual_login,
+        patch.object(provider.browser, "close", new=AsyncMock()) as close,
     ):
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
     assert result.exit_code == 0
-    assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "쿠팡 로그인 성공"]
+    assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "[ok] 쿠팡 로그인 성공"]
     launch.assert_awaited_once_with(provider.store.paths)
     assert provider.store.paths == paths
     open_home.assert_awaited_once_with(session)

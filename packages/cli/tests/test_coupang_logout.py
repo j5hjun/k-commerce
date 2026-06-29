@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
+from k_commerce_cli.services.registry import get_provider
 
 
 @pytest.mark.anyio
 async def test_logout_clears_saved_session(tmp_path: Path) -> None:
-    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
+    provider = get_provider("coupang", root_dir=tmp_path)
     provider.store.profile_dir.mkdir(parents=True)
     provider.store.cookies_file.write_text("cookies", encoding="utf-8")
     provider.store.write_session_metadata({"login_method": "automatic"})
@@ -21,7 +21,7 @@ async def test_logout_clears_saved_session(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_logout_succeeds_when_session_is_missing(tmp_path: Path) -> None:
-    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
+    provider = get_provider("coupang", root_dir=tmp_path)
 
     result = await provider.logout()
 

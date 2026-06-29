@@ -22,4 +22,4 @@ def test_coupang_login_with_existing_session_smoke(tmp_path: Path) -> None:
     result = invoke_login(root_dir)
 
     assert result.returncode == 0
-    assert result.stdout.splitlines()[-1] == "쿠팡 로그인 성공"
+    assert result.stdout.splitlines()[-1] == "[ok] 쿠팡 로그인 성공"

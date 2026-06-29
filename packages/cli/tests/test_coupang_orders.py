@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -49,6 +50,56 @@ class _StoreStub:
 
     def write_orders(self, payload):
         self._orders = payload
+
+
+def _order_payload(
+    *,
+    order_id: int,
+    title: str,
+    ordered_at: int = 1767225600000,
+    shipment_box_id: str = "A",
+    invoice_number: str = "1",
+    invoice_status: str = "FINAL_DELIVERY",
+    message: str = "done",
+    vendor_item_id: int = 101,
+    item_name: str = "item",
+    price: int = 1000,
+) -> dict[str, Any]:
+    return {
+        "orderId": order_id,
+        "title": title,
+        "orderedAt": ordered_at,
+        "deliveryGroupList": [
+            {
+                "shipmentBoxId": shipment_box_id,
+                "invoiceNumber": invoice_number,
+                "invoiceStatus": invoice_status,
+                "pddMessage": {"message": message},
+                "productList": [
+                    {
+                        "vendorItemId": vendor_item_id,
+                        "vendorItemName": item_name,
+                        "productName": item_name,
+                        "quantity": 1,
+                        "unitPrice": price,
+                        "discountedUnitPrice": price,
+                        "combinedUnitPrice": price,
+                        "imagePath": f"https://example.com/{item_name}.jpg",
+                    }
+                ],
+            }
+        ],
+        "totalProductPrice": price,
+    }
+
+
+def _order_result(**kwargs: Any) -> CoupangOrderResult:
+    return CoupangOrderResult.from_dict(
+        {
+            "provider": "coupang",
+            **_order_payload(**kwargs),
+        }
+    )
 
 
 @pytest.mark.anyio
@@ -222,6 +273,146 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
         deletedOrders=0,
     )
     assert result.message == "주문 수집 완료: 총 1건, 추가 0건, 변경 1건, 삭제 0건"
+
+
+@pytest.mark.anyio
+async def test_collect_orders_reuses_cached_tail_after_unchanged_page(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    store._orders = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider="coupang",
+            collectedAt="old",
+            years=["2026"],
+            failedPages=[],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=2,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[
+            _order_result(order_id=10, title="first"),
+            _order_result(
+                order_id=20,
+                title="second",
+                shipment_box_id="B",
+                invoice_number="2",
+                vendor_item_id=202,
+                item_name="item2",
+                price=2000,
+            ),
+        ],
+    ).to_dict()
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            {
+                "orderList": [_order_payload(order_id=10, title="first")],
+                "orderPagination": {"hasNext": True, "nextPageIndex": 1},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(refresh=False)
+
+    assert [order.orderId for order in result.payload.orders] == [10, 20]
+    assert result.payload.meta.summary == CoupangOrderSummary(
+        totalOrders=2,
+        addedOrders=0,
+        updatedOrders=0,
+        deletedOrders=0,
+    )
+    assert tab.get.await_count == 2
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?requestYear=2026&pageIndex=0"
+    )
+
+
+@pytest.mark.anyio
+async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    store._orders = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider="coupang",
+            collectedAt="old",
+            years=["2026"],
+            failedPages=[["2026", 2]],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=2,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[
+            _order_result(order_id=10, title="first"),
+            _order_result(
+                order_id=20,
+                title="second",
+                shipment_box_id="B",
+                invoice_number="2",
+                vendor_item_id=202,
+                item_name="item2",
+                price=2000,
+            ),
+        ],
+    ).to_dict()
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            {
+                "orderList": [_order_payload(order_id=10, title="first")],
+                "orderPagination": {"hasNext": True, "nextPageIndex": 1},
+            },
+            {
+                "orderList": [
+                    _order_payload(
+                        order_id=20,
+                        title="second",
+                        shipment_box_id="B",
+                        invoice_number="2",
+                        vendor_item_id=202,
+                        item_name="item2",
+                        price=2000,
+                    )
+                ],
+                "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(refresh=False)
+
+    assert [order.orderId for order in result.payload.orders] == [10, 20]
+    assert result.payload.meta.failedPages == []
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?requestYear=2026&pageIndex=1"
+    )
 
 
 @pytest.mark.anyio

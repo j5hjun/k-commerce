@@ -147,7 +147,10 @@ class CoupangAuthService:
         result: LoginResult,
     ) -> LoginResult:
         if terminal is not None:
-            terminal.echo(result.message)
+            if result.success:
+                terminal.success(result.message)
+            else:
+                terminal.warn(result.message)
         if not result.success:
             if terminal is not None:
                 terminal.abort(result.message)
@@ -160,7 +163,10 @@ class CoupangAuthService:
         result: StatusResult,
     ) -> StatusResult:
         if terminal is not None:
-            terminal.echo(result.message)
+            if result.logged_in:
+                terminal.success(result.message)
+            else:
+                terminal.warn(result.message)
         return result
 
     def _emit_logout_result(
@@ -169,7 +175,7 @@ class CoupangAuthService:
         result: LogoutResult,
     ) -> LogoutResult:
         if terminal is not None:
-            terminal.echo(result.message)
+            terminal.success(result.message)
         return result
 
     def _load_credentials(self) -> Credentials | None:

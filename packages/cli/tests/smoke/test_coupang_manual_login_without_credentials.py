@@ -15,7 +15,7 @@ def test_coupang_manual_login_without_credentials_smoke(tmp_path) -> None:
     result = invoke_login(root_dir)
 
     assert result.returncode == 0
-    assert result.stdout.splitlines()[-1] == "쿠팡 로그인 성공"
+    assert result.stdout.splitlines()[-1] == "[ok] 쿠팡 로그인 성공"
     assert json.loads(paths.session_meta_path.read_text(encoding="utf-8")) == {
         "login_method": "manual",
     }

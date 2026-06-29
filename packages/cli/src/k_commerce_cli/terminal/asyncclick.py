@@ -11,10 +11,16 @@ class AsyncClickTerminal(Terminal):
         click.echo(message)
 
     def info(self, message: str) -> None:
-        click.secho(message, fg="blue")
+        click.echo(message)
+
+    def success(self, message: str) -> None:
+        click.secho(f"[ok] {message}", fg="green")
 
     def warn(self, message: str) -> None:
-        click.secho(message, fg="yellow")
+        click.secho(f"[warn] {message}", fg="yellow")
+
+    def cache(self, message: str) -> None:
+        click.secho(f"[cache] {message}", dim=True)
 
     def abort(self, message: str) -> NoReturn:
         raise click.ClickException(message)

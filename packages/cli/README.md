@@ -247,6 +247,11 @@ Default mode compares the newly collected data against the previous `orders.json
 order-count summary such as total orders plus added, changed, and deleted orders. `--refresh`
 skips that comparison and prints only the total order count for the rebuilt snapshot.
 
+When the previous snapshot has no failed pages, default mode also uses it as a page-tail cache:
+after a fetched page exactly matches the same year/position in `orders.json`, the command reuses
+the remaining older orders for that year and stops requesting more pages. `--refresh` always
+requests every visible page and rebuilds the snapshot.
+
 If one or more pages still fail after three retries, the CLI saves the successfully collected
 orders and includes the failed year/page pairs in both the terminal summary and `orders.json`
 metadata.

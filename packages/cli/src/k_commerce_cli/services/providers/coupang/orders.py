@@ -44,6 +44,7 @@ class CoupangOrderService:
             terminal.info("쿠팡 주문 수집을 시작합니다...")
         if not self.store.has_session():
             payload = self._empty_payload(refresh=refresh)
+            self._emit_order_result(terminal, payload)
             return CoupangOrderListResult(
                 message=format_coupang_order_list_message(payload),
                 payload=payload,
@@ -55,6 +56,7 @@ class CoupangOrderService:
             if failed_only:
                 payload = await self._retry_failed_pages(terminal)
                 self.store.write_orders(payload.to_dict())
+                self._emit_order_result(terminal, payload)
                 return CoupangOrderListResult(
                     message=format_coupang_order_list_message(payload),
                     payload=payload,
@@ -63,18 +65,25 @@ class CoupangOrderService:
             years = await self._wait_for_visible_years()
             if not years:
                 payload = self._empty_payload(refresh=refresh)
+                self._emit_order_result(terminal, payload)
                 return CoupangOrderListResult(
                     message=format_coupang_order_list_message(payload),
                     payload=payload,
                 )
 
+            previous = None if refresh else self._load_previous_order_list()
             if terminal is not None:
                 terminal.info(f"수집 연도: {', '.join(years)}")
-            orders, failed_pages = await self._collect_all_years(years, terminal)
-            previous_orders = [] if refresh else self._load_previous_orders()
+            orders, failed_pages = await self._collect_all_years(
+                years,
+                terminal,
+                cache=previous,
+            )
+            previous_orders = [] if previous is None else previous.orders
             summary = self._summarize_changes(previous_orders, orders)
             payload = self._build_payload(years, failed_pages, refresh, orders, summary)
             self.store.write_orders(payload.to_dict())
+            self._emit_order_result(terminal, payload)
             return CoupangOrderListResult(
                 message=format_coupang_order_list_message(payload),
                 payload=payload,
@@ -121,11 +130,15 @@ class CoupangOrderService:
         self,
         years: list[str],
         terminal: Terminal | None,
+        cache: CoupangOrderList | None = None,
     ) -> tuple[list[CoupangOrderResult], list[list[int | str]]]:
         collected: list[CoupangOrderResult] = []
         failed_pages: list[list[int | str]] = []
+        cached_orders_by_year = self._cacheable_orders_by_year(cache)
         for year in years:
             page_index = 0
+            year_orders: list[CoupangOrderResult] = []
+            cached_year_orders = cached_orders_by_year.get(year, [])
             while True:
                 if terminal is not None:
                     terminal.info(f"{year}년 {page_index + 1}페이지 수집 중...")
@@ -134,7 +147,23 @@ class CoupangOrderService:
                 except Exception:
                     failed_pages.append([year, page_index + 1])
                     break
-                collected.extend(self._build_order(order) for order in page["orderList"])
+                page_orders = [
+                    self._build_order(order) for order in page["orderList"]
+                ]
+                cached_tail = self._cached_tail_for_page(
+                    cached_year_orders,
+                    len(year_orders),
+                    page_orders,
+                )
+                if cached_tail is not None:
+                    collected.extend(cached_tail)
+                    year_orders.extend(cached_tail)
+                    if terminal is not None:
+                        terminal.cache(f"{year}년 나머지 주문은 캐시를 사용합니다.")
+                    break
+
+                collected.extend(page_orders)
+                year_orders.extend(page_orders)
                 pagination = page["orderPagination"]
                 if not pagination["hasNext"]:
                     break
@@ -309,6 +338,20 @@ class CoupangOrderService:
         message = value.get("message")
         return str(message) if message is not None else None
 
+    def _emit_order_result(
+        self,
+        terminal: Terminal | None,
+        payload: CoupangOrderList,
+    ) -> None:
+        if terminal is None:
+            return
+
+        message = format_coupang_order_list_message(payload)
+        if payload.meta.failedPages:
+            terminal.warn(message)
+            return
+        terminal.success(message)
+
     def _build_payload(
         self,
         years: list[str],
@@ -385,6 +428,46 @@ class CoupangOrderService:
             merged.append(current_by_id.pop(order.orderId, order))
         merged.extend(current_by_id.values())
         return merged
+
+    def _cacheable_orders_by_year(
+        self,
+        cache: CoupangOrderList | None,
+    ) -> dict[str, list[CoupangOrderResult]]:
+        if cache is None or cache.meta.failedPages:
+            return {}
+
+        orders_by_year: dict[str, list[CoupangOrderResult]] = {}
+        for order in cache.orders:
+            year = self._ordered_at_year(order)
+            if year is None:
+                return {}
+            orders_by_year.setdefault(year, []).append(order)
+        return orders_by_year
+
+    def _ordered_at_year(self, order: CoupangOrderResult) -> str | None:
+        for divisor in (1000, 1):
+            try:
+                ordered_at = datetime.fromtimestamp(order.orderedAt / divisor)
+            except (OSError, OverflowError, ValueError):
+                continue
+            if 2000 <= ordered_at.year <= 2100:
+                return str(ordered_at.year)
+        return None
+
+    def _cached_tail_for_page(
+        self,
+        cached_orders: list[CoupangOrderResult],
+        offset: int,
+        page_orders: list[CoupangOrderResult],
+    ) -> list[CoupangOrderResult] | None:
+        if not cached_orders or not page_orders:
+            return None
+
+        page_size = len(page_orders)
+        cached_page = cached_orders[offset : offset + page_size]
+        if cached_page == page_orders:
+            return cached_orders[offset:]
+        return None
 
     def _item_map(
         self,
