@@ -12,6 +12,7 @@ This workspace is a Python monorepo for K-commerce automation. Use this map firs
 
 ## Directories
 
+- `.agents/` - repository-shared assets for AI agents, including portable skills. See `.agents/AGENTS.md`.
 - `.github/` - repository collaboration templates. See `.github/AGENTS.md`.
 - `packages/` - all installable Python packages. See `packages/AGENTS.md`.
 - `packages/cli/` - command-line application, provider services, browser automation, and CLI tests.
