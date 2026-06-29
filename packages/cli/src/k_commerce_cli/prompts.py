@@ -1,13 +1,16 @@
 import asyncio
-import questionary
-from typing import Any
 from collections.abc import Sequence
+from typing import TypeVar
+
+import questionary
+
+T = TypeVar("T")
 
 
 
 class QuestionaryPrompts:
-    async def select(self, message: str, choices: Sequence[Any]) -> Any:
-        def _ask() -> Any:
+    async def select(self, message: str, choices: Sequence[T]) -> T:
+        def _ask() -> T:
             selection = questionary.select(
                 message,
                 choices=list(choices),

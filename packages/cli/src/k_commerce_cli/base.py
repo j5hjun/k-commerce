@@ -1,5 +1,7 @@
-from typing import NoReturn, Protocol,Any
+from typing import NoReturn, Protocol, TypeVar
 from collections.abc import Sequence
+
+T = TypeVar("T")
 
 class Terminal(Protocol):
     def echo(self, message: str) -> None: ...
@@ -12,7 +14,7 @@ class Terminal(Protocol):
 
 
 class Prompts(Protocol):
-    async def select(self, message: str, choices: Sequence[Any]) -> Any: ...
+    async def select(self, message: str, choices: Sequence[T]) -> T: ...
 
     async def text(self, message: str) -> str: ...
 
