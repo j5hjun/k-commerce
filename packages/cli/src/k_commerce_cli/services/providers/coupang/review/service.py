@@ -146,6 +146,7 @@ class CoupangReviewService:
             browser_result = await self._upload_review_browser(
                 self._browser_session,
                 review_url=request.review_url,
+                order_id=request.order_id,
                 product_id=request.product_id,
                 rating=request.rating,
                 text=request.text,
@@ -478,6 +479,7 @@ class CoupangReviewService:
         session: BrowserSession,
         *,
         review_url: str,
+        order_id: str,
         product_id: str,
         rating: int,
         text: str,
@@ -492,7 +494,7 @@ class CoupangReviewService:
         await self._open_review_register(session, review_url)
 
         active_tab = self._active_tab(session)
-        page_state = await self._read_review_register_state(active_tab, product_id)
+        page_state = await self._read_review_register_state(active_tab, product_id, order_id)
         if page_state != CoupangReviewState.SUCCESS:
             return _ReviewUploadBrowserResult(state=page_state)
 
@@ -506,14 +508,16 @@ class CoupangReviewService:
 
         return _ReviewUploadBrowserResult(state=confirmation)
 
-    async def _read_review_register_state(self, tab: BrowserTab, product_id: str) -> str:
+    async def _read_review_register_state(self, tab: BrowserTab, product_id: str, order_id: str) -> str:
         """리뷰 작성 페이지가 제출 가능한 상태인지 판별합니다."""
         product_id_literal = json.dumps(product_id, ensure_ascii=False)
+        order_id_literal = json.dumps(order_id, ensure_ascii=False)
         result = await self._evaluate_json(
             tab,
             f"""
             (() => {{
               const productId = {product_id_literal};
+              const orderId = {order_id_literal};
               const url = window.location.href;
               if (url.includes('login.coupang.com')) {{
                 return {{ state: 'not_logged_in' }};
@@ -526,6 +530,16 @@ class CoupangReviewService:
                 bodyText.includes('요청하신 페이지') ||
                 bodyText.includes('존재하지 않')
               ) {{
+                return {{ state: 'order_not_found' }};
+              }}
+
+              const params = new URL(url).searchParams;
+              const pageProductId = params.get('productId') || '';
+              const pageOrderId = params.get('completedOrderVendorItemId') || '';
+              if (pageProductId && pageProductId !== productId) {{
+                return {{ state: 'product_not_found' }};
+              }}
+              if (pageOrderId && pageOrderId !== orderId) {{
                 return {{ state: 'order_not_found' }};
               }}
 

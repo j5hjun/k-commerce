@@ -63,8 +63,10 @@ class _BrowserSpy:
 class _EvaluateTab:
     def __init__(self, payloads: list[object]) -> None:
         self._payloads = list(payloads)
+        self.evaluate_calls: list[str] = []
 
     async def evaluate(self, _script: str, _args=None):
+        self.evaluate_calls.append(_script)
         if not self._payloads:
             return []
         return self._payloads.pop(0)
@@ -176,9 +178,28 @@ async def test_read_review_register_state_deserializes_cdp_success_result() -> N
         ]
     )
 
-    page_state = await service._read_review_register_state(tab, "8825977723")
+    page_state = await service._read_review_register_state(tab, "8825977723", "22404668406")
 
     assert page_state == "success"
+
+
+@pytest.mark.anyio
+async def test_read_review_register_state_checks_url_query_before_form_success() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([{"state": "success"}])
+
+    page_state = await service._read_review_register_state(tab, "8825977723", "22404668406")
+
+    assert page_state == "success"
+    script = tab.evaluate_calls[0]
+    assert "params.get('productId')" in script
+    assert "params.get('completedOrderVendorItemId')" in script
+    assert script.index("pageProductId && pageProductId !== productId") < script.index(
+        "const reviewForm = document.querySelector"
+    )
+    assert script.index("pageOrderId && pageOrderId !== orderId") < script.index(
+        "const reviewForm = document.querySelector"
+    )
 
 
 @pytest.mark.anyio
@@ -328,7 +349,14 @@ async def test_upload_review_succeeds_with_saved_session(tmp_path: Path) -> None
     assert result.order_id == "22404668406"
     assert result.product_id == "8825977723"
     browser.launch.assert_awaited_once()
-    service._upload_review_browser.assert_awaited_once()
+    service._upload_review_browser.assert_awaited_once_with(
+        session,
+        review_url=_request().review_url,
+        order_id="22404668406",
+        product_id="8825977723",
+        rating=5,
+        text="좋아요",
+    )
     browser.close.assert_awaited_once()
 
 
