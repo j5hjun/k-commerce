@@ -20,10 +20,10 @@ def test_get_provider_applies_overridden_root_dir(tmp_path: Path) -> None:
     assert provider.store.base_dir == tmp_path / "coupang"
 
 
-def test_coupang_provider_initializes_default_browser() -> None:
-    provider = CoupangProvider(provider_name="coupang")
+def test_get_provider_initializes_default_browser() -> None:
+    provider = get_provider("coupang")
 
-    assert isinstance(provider._browser, NodriverBrowser)
+    assert isinstance(provider.browser, NodriverBrowser)
 
 
 def test_get_provider_raises_for_unsupported_provider() -> None:

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Literal
 
-ProviderName = Literal["coupang"]
+from .provider import ProviderName
 
 
 @dataclass(frozen=True)

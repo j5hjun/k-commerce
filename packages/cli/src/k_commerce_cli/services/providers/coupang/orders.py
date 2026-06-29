@@ -23,12 +23,12 @@ COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
 class CoupangOrderService:
     def __init__(
         self,
-        provider_name: str,
+        provider: str,
         store: Store,
         browser: Browser,
         terminal: Terminal | None = None,
     ) -> None:
-        self.provider_name = provider_name
+        self.provider = provider
         self.store = store
         self.browser = browser
         self.terminal = terminal
@@ -211,7 +211,7 @@ class CoupangOrderService:
 
     def _build_order(self, data: dict[str, Any]) -> CoupangOrderResult:
         return CoupangOrderResult(
-            provider=self.provider_name,
+            provider=self.provider,
             orderId=int(data["orderId"]),
             title=str(data["title"]),
             orderedAt=int(data["orderedAt"]),
@@ -256,7 +256,7 @@ class CoupangOrderService:
     ) -> CoupangOrderList:
         return CoupangOrderList(
             meta=CoupangOrderMeta(
-                provider=self.provider_name,
+                provider=self.provider,
                 collectedAt=datetime.now().astimezone().replace(microsecond=0).isoformat(),
                 years=years,
                 failedPages=failed_pages,

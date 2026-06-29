@@ -98,7 +98,7 @@ def _make_auth_provider():
     browser = NodriverBrowser()
     store = ProviderStore(ProviderPaths("coupang"))
     return CoupangAuthService(
-        provider_name="coupang",
+        provider="coupang",
         store=store,
         browser=browser,
     )
@@ -300,7 +300,7 @@ def test_default_store_uses_provider_paths() -> None:
 
 def test_store_can_be_replaced_with_overridden_root_dir(tmp_path: Path) -> None:
     provider = CoupangAuthService(
-        provider_name="coupang",
+        provider="coupang",
         store=ProviderStore(ProviderPaths("coupang", root_dir=tmp_path)),
         browser=NodriverBrowser(),
     )
@@ -430,7 +430,7 @@ async def test_browser_close_waits_for_subprocess_exit() -> None:
 async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
+    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
     session = types.SimpleNamespace(tab=_DummyTab())
     provider._auth._is_logged_in = AsyncMock(return_value=True)
     cookies_file = tmp_path / "coupang" / "cookies.dat"
@@ -458,7 +458,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
 async def test_login_status_closes_browser_session_when_home_check_fails(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
+    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
     session = types.SimpleNamespace(tab=_DummyTab())
     session.tab.get = AsyncMock(side_effect=RuntimeError("boom"))
     cookies_file = tmp_path / "coupang" / "cookies.dat"
@@ -479,7 +479,7 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
 async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider_name="coupang", root_dir=tmp_path)
+    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
     with (
         patch.object(provider._browser, "launch", new=AsyncMock()) as launch,
         patch.object(provider._browser, "close", new=AsyncMock()) as close,

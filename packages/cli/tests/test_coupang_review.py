@@ -83,7 +83,7 @@ def _make_review_service(
 ) -> CoupangReviewService:
     resolved_root = root_dir if root_dir is not None else Path.home() / ".k-commerce"
     return CoupangReviewService(
-        provider_name="coupang",
+        provider="coupang",
         store=ProviderStore(ProviderPaths("coupang", root_dir=resolved_root)),
         browser=browser or _BrowserSpy(),
     )

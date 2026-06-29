@@ -26,12 +26,12 @@ class LoginPageState:
 class CoupangAuthService:
     def __init__(
         self,
-        provider_name: str,
+        provider: str,
         store: Store,
         browser: Browser,
         terminal: Terminal | None = None,
     ) -> None:
-        self.provider_name = provider_name
+        self.provider = provider
         self.store = store
         self.terminal = terminal
         self.browser = browser
@@ -64,7 +64,7 @@ class CoupangAuthService:
             if restored_session is not None and await self._verify_session(restored_session):
                 return self._emit_login_result(
                     terminal,
-                    LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+                    LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
                 )
 
             if credentials is not None:
@@ -74,7 +74,7 @@ class CoupangAuthService:
                     await self._persist_session("automatic")
                     return self._emit_login_result(
                         terminal,
-                        LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+                        LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
                     )
 
             if terminal is not None:
@@ -82,13 +82,13 @@ class CoupangAuthService:
             if not await self._wait_for_manual_login():
                 return self._emit_login_result(
                     terminal,
-                    LoginResult(provider=self.provider_name, success=False, message="쿠팡 로그인 실패"),
+                    LoginResult(provider=self.provider, success=False, message="쿠팡 로그인 실패"),
                 )
 
             await self._persist_session("manual")
             return self._emit_login_result(
                 terminal,
-                LoginResult(provider=self.provider_name, success=True, message="쿠팡 로그인 성공"),
+                LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
             )
         finally:
             await self._close_browser_session()
@@ -99,7 +99,7 @@ class CoupangAuthService:
             return self._emit_status_result(
                 terminal,
                 StatusResult(
-                    provider=self.provider_name,
+                    provider=self.provider,
                     logged_in=False,
                     message="쿠팡 로그인 상태가 아닙니다",
                 ),
@@ -112,7 +112,7 @@ class CoupangAuthService:
             return self._emit_status_result(
                 terminal,
                 StatusResult(
-                    provider=self.provider_name,
+                    provider=self.provider,
                     logged_in=logged_in,
                     message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
                 ),
@@ -129,7 +129,7 @@ class CoupangAuthService:
             return self._emit_logout_result(
                 terminal,
                 LogoutResult(
-                    provider=self.provider_name,
+                    provider=self.provider,
                     success=True,
                     message="저장된 쿠팡 세션이 없습니다",
                 ),
@@ -138,7 +138,7 @@ class CoupangAuthService:
         self.store.clear_session()
         return self._emit_logout_result(
             terminal,
-            LogoutResult(provider=self.provider_name, success=True, message="쿠팡 로그아웃 완료"),
+            LogoutResult(provider=self.provider, success=True, message="쿠팡 로그아웃 완료"),
         )
 
     def _emit_login_result(

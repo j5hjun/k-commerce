@@ -104,7 +104,7 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
     payload = result.payload
@@ -211,7 +211,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=False)
     payload = result.payload
@@ -245,7 +245,7 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
     payload = result.payload
@@ -296,7 +296,7 @@ async def test_collect_orders_unwraps_nodriver_evaluate_payloads(tmp_path: Path)
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 
@@ -326,7 +326,7 @@ async def test_collect_orders_retries_when_evaluate_returns_exception_details(tm
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 
@@ -356,7 +356,7 @@ async def test_collect_orders_waits_for_order_page_payload_after_navigation(tmp_
         ]
     )
 
-    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 
