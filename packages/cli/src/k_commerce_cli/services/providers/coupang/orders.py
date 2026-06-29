@@ -47,7 +47,8 @@ class CoupangOrderService:
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
-            years = await self._read_visible_years()
+            await self._open_order_list(self._browser_session)
+            years = await self._wait_for_visible_years()
             if not years:
                 payload = self._empty_payload(refresh=refresh)
                 return CoupangOrderListResult(
@@ -86,6 +87,18 @@ class CoupangOrderService:
         )
         return [year for year in years if year != "최근 6개월"]
 
+    async def _open_order_list(self, session: BrowserSession) -> None:
+        await session.tab.get(COUPANG_ORDER_LIST_URL)
+
+    async def _wait_for_visible_years(self, poll_count: int = 5) -> list[str]:
+        for attempt in range(poll_count):
+            years = await self._read_visible_years()
+            if years:
+                return years
+            if attempt < poll_count - 1:
+                await asyncio.sleep(1)
+        return []
+
     async def _collect_all_years(
         self,
         years: list[str],
@@ -119,6 +132,17 @@ class CoupangOrderService:
                 )
                 if inspect.isawaitable(maybe_navigation):
                     await maybe_navigation
+                return await self._wait_for_order_page_payload()
+            except Exception as exc:
+                last_error = exc
+                await asyncio.sleep(1)
+        assert last_error is not None
+        raise last_error
+
+    async def _wait_for_order_page_payload(self, poll_count: int = 5) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(poll_count):
+            try:
                 return await self._evaluate(
                     """
                     (() => {
@@ -133,14 +157,49 @@ class CoupangOrderService:
                 )
             except Exception as exc:
                 last_error = exc
-                await asyncio.sleep(1)
+                if attempt < poll_count - 1:
+                    await asyncio.sleep(1)
         assert last_error is not None
         raise last_error
 
     async def _evaluate(self, expression: str) -> Any:
         if self._browser_session is None:
             raise RuntimeError("browser session is not available")
-        return await self._browser_session.tab.evaluate(expression)
+        result = await self._browser_session.tab.evaluate(expression)
+        self._raise_if_exception_details(result)
+        return self._unwrap_evaluated_value(result)
+
+    def _raise_if_exception_details(self, value: Any) -> None:
+        if value.__class__.__name__ != "ExceptionDetails":
+            return
+
+        remote_exception = getattr(value, "exception", None)
+        description = getattr(remote_exception, "description", None)
+        message = description or getattr(value, "text", None) or "browser evaluation failed"
+        raise RuntimeError(str(message))
+
+    def _unwrap_evaluated_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            if "type" in value:
+                wrapped = value.get("value")
+                if value["type"] == "null":
+                    return None
+                return self._unwrap_evaluated_value(wrapped)
+            return {
+                str(key): self._unwrap_evaluated_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            if all(
+                isinstance(item, list) and len(item) == 2 and isinstance(item[0], str)
+                for item in value
+            ):
+                return {
+                    item[0]: self._unwrap_evaluated_value(item[1])
+                    for item in value
+                }
+            return [self._unwrap_evaluated_value(item) for item in value]
+        return value
 
     async def _close_browser_session(self) -> None:
         if self._browser_session is None:

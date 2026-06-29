@@ -16,6 +16,12 @@ from k_commerce_cli.services.providers.coupang.types import (
 )
 
 
+class ExceptionDetails:
+    def __init__(self, text: str, description: str) -> None:
+        self.text = text
+        self.exception = type("RemoteException", (), {"description": description})()
+
+
 class _StoreStub:
     def __init__(self, root_dir: Path):
         self.paths = ProviderPaths("coupang", root_dir)
@@ -53,10 +59,12 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     session = Mock()
     tab = Mock()
     session.tab = tab
+    tab.get = AsyncMock()
     browser.launch = AsyncMock(return_value=session)
     browser.close = AsyncMock()
     tab.evaluate = AsyncMock(
         side_effect=[
+            [],
             ["최근 6개월", "2026", "2025"],
             {
                 "orderList": [
@@ -106,6 +114,7 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     assert payload.meta.refresh is True
     assert payload.orders[0].provider == "coupang"
     assert payload.orders[0].orderId == 10
+    tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     assert store._orders == payload.to_dict()
     assert result.message == "주문 새로 생성 완료: 총 1건"
 
@@ -161,10 +170,12 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
     session = Mock()
     tab = Mock()
     session.tab = tab
+    tab.get = AsyncMock()
     browser.launch = AsyncMock(return_value=session)
     browser.close = AsyncMock()
     tab.evaluate = AsyncMock(
         side_effect=[
+            [],
             ["최근 6개월", "2026"],
             {
                 "orderList": [
@@ -221,10 +232,12 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
     session = Mock()
     tab = Mock()
     session.tab = tab
+    tab.get = AsyncMock()
     browser.launch = AsyncMock(return_value=session)
     browser.close = AsyncMock()
     tab.evaluate = AsyncMock(
         side_effect=[
+            [],
             ["최근 6개월", "2026"],
             RuntimeError("boom"),
             RuntimeError("boom"),
@@ -245,3 +258,107 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
         deletedOrders=0,
     )
     assert result.message == "주문 새로 생성 완료: 총 0건, 실패 1페이지(2026년 1페이지)"
+
+
+@pytest.mark.anyio
+async def test_collect_orders_unwraps_nodriver_evaluate_payloads(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            [
+                {"type": "string", "value": "최근 6개월"},
+                {"type": "string", "value": "2026"},
+            ],
+            {
+                "type": "object",
+                "value": [
+                    ["orderList", {"type": "array", "value": []}],
+                    [
+                        "orderPagination",
+                        {
+                            "type": "object",
+                            "value": [
+                                ["hasNext", {"type": "boolean", "value": False}],
+                                ["nextPageIndex", {"type": "number", "value": 0}],
+                            ],
+                        },
+                    ],
+                ],
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.payload.meta.years == ["2026"]
+    assert result.payload.meta.summary.totalOrders == 0
+
+
+@pytest.mark.anyio
+async def test_collect_orders_retries_when_evaluate_returns_exception_details(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            ExceptionDetails("Uncaught", "Error: missing __NEXT_DATA__"),
+            {
+                "orderList": [],
+                "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.payload.meta.years == ["2026"]
+    assert result.payload.meta.summary.totalOrders == 0
+
+
+@pytest.mark.anyio
+async def test_collect_orders_waits_for_order_page_payload_after_navigation(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            ExceptionDetails("Uncaught", "Error: missing __NEXT_DATA__"),
+            {
+                "orderList": [],
+                "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider_name="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.payload.meta.failedPages == []
+    assert result.payload.meta.summary.totalOrders == 0
