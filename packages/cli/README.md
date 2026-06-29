@@ -86,6 +86,12 @@ Ignore the previous snapshot comparison and recreate `orders.json` from the late
 uv run k-commerce order list coupang --refresh
 ```
 
+Retry only the year/page pairs recorded in the previous `orders.json` failure metadata:
+
+```bash
+uv run k-commerce order list coupang --failed-only
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
@@ -244,3 +250,7 @@ skips that comparison and prints only the total order count for the rebuilt snap
 If one or more pages still fail after three retries, the CLI saves the successfully collected
 orders and includes the failed year/page pairs in both the terminal summary and `orders.json`
 metadata.
+
+`--failed-only` reads those saved failure pairs, requests only those pages, merges successful
+results into the previous snapshot by order ID, and keeps only pages that still fail in the new
+`failedPages` metadata.

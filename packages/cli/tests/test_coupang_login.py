@@ -23,7 +23,7 @@ from k_commerce_cli.services.providers.coupang.auth import (
 )
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.types.auth import LoginResult, StatusResult
+from k_commerce_cli.services.types.auth import StatusResult
 
 
 class _DummyElement:
@@ -104,6 +104,14 @@ def _make_auth_provider():
     )
 
 
+def _make_coupang_provider(root_dir: Path) -> CoupangProvider:
+    return CoupangProvider(
+        provider="coupang",
+        store=ProviderStore(ProviderPaths("coupang", root_dir=root_dir)),
+        browser=NodriverBrowser(),
+    )
+
+
 @pytest.mark.anyio
 async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
     browser = NodriverBrowser()
@@ -121,7 +129,7 @@ async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
             cookies_file = paths.cookies_file
             cookies_file.write_text("cookies", encoding="utf-8")
 
-            session = await browser.launch(paths)
+            await browser.launch(paths)
     finally:
         nodriver_module.start = original_start
 
@@ -430,16 +438,17 @@ async def test_browser_close_waits_for_subprocess_exit() -> None:
 async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
+    provider = _make_coupang_provider(tmp_path)
+    auth_service = provider.auth_service
     session = types.SimpleNamespace(tab=_DummyTab())
-    provider._auth._is_logged_in = AsyncMock(return_value=True)
+    auth_service._is_logged_in = AsyncMock(return_value=True)
     cookies_file = tmp_path / "coupang" / "cookies.dat"
     cookies_file.parent.mkdir(parents=True)
     cookies_file.write_text("cookies", encoding="utf-8")
 
     with (
-        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)) as launch,
-        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+        patch.object(auth_service.browser, "launch", new=AsyncMock(return_value=session)) as launch,
+        patch.object(auth_service.browser, "close", new=AsyncMock()) as close,
     ):
         result = await provider.status()
 
@@ -450,7 +459,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
     )
     launch.assert_awaited_once_with(provider.store.paths)
     assert session.tab.get_calls == [COUPANG_HOME_URL]
-    provider._auth._is_logged_in.assert_awaited_once_with(session.tab)
+    auth_service._is_logged_in.assert_awaited_once_with(session.tab)
     close.assert_awaited_once_with(session)
 
 
@@ -458,7 +467,8 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
 async def test_login_status_closes_browser_session_when_home_check_fails(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
+    provider = _make_coupang_provider(tmp_path)
+    auth_service = provider.auth_service
     session = types.SimpleNamespace(tab=_DummyTab())
     session.tab.get = AsyncMock(side_effect=RuntimeError("boom"))
     cookies_file = tmp_path / "coupang" / "cookies.dat"
@@ -466,8 +476,8 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
     cookies_file.write_text("cookies", encoding="utf-8")
 
     with (
-        patch.object(provider._browser, "launch", new=AsyncMock(return_value=session)),
-        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+        patch.object(auth_service.browser, "launch", new=AsyncMock(return_value=session)),
+        patch.object(auth_service.browser, "close", new=AsyncMock()) as close,
         pytest.raises(RuntimeError, match="boom"),
     ):
         await provider.status()
@@ -479,10 +489,11 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
 async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     tmp_path: Path,
 ) -> None:
-    provider = CoupangProvider(provider="coupang", root_dir=tmp_path)
+    provider = _make_coupang_provider(tmp_path)
+    auth_service = provider.auth_service
     with (
-        patch.object(provider._browser, "launch", new=AsyncMock()) as launch,
-        patch.object(provider._browser, "close", new=AsyncMock()) as close,
+        patch.object(auth_service.browser, "launch", new=AsyncMock()) as launch,
+        patch.object(auth_service.browser, "close", new=AsyncMock()) as close,
     ):
         result = await provider.status()
 

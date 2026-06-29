@@ -45,7 +45,7 @@ class NodriverBrowser(Browser):
             headless=False,
             user_data_dir=str(profile_dir),
             browser_args=[
-                f"--window-size=1440,900",
+                "--window-size=1440,900",
                 "--lang=ko-KR",
             ],
             lang="ko-KR",

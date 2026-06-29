@@ -8,7 +8,6 @@ from k_commerce_cli.services.providers.coupang.orders import CoupangOrderService
 from k_commerce_cli.services.providers.coupang.types import (
     CoupangDeliveryGroup,
     CoupangOrderList,
-    CoupangOrderListResult,
     CoupangOrderMeta,
     CoupangOrderProduct,
     CoupangOrderResult,
@@ -258,6 +257,157 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
         deletedOrders=0,
     )
     assert result.message == "주문 새로 생성 완료: 총 0건, 실패 1페이지(2026년 1페이지)"
+
+
+@pytest.mark.anyio
+async def test_collect_orders_failed_only_retries_recorded_pages(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    store._orders = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider="coupang",
+            collectedAt="old",
+            years=["2026"],
+            failedPages=[["2026", 2]],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=1,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[
+            CoupangOrderResult(
+                provider="coupang",
+                orderId=10,
+                title="first",
+                orderedAt=1,
+                totalProductPrice=1000,
+                deliveryGroupList=[
+                    CoupangDeliveryGroup(
+                        shipmentBoxId="A",
+                        invoiceNumber="1",
+                        invoiceStatus="FINAL_DELIVERY",
+                        pddMessage={"message": "done"},
+                        productList=[
+                            CoupangOrderProduct(
+                                vendorItemId=101,
+                                vendorItemName="item",
+                                productName="item",
+                                quantity=1,
+                                unitPrice=1000,
+                                discountedUnitPrice=1000,
+                                combinedUnitPrice=1000,
+                                imagePath="https://example.com/item.jpg",
+                            )
+                        ],
+                    )
+                ],
+            )
+        ],
+    ).to_dict()
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        return_value={
+            "orderList": [
+                {
+                    "orderId": 20,
+                    "title": "second",
+                    "orderedAt": 2,
+                    "deliveryGroupList": [
+                        {
+                            "shipmentBoxId": "B",
+                            "invoiceNumber": "2",
+                            "invoiceStatus": "INSTRUCT",
+                            "pddMessage": {"message": "ready"},
+                            "productList": [
+                                {
+                                    "vendorItemId": 202,
+                                    "vendorItemName": "item2",
+                                    "productName": "item2",
+                                    "quantity": 1,
+                                    "unitPrice": 2000,
+                                    "discountedUnitPrice": 2000,
+                                    "combinedUnitPrice": 2000,
+                                    "imagePath": "https://example.com/item2.jpg",
+                                }
+                            ],
+                        }
+                    ],
+                    "totalProductPrice": 2000,
+                }
+            ],
+            "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+        }
+    )
+
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(failed_only=True)
+    payload = result.payload
+
+    assert payload.meta.failedPages == []
+    assert [order.orderId for order in payload.orders] == [10, 20]
+    assert payload.meta.summary == CoupangOrderSummary(
+        totalOrders=2,
+        addedOrders=1,
+        updatedOrders=0,
+        deletedOrders=0,
+    )
+    assert store._orders == payload.to_dict()
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?requestYear=2026&pageIndex=1"
+    )
+    assert result.message == "주문 수집 완료: 총 2건, 추가 1건, 변경 0건, 삭제 0건"
+
+
+@pytest.mark.anyio
+async def test_collect_orders_failed_only_keeps_failed_pages_when_retry_fails(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    store._orders = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider="coupang",
+            collectedAt="old",
+            years=["2026"],
+            failedPages=[["2026", 1]],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=0,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[],
+    ).to_dict()
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            RuntimeError("boom"),
+            RuntimeError("boom"),
+            RuntimeError("boom"),
+        ]
+    )
+
+    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+
+    result = await service.list_orders(failed_only=True)
+
+    assert result.payload.meta.failedPages == [["2026", 1]]
+    assert result.payload.orders == []
+    assert result.message == "주문 수집 완료: 총 0건, 추가 0건, 변경 0건, 삭제 0건, 실패 1페이지(2026년 1페이지)"
 
 
 @pytest.mark.anyio

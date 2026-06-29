@@ -247,7 +247,7 @@ async def test_order_list_command_prints_summary_once() -> None:
     assert result.exit_code == 0
     assert result.stdout.splitlines() == []
     get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
-    provider.list_orders.assert_awaited_once_with(refresh=False)
+    provider.list_orders.assert_awaited_once_with(refresh=False, failed_only=False)
 
 
 @pytest.mark.anyio
@@ -284,4 +284,52 @@ async def test_order_list_refresh_passes_refresh_flag(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert result.stdout.splitlines() == []
     get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
-    provider.list_orders.assert_awaited_once_with(refresh=True)
+    provider.list_orders.assert_awaited_once_with(refresh=True, failed_only=False)
+
+
+@pytest.mark.anyio
+async def test_order_list_failed_only_passes_failed_only_flag(tmp_path: Path) -> None:
+    provider = Mock()
+    provider.list_orders = AsyncMock(
+        return_value=CoupangOrderListResult(
+            message="주문 수집 완료: 총 1건, 추가 1건, 변경 0건, 삭제 0건",
+            payload=CoupangOrderList(
+                meta=CoupangOrderMeta(
+                    provider="coupang",
+                    collectedAt="2026-06-28T12:00:00+09:00",
+                    years=["2026"],
+                    failedPages=[],
+                    refresh=False,
+                    summary=CoupangOrderSummary(
+                        totalOrders=1,
+                        addedOrders=1,
+                        updatedOrders=0,
+                        deletedOrders=0,
+                    ),
+                ),
+                orders=[],
+            ),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.order.get_provider", return_value=provider) as get_provider:
+        result = await RUNNER.invoke(
+            app,
+            ["order", "list", "coupang", "--failed-only", "--root-dir", str(tmp_path)],
+        )
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == []
+    get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
+    provider.list_orders.assert_awaited_once_with(refresh=False, failed_only=True)
+
+
+@pytest.mark.anyio
+async def test_order_list_rejects_refresh_with_failed_only() -> None:
+    result = await RUNNER.invoke(
+        app,
+        ["order", "list", "coupang", "--refresh", "--failed-only"],
+    )
+
+    assert result.exit_code != 0
+    assert "--refresh and --failed-only cannot be used together." in result.output

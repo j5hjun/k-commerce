@@ -99,7 +99,11 @@ class Provider(Protocol):
 
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...
 
-    async def list_orders(self, refresh: bool = False) -> OrderResult: ...
+    async def list_orders(
+        self,
+        refresh: bool = False,
+        failed_only: bool = False,
+    ) -> OrderResult: ...
 
 
 class AuthService(Protocol):
@@ -111,7 +115,11 @@ class AuthService(Protocol):
 
 
 class OrderService(Protocol):
-    async def list_orders(self, refresh: bool = False) -> OrderResult: ...
+    async def list_orders(
+        self,
+        refresh: bool = False,
+        failed_only: bool = False,
+    ) -> OrderResult: ...
 
 
 class ReviewService(Protocol):
@@ -205,5 +213,12 @@ class BaseProvider(Provider, Generic[AuthServiceT, OrderServiceT, ReviewServiceT
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult:
         return await self.review_service.delete_review(request)
 
-    async def list_orders(self, refresh: bool = False) -> OrderResult:
-        return await self.order_service.list_orders(refresh=refresh)
+    async def list_orders(
+        self,
+        refresh: bool = False,
+        failed_only: bool = False,
+    ) -> OrderResult:
+        return await self.order_service.list_orders(
+            refresh=refresh,
+            failed_only=failed_only,
+        )

@@ -34,7 +34,11 @@ class CoupangOrderService:
         self.terminal = terminal
         self._browser_session: BrowserSession | None = None
 
-    async def list_orders(self, refresh: bool = False) -> CoupangOrderListResult:
+    async def list_orders(
+        self,
+        refresh: bool = False,
+        failed_only: bool = False,
+    ) -> CoupangOrderListResult:
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 주문 수집을 시작합니다...")
@@ -48,6 +52,14 @@ class CoupangOrderService:
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             await self._open_order_list(self._browser_session)
+            if failed_only:
+                payload = await self._retry_failed_pages(terminal)
+                self.store.write_orders(payload.to_dict())
+                return CoupangOrderListResult(
+                    message=format_coupang_order_list_message(payload),
+                    payload=payload,
+                )
+
             years = await self._wait_for_visible_years()
             if not years:
                 payload = self._empty_payload(refresh=refresh)
@@ -71,10 +83,16 @@ class CoupangOrderService:
             await self._close_browser_session()
 
     def _load_previous_orders(self) -> list[CoupangOrderResult]:
+        previous = self._load_previous_order_list()
+        if previous is None:
+            return []
+        return previous.orders
+
+    def _load_previous_order_list(self) -> CoupangOrderList | None:
         previous = self.store.load_orders()
         if not previous:
-            return []
-        return CoupangOrderList.from_dict(previous).orders
+            return None
+        return CoupangOrderList.from_dict(previous)
 
     async def _read_visible_years(self) -> list[str]:
         years = await self._evaluate(
@@ -121,6 +139,51 @@ class CoupangOrderService:
                 if not pagination["hasNext"]:
                     break
                 page_index = pagination["nextPageIndex"]
+        return collected, failed_pages
+
+    async def _retry_failed_pages(self, terminal: Terminal | None) -> CoupangOrderList:
+        previous = self._load_previous_order_list()
+        if previous is None:
+            return self._empty_payload(refresh=False)
+
+        pages = self._normalize_failed_pages(previous.meta.failedPages)
+        if not pages:
+            summary = self._summarize_changes(previous.orders, previous.orders)
+            return self._build_payload(
+                previous.meta.years,
+                [],
+                False,
+                previous.orders,
+                summary,
+            )
+
+        collected, failed_pages = await self._collect_failed_pages(pages, terminal)
+        orders = self._merge_orders(previous.orders, collected)
+        summary = self._summarize_changes(previous.orders, orders)
+        return self._build_payload(
+            previous.meta.years,
+            failed_pages,
+            False,
+            orders,
+            summary,
+        )
+
+    async def _collect_failed_pages(
+        self,
+        pages: list[tuple[str, int]],
+        terminal: Terminal | None,
+    ) -> tuple[list[CoupangOrderResult], list[list[int | str]]]:
+        collected: list[CoupangOrderResult] = []
+        failed_pages: list[list[int | str]] = []
+        for year, page_number in pages:
+            if terminal is not None:
+                terminal.info(f"{year}년 {page_number}페이지 재수집 중...")
+            try:
+                page = await self._fetch_page_with_retry(year, page_number - 1)
+            except Exception:
+                failed_pages.append([year, page_number])
+                continue
+            collected.extend(self._build_order(order) for order in page["orderList"])
         return collected, failed_pages
 
     async def _fetch_page_with_retry(self, year: str, page_index: int) -> dict[str, Any]:
@@ -293,6 +356,35 @@ class CoupangOrderService:
             updatedOrders=len(updated_orders),
             deletedOrders=len(deleted_orders),
         )
+
+    def _normalize_failed_pages(
+        self,
+        failed_pages: list[list[int | str]],
+    ) -> list[tuple[str, int]]:
+        normalized: list[tuple[str, int]] = []
+        seen: set[tuple[str, int]] = set()
+        for year, page_number in failed_pages:
+            page = int(page_number)
+            if page < 1:
+                continue
+            key = (str(year), page)
+            if key in seen:
+                continue
+            normalized.append(key)
+            seen.add(key)
+        return normalized
+
+    def _merge_orders(
+        self,
+        previous_orders: list[CoupangOrderResult],
+        current_orders: list[CoupangOrderResult],
+    ) -> list[CoupangOrderResult]:
+        current_by_id = {order.orderId: order for order in current_orders}
+        merged: list[CoupangOrderResult] = []
+        for order in previous_orders:
+            merged.append(current_by_id.pop(order.orderId, order))
+        merged.extend(current_by_id.values())
+        return merged
 
     def _item_map(
         self,
