@@ -7,9 +7,17 @@ from k_commerce_cli.services.base import Provider
 from k_commerce_cli.services.browser.nodriver import NodriverBrowser
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import (
+    ListReviewableResult,
+    LoginResult,
+    LogoutResult,
+    ReviewUploadRequest,
+    ReviewUploadResult,
+    StatusResult,
+)
 
 from .auth import CoupangAuthService
+from .review.service import CoupangReviewService
 
 
 class CoupangProvider(Provider):
@@ -31,6 +39,12 @@ class CoupangProvider(Provider):
             browser=self._browser,
             terminal=terminal,
         )
+        self._review = CoupangReviewService(
+            provider_name=provider_name,
+            store=self.store,
+            browser=self._browser,
+            terminal=terminal,
+        )
 
     async def login(self) -> LoginResult:
         return await self._auth.login()
@@ -40,5 +54,12 @@ class CoupangProvider(Provider):
 
     async def logout(self) -> LogoutResult:
         return await self._auth.logout()
+
+    async def list_reviewable(self) -> ListReviewableResult:
+        return await self._review.list_reviewable()
+
+    async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
+        return await self._review.upload_review(request)
+
 
 __all__ = ["CoupangProvider"]

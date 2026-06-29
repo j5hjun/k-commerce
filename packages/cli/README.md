@@ -37,17 +37,31 @@ Remove saved local Coupang session artifacts while preserving `credentials.json`
 uv run k-commerce logout coupang
 ```
 
+List reviewable products only:
+
+```bash
+uv run k-commerce review list coupang
+```
+
+Write a review interactively:
+
+```bash
+uv run k-commerce review upload coupang
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status and logout commands:
+The same `--root-dir` option also applies to status, logout, and review commands:
 
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce review list coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce review upload coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -65,6 +79,30 @@ The `coupang` login command tries the following in order:
 3. If automatic login is unavailable or fails, wait for manual login in the browser.
 
 When login succeeds, the CLI saves the session so the next run can reuse it.
+
+## Coupang Review Commands
+
+The `review` command group reuses a saved Coupang session.
+
+### Interactive upload
+
+```bash
+uv run k-commerce review upload coupang
+```
+
+This loads the reviewable product list, lets you pick an item with arrow keys, then prompts
+for rating and review text before submitting.
+
+### List only
+
+```bash
+uv run k-commerce review list coupang
+```
+
+If no saved session exists, or the session is no longer logged in, the command fails with a clear
+message instead of opening a login flow automatically.
+
+Image or video attachments are not supported in this command.
 
 ## Login Status
 
