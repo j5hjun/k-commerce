@@ -33,9 +33,6 @@ uv run k-commerce-mcp
   - example: `provider="coupang"`
   - return: `LogoutResult`
 
-There is currently no MCP `order_list` tool. Order snapshot collection is available only through
-the CLI command `k-commerce order list coupang`.
-
 ## Supported Providers
 
 The MCP tools currently support:

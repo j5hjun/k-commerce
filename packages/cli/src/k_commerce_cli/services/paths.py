@@ -26,7 +26,3 @@ class ProviderPaths:
     @property
     def session_meta_path(self) -> Path:
         return self.base_dir / "session-meta.json"
-
-    @property
-    def orders_path(self) -> Path:
-        return self.base_dir / "orders.json"

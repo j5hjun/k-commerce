@@ -19,7 +19,6 @@ def test_exposes_provider_paths(tmp_path: Path) -> None:
     assert store.cookies_file == tmp_path / "coupang" / "cookies.dat"
     assert store.credentials_path == tmp_path / "coupang" / "credentials.json"
     assert store.session_meta_path == tmp_path / "coupang" / "session-meta.json"
-    assert store.orders_path == tmp_path / "coupang" / "orders.json"
 
 
 def test_load_credentials_returns_dataclass_when_file_exists(tmp_path: Path) -> None:
@@ -108,40 +107,6 @@ def test_write_session_metadata_persists_json(tmp_path: Path) -> None:
     assert json.loads(store.session_meta_path.read_text(encoding="utf-8")) == {
         "login_method": "automatic",
     }
-
-
-def test_load_orders_returns_none_when_missing(tmp_path: Path) -> None:
-    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-
-    assert store.load_orders() is None
-
-
-def test_write_orders_persists_json(tmp_path: Path) -> None:
-    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
-    payload = {
-        "meta": {
-            "provider": "coupang",
-            "collectedAt": "2026-06-28T12:00:00+09:00",
-            "years": ["2026", "2025"],
-            "failedPages": [["2025", 2]],
-            "refresh": False,
-        },
-        "orders": [
-            {
-                "provider": "coupang",
-                "orderId": 1,
-                "title": "sample",
-                "orderedAt": 1,
-                "deliveryGroupList": [],
-            }
-        ],
-    }
-
-    store.write_orders(payload)
-
-    assert store.orders_path.exists()
-    assert json.loads(store.orders_path.read_text(encoding="utf-8")) == payload
-    assert store.load_orders() == payload
 
 
 def test_has_profile_is_false_when_missing(tmp_path: Path) -> None:

@@ -21,13 +21,6 @@ uv run k-commerce --help
 uv run k-commerce-mcp
 ```
 
-To rebuild or diff the local Coupang order snapshot during manual verification:
-
-```bash
-uv run k-commerce order list coupang
-uv run k-commerce order list coupang --refresh
-```
-
 ## Test Layout
 
 Tests are organized by package.

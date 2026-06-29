@@ -1,10 +1,10 @@
 from pathlib import Path
 from typing import Any, Protocol
 
+from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
-from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, OrderResult
-from k_commerce_cli.base import Terminal
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
 
 class BrowserElement(Protocol):
     text_all: str
@@ -53,7 +53,6 @@ class Store(Protocol):
     cookies_file: Path
     credentials_path: Path
     session_meta_path: Path
-    orders_path: Path
 
     def load_credentials(self) -> Credentials | None: ...
 
@@ -63,10 +62,6 @@ class Store(Protocol):
 
     def write_session_metadata(self, payload: dict[str, str]) -> None: ...
 
-    def load_orders(self) -> dict[str, Any] | None: ...
-
-    def write_orders(self, payload: dict[str, Any]) -> None: ...
-
 
 class Provider(Protocol):
     async def login(self) -> LoginResult: ...
@@ -74,5 +69,3 @@ class Provider(Protocol):
     async def status(self) -> StatusResult: ...
 
     async def logout(self) -> LogoutResult: ...
-
-    async def list_orders(self, refresh: bool = False) -> OrderResult: ...

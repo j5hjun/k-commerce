@@ -7,10 +7,9 @@ from k_commerce_cli.services.base import Provider
 from k_commerce_cli.services.browser.nodriver import NodriverBrowser
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, OrderResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
 
 from .auth import CoupangAuthService
-from .orders import CoupangOrderService
 
 
 class CoupangProvider(Provider):
@@ -32,12 +31,6 @@ class CoupangProvider(Provider):
             browser=self._browser,
             terminal=terminal,
         )
-        self._orders = CoupangOrderService(
-            provider_name=provider_name,
-            store=self.store,
-            browser=self._browser,
-            terminal=terminal,
-        )
 
     async def login(self) -> LoginResult:
         return await self._auth.login()
@@ -47,8 +40,5 @@ class CoupangProvider(Provider):
 
     async def logout(self) -> LogoutResult:
         return await self._auth.logout()
-
-    async def list_orders(self, refresh: bool = False) -> OrderResult:
-        return await self._orders.list_orders(refresh=refresh)
 
 __all__ = ["CoupangProvider"]
