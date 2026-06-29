@@ -3,9 +3,10 @@ from pathlib import Path
 
 import pytest
 
-import k_commerce_cli.providers.coupang as coupang_provider_module
-from k_commerce_cli.providers.paths import ProviderPaths
-from k_commerce_cli.providers.store import Credentials, ProviderStore
+import k_commerce_cli.services.providers.coupang as coupang_provider_module
+from k_commerce_cli.services.models import Credentials
+from k_commerce_cli.services.paths import ProviderPaths
+from k_commerce_cli.services.store import ProviderStore
 
 
 def test_exposes_provider_paths(tmp_path: Path) -> None:
@@ -167,5 +168,5 @@ def test_clear_session_returns_false_when_session_is_missing(tmp_path: Path) -> 
 
 
 def test_coupang_package_exports_only_provider_types() -> None:
-    assert coupang_provider_module.__all__ == ["CoupangAuthProvider"]
+    assert not hasattr(coupang_provider_module, "__all__")
     assert not hasattr(coupang_provider_module, "CoupangCredentials")

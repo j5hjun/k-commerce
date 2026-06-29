@@ -4,19 +4,26 @@ from pathlib import Path
 
 import asyncclick as click
 
-from k_commerce_cli.commands.options import provider_argument_with_root_dir_option
-from k_commerce_cli.providers.registry import get_provider
+from k_commerce_cli.services.registry import get_provider
+
+
+def _resolve_root_dir(root_dir: str | None) -> Path | None:
+    return Path(root_dir) if root_dir is not None else None
 
 
 @click.command()
-@provider_argument_with_root_dir_option
-async def logout(provider: str, root_dir: Path | None) -> None:
+@click.argument("provider")
+@click.option("--root-dir", "--root_dir", type=click.Path(file_okay=False, dir_okay=True), default=None, help="Override the provider root directory.")
+@click.pass_context
+async def logout(ctx: click.Context, provider: str, root_dir: str | None) -> None:
+    terminal = ctx.obj["terminal"]
     try:
-        result = await get_provider(provider).logout(root_dir=root_dir)
-    except ValueError as error:
-        raise click.BadParameter(str(error)) from error
+        provider_service = get_provider(
+            provider,
+            root_dir=_resolve_root_dir(root_dir),
+            terminal=terminal,
+        )
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="provider") from exc
 
-    click.echo(result.message)
-
-    if not result.success:
-        raise click.ClickException(result.message)
+    await provider_service.logout()

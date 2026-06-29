@@ -8,7 +8,11 @@ from k_commerce_mcp.tools.get_providers import get_providers
 
 def create_mcp_server() -> FastMCP:
     mcp_server = FastMCP("k-commerce")
-    mcp_server.add_tool(login, name="login", description="Log in to a commerce provider such as Coupang.")
+    mcp_server.add_tool(
+        login,
+        name="login",
+        description="Log in to a commerce provider such as Coupang.",
+    )
     mcp_server.add_tool(
         login_status,
         name="login_status",

@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from k_commerce_cli.types import LoginResult, StatusResult
+from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult
 from k_commerce_mcp import server
 
 
@@ -12,8 +12,10 @@ async def test_create_mcp_server_registers_login_and_login_status_tools() -> Non
     tools = await mcp_server.list_tools()
     tool_names = {tool.name for tool in tools}
 
+    assert "get_providers" in tool_names
     assert "login" in tool_names
     assert "login_status" in tool_names
+    assert "logout" in tool_names
 
 
 @pytest.mark.anyio
@@ -44,7 +46,11 @@ async def test_login_tool_returns_provider_login_result_for_coupang_provider() -
         success=True,
         message="쿠팡 로그인 성공",
     )
-    mocked_provider = type("MockProvider", (), {"login": AsyncMock(return_value=expected)})()
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {"login": AsyncMock(return_value=expected)},
+    )()
 
     with patch("k_commerce_mcp.tools.login.get_provider", return_value=mocked_provider) as get_provider:
         result = await server.login(provider="coupang")
@@ -61,7 +67,11 @@ async def test_login_status_tool_returns_provider_status_result_for_coupang_prov
         logged_in=True,
         message="쿠팡 로그인 상태입니다",
     )
-    mocked_provider = type("MockProvider", (), {"status": AsyncMock(return_value=expected)})()
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {"status": AsyncMock(return_value=expected)},
+    )()
 
     with patch(
         "k_commerce_mcp.tools.login_status.get_provider",
@@ -72,6 +82,27 @@ async def test_login_status_tool_returns_provider_status_result_for_coupang_prov
     assert result == expected
     get_provider.assert_called_once_with("coupang")
     mocked_provider.status.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_logout_tool_returns_provider_logout_result_for_coupang_provider() -> None:
+    expected = LogoutResult(
+        provider="coupang",
+        success=True,
+        message="쿠팡 로그아웃 완료",
+    )
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {"logout": AsyncMock(return_value=expected)},
+    )()
+
+    with patch("k_commerce_mcp.tools.logout.get_provider", return_value=mocked_provider) as get_provider:
+        result = await server.logout(provider="coupang")
+
+    assert result == expected
+    get_provider.assert_called_once_with("coupang")
+    mocked_provider.logout.assert_awaited_once_with()
 
 
 def test_main_runs_mcp_server_over_stdio() -> None:

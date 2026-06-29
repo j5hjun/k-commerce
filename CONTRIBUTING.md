@@ -30,7 +30,7 @@ Tests are organized by package.
   - provider/browser/store tests
 - `packages/cli/tests/e2e`
   - file-backed login flow scenarios that run through the CLI entrypoint
-  - uses `--root-dir` to isolate credentials and session data under a temporary directory
+  - uses `--root-dir` or `--root_dir` to isolate credentials and session data under a temporary directory
 - `packages/cli/tests/smoke`
   - opt-in smoke tests that launch the real browser or depend on local credentials/session state
   - skipped by default unless explicit smoke env vars are provided
