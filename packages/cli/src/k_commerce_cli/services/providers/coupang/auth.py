@@ -14,6 +14,8 @@ COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
 COUPANG_LOGIN_LINK_SELECTOR = 'a[href*="login/login.pang"]'
 COUPANG_MYCOUPANG_SELECTOR = 'a[href*="mc/main"], a[href*="mc/mymain"], a[href*="mycoupang"], a[title*="마이쿠팡"]'
+COUPANG_ACCESS_BLOCKED_MESSAGE = "쿠팡 접근이 차단되었습니다"
+COUPANG_DATA_REQUEST_FAILED_MESSAGE = "쿠팡 데이터 요청에 실패했습니다"
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,7 @@ class LoginPageState:
     url: str
     has_login_link: bool
     has_mycoupang_link: bool
+    access_blocked: bool = False
 
 
 class CoupangAuthService:
@@ -90,6 +93,20 @@ class CoupangAuthService:
                 terminal,
                 LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
             )
+        except RuntimeError as exc:
+            if str(exc) not in {
+                COUPANG_ACCESS_BLOCKED_MESSAGE,
+                COUPANG_DATA_REQUEST_FAILED_MESSAGE,
+            }:
+                raise
+            return self._emit_login_result(
+                terminal,
+                LoginResult(
+                    provider=self.provider,
+                    success=False,
+                    message=str(exc),
+                ),
+            )
         finally:
             await self._close_browser_session()
 
@@ -149,8 +166,6 @@ class CoupangAuthService:
         if terminal is not None:
             if result.success:
                 terminal.success(result.message)
-            else:
-                terminal.warn(result.message)
         if not result.success:
             if terminal is not None:
                 terminal.abort(result.message)
@@ -205,7 +220,7 @@ class CoupangAuthService:
         if not submitted:
             return False
 
-        return await self._wait_for_session_login(self._browser_session, poll_count=30)
+        return await self._wait_for_credentials_login(self._browser_session)
 
     async def _wait_for_manual_login(self) -> bool:
         if self._browser_session is None:
@@ -241,6 +256,8 @@ class CoupangAuthService:
         page_state = await self._read_login_state(tab)
         if "login.coupang.com" in page_state.url:
             return False
+        if page_state.access_blocked:
+            raise RuntimeError(COUPANG_ACCESS_BLOCKED_MESSAGE)
         return (not page_state.has_login_link) and page_state.has_mycoupang_link
 
     async def _wait_for_session_login(
@@ -249,6 +266,19 @@ class CoupangAuthService:
         poll_count: int = 300,
     ) -> bool:
         for _ in range(poll_count):
+            if await self._is_logged_in(self._login_tab(session)):
+                return True
+            await asyncio.sleep(1)
+        return False
+
+    async def _wait_for_credentials_login(
+        self,
+        session: BrowserSession,
+        poll_count: int = 30,
+    ) -> bool:
+        for _ in range(poll_count):
+            if await self._has_data_request_failure_modal(session.tab):
+                raise RuntimeError(COUPANG_DATA_REQUEST_FAILED_MESSAGE)
             if await self._is_logged_in(self._login_tab(session)):
                 return True
             await asyncio.sleep(1)
@@ -270,16 +300,17 @@ class CoupangAuthService:
             session.tab, 'button[type="submit"], .login__button'
         )
         if email_input is None or password_input is None or submit_button is None:
+            await self._raise_if_blocked_page(session.tab)
             return False
 
         await email_input.send_keys(email)
         await password_input.send_keys(password)
         await submit_button.click()
-        if await self._dismiss_data_request_failure_modal(session.tab):
-            await submit_button.click()
+        if await self._has_data_request_failure_modal(session.tab):
+            raise RuntimeError(COUPANG_DATA_REQUEST_FAILED_MESSAGE)
         return True
 
-    async def _dismiss_data_request_failure_modal(self, tab: BrowserTab) -> bool:
+    async def _has_data_request_failure_modal(self, tab: BrowserTab) -> bool:
         evaluate = getattr(tab, "evaluate", None)
         if not callable(evaluate):
             return False
@@ -290,14 +321,8 @@ class CoupangAuthService:
                 """
                 (() => {
                   const modal = [...document.querySelectorAll('div, p, span')]
-                    .find((node) => node.textContent?.includes('데이터 요청에 실패하였습니다.'));
+                    .find((node) => /데이터\\s*요청.*실패\\s*하였습니다/.test(node.textContent || ''));
                   if (!modal) return false;
-
-                  const confirmButton = [...document.querySelectorAll('button')]
-                    .find((node) => node.textContent?.trim() === '확인');
-                  if (!confirmButton) return false;
-
-                  confirmButton.click();
                   return true;
                 })()
                 """
@@ -333,8 +358,43 @@ class CoupangAuthService:
     async def _read_login_state(self, tab: BrowserTab) -> LoginPageState:
         login_link = await self.browser.select(tab, COUPANG_LOGIN_LINK_SELECTOR)
         my_coupang_link = await self.browser.select(tab, COUPANG_MYCOUPANG_SELECTOR)
+        text = await self._read_page_text(tab)
         return LoginPageState(
             url=str(getattr(tab, "url", "")),
             has_login_link=login_link is not None,
             has_mycoupang_link=my_coupang_link is not None,
+            access_blocked=self._is_access_blocked(str(getattr(tab, "url", "")), text),
         )
+
+    async def _read_page_text(self, tab: BrowserTab) -> str:
+        evaluate = getattr(tab, "evaluate", None)
+        if not callable(evaluate):
+            return ""
+        try:
+            value = await evaluate("document.body?.innerText || document.documentElement?.innerText || ''")
+        except Exception:
+            return ""
+        return str(value)
+
+    async def _raise_if_blocked_page(self, tab: BrowserTab) -> None:
+        url = str(getattr(tab, "url", ""))
+        text = await self._read_page_text(tab)
+        if self._is_access_denied(url, text):
+            raise RuntimeError(COUPANG_ACCESS_BLOCKED_MESSAGE)
+        if self._is_data_request_failed(text):
+            raise RuntimeError(COUPANG_DATA_REQUEST_FAILED_MESSAGE)
+
+    def _is_access_blocked(self, url: str, text: str) -> bool:
+        return self._is_access_denied(url, text) or self._is_data_request_failed(text)
+
+    def _is_access_denied(self, url: str, text: str) -> bool:
+        # TODO: This is unit-covered, but still needs live smoke reproduction.
+        value = f"{url}\n{text}".lower()
+        return (
+            "access denied" in value
+            or "errors.edgesuite.net" in value
+        )
+
+    def _is_data_request_failed(self, text: str) -> bool:
+        compact = "".join(text.split())
+        return "데이터요청" in compact and "실패하였습니다" in compact

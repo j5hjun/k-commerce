@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import subprocess
@@ -43,30 +42,8 @@ def invoke_cli(
     )
 
 
-def invoke_login(
-    root_dir: Path,
-    *,
-    extra_env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    return invoke_cli(
-        ["login", "coupang", "--root-dir", str(root_dir)],
-        extra_env=extra_env,
-    )
-
-
 def provider_paths(root_dir: Path) -> ProviderPaths:
     return ProviderPaths("coupang", root_dir=root_dir)
-
-
-def write_credentials(root_dir: Path, email: str, password: str) -> Path:
-    paths = provider_paths(root_dir)
-    paths.base_dir.mkdir(parents=True, exist_ok=True)
-    credentials_path = paths.credentials_path
-    credentials_path.write_text(
-        json.dumps({"email": email, "password": password}),
-        encoding="utf-8",
-    )
-    return credentials_path
 
 
 def copy_provider_artifact(source_root: Path, destination_root: Path, relative_path: str) -> None:

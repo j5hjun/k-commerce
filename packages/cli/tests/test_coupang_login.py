@@ -15,6 +15,8 @@ sys.modules.setdefault("nodriver", types.SimpleNamespace(start=AsyncMock()))
 from k_commerce_cli.services.browser.nodriver import NodriverBrowser, NodriverBrowserSession
 from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 from k_commerce_cli.services.providers.coupang.auth import (
+    COUPANG_ACCESS_BLOCKED_MESSAGE,
+    COUPANG_DATA_REQUEST_FAILED_MESSAGE,
     COUPANG_HOME_URL,
     COUPANG_LOGIN_URL,
     COUPANG_LOGIN_LINK_SELECTOR,
@@ -175,7 +177,7 @@ async def test_is_logged_in_ignores_logout_link_on_logged_in_home() -> None:
 
 
 @pytest.mark.anyio
-async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> None:
+async def test_is_logged_in_uses_selectors_and_reads_page_text() -> None:
     provider = _make_auth_provider()
     tab = _DummyTab()
     tab.url = COUPANG_HOME_URL
@@ -185,7 +187,18 @@ async def test_is_logged_in_prefers_selectors_even_when_evaluate_exists() -> Non
     }
 
     assert await provider._is_logged_in(tab) is True
-    assert tab.evaluate_calls == []
+    assert len(tab.evaluate_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_is_logged_in_raises_when_access_is_blocked() -> None:
+    provider = _make_auth_provider()
+    tab = _DummyTab()
+    tab.url = "https://errors.edgesuite.net/18.example"
+    tab.evaluate_result = "Access Denied"
+
+    with pytest.raises(RuntimeError, match=COUPANG_ACCESS_BLOCKED_MESSAGE):
+        await provider._is_logged_in(tab)
 
 
 @pytest.mark.anyio
@@ -231,7 +244,7 @@ async def test_fill_login_form_submits_after_filling_credentials() -> None:
 
 
 @pytest.mark.anyio
-async def test_fill_login_form_retries_submit_after_data_request_failure_modal() -> None:
+async def test_fill_login_form_fails_after_data_request_failure_modal() -> None:
     provider = _make_auth_provider()
     tab = _DummyTab()
     email_input = _DummyElement()
@@ -248,10 +261,10 @@ async def test_fill_login_form_retries_submit_after_data_request_failure_modal()
         tab=tab,
     )
 
-    result = await provider._fill_login_form(session, "user@example.com", "secret")
+    with pytest.raises(RuntimeError, match=COUPANG_DATA_REQUEST_FAILED_MESSAGE):
+        await provider._fill_login_form(session, "user@example.com", "secret")
 
-    assert result is True
-    assert submit_button.click.await_count == 2
+    submit_button.click.assert_awaited_once_with()
     assert len(tab.evaluate_calls) == 1
 
 
@@ -278,6 +291,35 @@ async def test_fill_login_form_skips_retry_when_data_request_failure_modal_missi
     assert result is True
     submit_button.click.assert_awaited_once_with()
     assert len(tab.evaluate_calls) == 1
+
+
+@pytest.mark.anyio
+async def test_fill_login_form_fails_when_access_denied_page_replaces_form() -> None:
+    provider = _make_auth_provider()
+    tab = _DummyTab()
+    tab.url = "https://errors.edgesuite.net/18.example"
+    tab.evaluate_result = "Access Denied"
+    session = NodriverBrowserSession(
+        browser=_DummyBrowser(tab),
+        tab=tab,
+    )
+
+    with pytest.raises(RuntimeError, match=COUPANG_ACCESS_BLOCKED_MESSAGE):
+        await provider._fill_login_form(session, "user@example.com", "secret")
+
+
+@pytest.mark.anyio
+async def test_fill_login_form_fails_when_data_request_page_replaces_form() -> None:
+    provider = _make_auth_provider()
+    tab = _DummyTab()
+    tab.evaluate_result = "데이터 요청에 실패 하였습니다."
+    session = NodriverBrowserSession(
+        browser=_DummyBrowser(tab),
+        tab=tab,
+    )
+
+    with pytest.raises(RuntimeError, match=COUPANG_DATA_REQUEST_FAILED_MESSAGE):
+        await provider._fill_login_form(session, "user@example.com", "secret")
 
 
 @pytest.mark.anyio
@@ -354,13 +396,25 @@ async def test_login_with_credentials_uses_browser_form_submission() -> None:
     browser.launch = AsyncMock(return_value=session)
     provider.browser = browser
     provider._fill_login_form = AsyncMock(return_value=True)
-    provider._wait_for_session_login = AsyncMock(return_value=True)
+    provider._wait_for_credentials_login = AsyncMock(return_value=True)
 
     result = await provider._login_with_credentials(type("Creds", (), {"email": "user@example.com", "password": "secret"})())
 
     assert result is True
     assert session.tab.get_calls == [COUPANG_LOGIN_URL]
     provider._fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
+    provider._wait_for_credentials_login.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_wait_for_credentials_login_fails_when_data_request_modal_appears() -> None:
+    provider = _make_auth_provider()
+    session = types.SimpleNamespace(tab=_DummyTab())
+    provider._has_data_request_failure_modal = AsyncMock(side_effect=[False, True])
+    provider._is_logged_in = AsyncMock(return_value=False)
+
+    with pytest.raises(RuntimeError, match=COUPANG_DATA_REQUEST_FAILED_MESSAGE):
+        await provider._wait_for_credentials_login(session, poll_count=2)
 
 
 

@@ -32,7 +32,7 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
         patch.object(provider.browser, "launch", new=AsyncMock(return_value=session)) as launch,
         patch.object(provider.auth_service, "_open_login_entry", new=AsyncMock()) as open_login_entry,
         patch.object(provider.auth_service, "_fill_login_form", new=AsyncMock(return_value=True)) as fill_login_form,
-        patch.object(provider.auth_service, "_wait_for_session_login", new=AsyncMock(return_value=True)) as wait_for_manual_login,
+        patch.object(provider.auth_service, "_wait_for_credentials_login", new=AsyncMock(return_value=True)) as wait_for_credentials_login,
         patch.object(provider.browser, "save_session", new=AsyncMock()) as save_session,
         patch.object(provider.browser, "close", new=AsyncMock()) as close,
     ):
@@ -47,7 +47,7 @@ async def test_login_coupang_command_succeeds_with_credentials_file(tmp_path: Pa
     launch.assert_awaited_once_with(provider.store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "merchant@example.com", "secret")
-    wait_for_manual_login.assert_awaited_once_with(session, poll_count=30)
+    wait_for_credentials_login.assert_awaited_once_with(session)
     save_session.assert_awaited_once_with(session, provider.store.cookies_file)
     close.assert_awaited_once_with(session)
     assert json.loads(paths.session_meta_path.read_text(encoding="utf-8")) == {
