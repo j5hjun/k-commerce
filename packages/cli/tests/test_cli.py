@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
-from k_commerce_cli.services.types import ListCartResult
+from k_commerce_cli.services.types import (
+    CartItem,
+    CartQuantityUpdateResult,
+    ListCartResult,
+)
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 from k_commerce_cli.services.types import ProviderName
 from k_commerce_cli.services.providers.coupang.types import (
@@ -16,6 +20,17 @@ from k_commerce_cli.services.providers.coupang.types import (
 )
 
 RUNNER = CliRunner()
+
+
+class _AsyncContext:
+    def __init__(self, value):
+        self.value = value
+
+    async def __aenter__(self):
+        return self.value
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
 
 
 @pytest.mark.anyio
@@ -161,6 +176,126 @@ async def test_cart_coupang_command_passes_root_dir_to_service(tmp_path: Path) -
     assert result.exit_code == 0
     get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
     provider.list_cart.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_cart_quantity_command_updates_selected_item_quantity() -> None:
+    selected_item = CartItem(
+        index=1,
+        product_name="루미즈 초경량 자외선차단 접이식 3단 양산 우산",
+        option_text="베이지",
+        quantity=1,
+        unit_price="5,900원",
+        total_price="5,900원",
+        product_id="9459571406",
+        vendor_item_id="95103608027",
+        item_id="44245695211",
+    )
+    update_provider = Mock()
+    cart_session = Mock()
+    cart_session.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(selected_item,),
+        )
+    )
+    cart_session.refresh_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):\n\n수정됨",
+            items=(
+                CartItem(
+                    index=1,
+                    product_name=selected_item.product_name,
+                    option_text=selected_item.option_text,
+                    quantity=3,
+                    unit_price="5,900원",
+                    total_price="17,700원",
+                    product_id=selected_item.product_id,
+                    vendor_item_id=selected_item.vendor_item_id,
+                    item_id=selected_item.item_id,
+                ),
+            ),
+        )
+    )
+    cart_session.update_cart_quantity = AsyncMock(
+        return_value=CartQuantityUpdateResult(
+            provider="coupang",
+            success=True,
+            message="쿠팡 장바구니 수량 수정 성공",
+            quantity=3,
+            product_id=selected_item.product_id,
+            vendor_item_id=selected_item.vendor_item_id,
+            item_id=selected_item.item_id,
+        )
+    )
+    update_provider.cart_session = Mock(return_value=_AsyncContext(cart_session))
+
+    with (
+        patch(
+            "k_commerce_cli.commands.cart.get_provider",
+            return_value=update_provider,
+        ) as get_provider,
+        patch(
+            "k_commerce_cli.commands.cart.prompt_cart_item",
+            AsyncMock(side_effect=[selected_item, None]),
+        ),
+        patch("k_commerce_cli.commands.cart.prompt_quantity", AsyncMock(return_value=3)),
+        patch("k_commerce_cli.commands.cart.asyncio.sleep", AsyncMock()),
+    ):
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--quantity"])
+
+    assert result.exit_code == 0
+    assert get_provider.call_count == 1
+    update_provider.cart_session.assert_called_once_with()
+    cart_session.list_cart.assert_awaited_once_with()
+    cart_session.refresh_cart.assert_awaited_once_with()
+    cart_session.update_cart_quantity.assert_awaited_once()
+    request = cart_session.update_cart_quantity.await_args.args[0]
+    assert request.vendor_item_id == "95103608027"
+    assert request.item_id == "44245695211"
+    assert request.quantity == 3
+    assert "[ok] 루미즈 초경량 자외선차단 접이식 3단 양산 우산 / 베이지 / 3개 / 17,700원" in result.output
+    assert "장바구니 상품 (1건):\n\n수정됨" not in result.output
+
+
+@pytest.mark.anyio
+async def test_cart_quantity_command_exits_cleanly_on_exit_choice_string() -> None:
+    provider = Mock()
+    cart_session = Mock()
+    cart_session.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(
+                CartItem(
+                    index=1,
+                    product_name="테스트 상품",
+                    option_text="옵션",
+                    quantity=1,
+                    unit_price="1,000원",
+                    total_price="1,000원",
+                    product_id="1",
+                    vendor_item_id="2",
+                    item_id="3",
+                ),
+            ),
+        )
+    )
+    provider.cart_session = Mock(return_value=_AsyncContext(cart_session))
+
+    with (
+        patch("k_commerce_cli.commands.cart.get_provider", return_value=provider),
+        patch("k_commerce_cli.commands.cart.prompt_cart_item", AsyncMock(return_value="나가기")),
+    ):
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--quantity"])
+
+    assert result.exit_code == 0
+    cart_session.list_cart.assert_awaited_once_with()
 
 
 @pytest.mark.anyio

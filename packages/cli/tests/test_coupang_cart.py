@@ -4,7 +4,7 @@ from k_commerce_cli.services.providers.coupang.cart.type import (
     _CartItemData,
     _ListCartBrowserResult,
 )
-from k_commerce_cli.services.types import ProviderName
+from k_commerce_cli.services.types import CartQuantityUpdateRequest, ProviderName
 
 
 def test_cart_list_result_formats_cart_items() -> None:
@@ -68,3 +68,19 @@ def test_cart_list_result_handles_empty_cart() -> None:
     assert result.success is True
     assert result.items == ()
     assert result.message == "장바구니에 담긴 상품이 없습니다."
+
+
+def test_cart_quantity_update_request_requires_positive_quantity() -> None:
+    service = CoupangCartService(
+        provider=ProviderName.COUPANG,
+        store=None,  # type: ignore[arg-type]
+        browser=None,  # type: ignore[arg-type]
+    )
+
+    result = service._failure_quantity_update_result(
+        CartQuantityUpdateRequest(vendor_item_id="95103608027", quantity=0),
+        "수량은 1개 이상이어야 합니다.",
+    )
+
+    assert result.success is False
+    assert result.message == "수량은 1개 이상이어야 합니다."

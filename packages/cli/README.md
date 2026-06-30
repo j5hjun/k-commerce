@@ -273,6 +273,15 @@ uv run k-commerce cart coupang --list
 
 The list includes product name, quantity, price, and available identifiers such as `vendorItemId`.
 
+### Update quantity
+
+```bash
+uv run k-commerce cart coupang --quantity
+```
+
+This loads the cart product list, lets you pick an item with arrow keys, then prompts for the new
+quantity before applying it to the Coupang cart page.
+
 ## Login Status
 
 The `status` command first checks whether saved session artifacts exist under the selected root

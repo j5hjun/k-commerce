@@ -24,6 +24,25 @@ class ListCartResult:
 
 
 @dataclass(frozen=True)
+class CartQuantityUpdateRequest:
+    quantity: int
+    product_id: str = ""
+    vendor_item_id: str = ""
+    item_id: str = ""
+
+
+@dataclass(frozen=True)
+class CartQuantityUpdateResult:
+    provider: str
+    success: bool
+    message: str
+    quantity: int
+    product_id: str = ""
+    vendor_item_id: str = ""
+    item_id: str = ""
+
+
+@dataclass(frozen=True)
 class _CartItemData:
     product_name: str
     option_text: str
