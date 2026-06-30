@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncclick as click
 
+from k_commerce_cli.commands.cart import cart
 from k_commerce_cli.commands.login import login
 from k_commerce_cli.commands.order import order
 from k_commerce_cli.commands.logout import logout
@@ -26,6 +27,7 @@ app.add_command(order)
 app.add_command(logout)
 app.add_command(review)
 app.add_command(search)
+app.add_command(cart)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -8,6 +8,7 @@ from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.types import (
+    ListCartResult,
     ListEditableReviewsResult,
     ListReviewableResult,
     LoginResult,
@@ -95,6 +96,8 @@ class Provider(Protocol):
     async def status(self) -> StatusResult: ...
 
     async def logout(self) -> LogoutResult: ...
+
+    async def list_cart(self) -> ListCartResult: ...
 
     async def list_reviewable(self) -> ListReviewableResult: ...
 

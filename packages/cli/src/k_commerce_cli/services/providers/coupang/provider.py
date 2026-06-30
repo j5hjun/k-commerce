@@ -4,9 +4,10 @@ from functools import cached_property
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import BaseProvider, Browser, Store
-from k_commerce_cli.services.types import ProviderName
+from k_commerce_cli.services.types import ListCartResult, ProviderName
 
 from .auth import CoupangAuthService
+from .cart.service import CoupangCartService
 from .orders import CoupangOrderService
 from .review.service import CoupangReviewService
 from .search.service import CoupangSearchService
@@ -24,6 +25,7 @@ class CoupangProvider(
     auth_service_cls = CoupangAuthService
     order_service_cls = CoupangOrderService
     review_service_cls = CoupangReviewService
+    cart_service_cls = CoupangCartService
 
     def __init__(
         self,
@@ -50,6 +52,17 @@ class CoupangProvider(
             terminal=self.terminal,
         )
 
+    @cached_property
+    def cart_service(self) -> CoupangCartService:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return self.cart_service_cls(
+            provider=self.provider,
+            store=self.store,
+            browser=self.browser,
+            terminal=self.terminal,
+        )
+
     async def search_products(
         self,
         keyword: str,
@@ -64,6 +77,9 @@ class CoupangProvider(
             sort=sort,
             max_results=max_results,
         )
+
+    async def list_cart(self) -> ListCartResult:
+        return await self.cart_service.list_cart()
 
 
 __all__ = ["CoupangProvider"]

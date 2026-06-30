@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
+from k_commerce_cli.services.types import ListCartResult
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 from k_commerce_cli.services.types import ProviderName
 from k_commerce_cli.services.providers.coupang.types import (
@@ -120,6 +121,46 @@ async def test_status_coupang_command_passes_root_dir_to_service(
     assert result.exit_code == 0
     get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
     provider.status.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_cart_coupang_command_lists_cart() -> None:
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider) as get_provider:
+        result = await RUNNER.invoke(app, ["cart", "coupang"])
+
+    assert result.exit_code == 0
+    get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
+    provider.list_cart.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_cart_coupang_command_passes_root_dir_to_service(tmp_path: Path) -> None:
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider) as get_provider:
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--root_dir", str(tmp_path)])
+
+    assert result.exit_code == 0
+    get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
+    provider.list_cart.assert_awaited_once_with()
 
 
 @pytest.mark.anyio

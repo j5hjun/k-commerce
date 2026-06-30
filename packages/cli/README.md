@@ -252,6 +252,27 @@ uv run k-commerce search coupang KEYWORD --category CATEGORY_ID
 If no saved session exists, or the session is no longer logged in, the command fails with a clear
 message instead of opening a login flow automatically.
 
+## Coupang Cart Commands
+
+The `cart` command reuses a saved Coupang session.
+
+### Interactive cart flow
+
+```bash
+uv run k-commerce cart coupang
+```
+
+This currently loads and prints the cart product list. Quantity update and delete actions will be
+added to the same interactive flow.
+
+### Cart list only
+
+```bash
+uv run k-commerce cart coupang --list
+```
+
+The list includes product name, quantity, price, and available identifiers such as `vendorItemId`.
+
 ## Login Status
 
 The `status` command first checks whether saved session artifacts exist under the selected root
