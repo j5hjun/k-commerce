@@ -13,6 +13,7 @@ Build directory-aware file maps inside `AGENTS.md` files. Treat each `AGENTS.md`
 
 1. Find every relevant `AGENTS.md`.
    - Use `find . -name AGENTS.md -print | sort` so hidden directories such as `.github/` are included.
+   - When the user asks for "every folder" coverage while excluding dot-prefixed folders, omit directories whose path segment starts with `.`.
    - Also inspect tracked/untracked status if this is a Git repo; many `AGENTS.md` files may be newly created.
 
 2. Build a source-of-truth file list.
@@ -30,6 +31,7 @@ Build directory-aware file maps inside `AGENTS.md` files. Treat each `AGENTS.md`
    - Intermediate `AGENTS.md`: summarize direct child directories and route readers to deeper `AGENTS.md` files.
    - Leaf `AGENTS.md`: list files in that directory and explain each file's role.
    - Test directories: group tests by scenario or behavior and name helper files.
+   - For "every folder" coverage, ensure each non-generated directory that does not have a dot-prefixed path segment contains its own `AGENTS.md`.
 
 5. Edit maps.
    - Preserve existing non-map instructions unless the user asked to replace them.
@@ -40,6 +42,7 @@ Build directory-aware file maps inside `AGENTS.md` files. Treat each `AGENTS.md`
 
 6. Validate coverage.
    - Confirm every discovered `AGENTS.md` is non-empty.
+   - For all-folder coverage checks, report dot-prefixed directories as intentionally excluded when the user asked to exclude them.
    - Spot-check representative high-level and leaf maps.
    - Report any intentionally ignored generated directories and any existing unrelated changes you did not touch.
 
