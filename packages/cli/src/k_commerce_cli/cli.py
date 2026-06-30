@@ -6,6 +6,7 @@ from k_commerce_cli.commands.login import login
 from k_commerce_cli.commands.order import order
 from k_commerce_cli.commands.logout import logout
 from k_commerce_cli.commands.review import review
+from k_commerce_cli.commands.search import search
 from k_commerce_cli.commands.status import status
 from k_commerce_cli.terminal.asyncclick import AsyncClickTerminal
 from k_commerce_cli.prompts import QuestionaryPrompts
@@ -24,6 +25,7 @@ app.add_command(status)
 app.add_command(order)
 app.add_command(logout)
 app.add_command(review)
+app.add_command(search)
 
 
 def main(argv: list[str] | None = None) -> int:
