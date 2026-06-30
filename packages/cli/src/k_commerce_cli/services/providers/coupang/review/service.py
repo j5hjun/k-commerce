@@ -8,6 +8,7 @@ from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
     ListReviewableResult,
+    ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -43,7 +44,7 @@ class CoupangReviewService(
 ):
     def __init__(
         self,
-        provider: str,
+        provider: ProviderName,
         store: Store,
         browser: Browser,
         terminal: Terminal | None = None,

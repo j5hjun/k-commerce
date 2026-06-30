@@ -24,6 +24,7 @@ from k_commerce_cli.services.providers.coupang.review.utils import (
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.services.types import (
+    ProviderName,
     ReviewDeleteRequest,
     ReviewEditRequest,
     ReviewUploadRequest,
@@ -83,7 +84,7 @@ def _make_review_service(
 ) -> CoupangReviewService:
     resolved_root = root_dir if root_dir is not None else Path.home() / ".k-commerce"
     return CoupangReviewService(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         store=ProviderStore(ProviderPaths("coupang", root_dir=resolved_root)),
         browser=browser or _BrowserSpy(),
     )

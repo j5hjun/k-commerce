@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from k_commerce_cli.services.types.provider import ProviderName
+
 
 @dataclass(frozen=True)
 class CoupangOrderSummary:
@@ -23,7 +25,7 @@ class CoupangOrderSummary:
 
 @dataclass(frozen=True)
 class CoupangOrderMeta:
-    provider: str
+    provider: ProviderName
     collectedAt: str
     years: list[str]
     failedPages: list[list[int | str]]
@@ -33,7 +35,7 @@ class CoupangOrderMeta:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderMeta":
         return cls(
-            provider=str(payload["provider"]),
+            provider=ProviderName(str(payload["provider"])),
             collectedAt=str(payload["collectedAt"]),
             years=[str(year) for year in payload["years"]],
             failedPages=[[page[0], int(page[1])] for page in payload["failedPages"]],
@@ -93,7 +95,7 @@ class CoupangDeliveryGroup:
 
 @dataclass(frozen=True)
 class CoupangOrderResult:
-    provider: str
+    provider: ProviderName
     orderId: int
     title: str
     orderedAt: int
@@ -103,7 +105,7 @@ class CoupangOrderResult:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderResult":
         return cls(
-            provider=str(payload["provider"]),
+            provider=ProviderName(str(payload["provider"])),
             orderId=int(payload["orderId"]),
             title=str(payload["title"]),
             orderedAt=int(payload["orderedAt"]),

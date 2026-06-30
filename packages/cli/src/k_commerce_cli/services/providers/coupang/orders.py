@@ -17,6 +17,7 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderResult,
     CoupangOrderSummary,
 )
+from k_commerce_cli.services.types import ProviderName
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
 
@@ -24,7 +25,7 @@ COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
 class CoupangOrderService:
     def __init__(
         self,
-        provider: str,
+        provider: ProviderName,
         store: Store,
         browser: Browser,
         terminal: Terminal | None = None,

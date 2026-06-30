@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import BaseProvider, Browser, Store
+from k_commerce_cli.services.types import ProviderName
 
 from .auth import CoupangAuthService
 from .orders import CoupangOrderService
@@ -17,7 +18,7 @@ class CoupangProvider(
 
     def __init__(
         self,
-        provider: str,
+        provider: ProviderName,
         terminal: Terminal | None = None,
         browser: Browser | None = None,
         store: Store | None = None,

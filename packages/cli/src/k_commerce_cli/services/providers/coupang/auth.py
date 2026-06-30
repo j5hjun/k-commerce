@@ -7,6 +7,7 @@ from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.types import (
     LoginResult,
     LogoutResult,
+    ProviderName,
     StatusResult,
 )
 
@@ -29,7 +30,7 @@ class LoginPageState:
 class CoupangAuthService:
     def __init__(
         self,
-        provider: str,
+        provider: ProviderName,
         store: Store,
         browser: Browser,
         terminal: Terminal | None = None,

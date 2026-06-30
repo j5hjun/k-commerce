@@ -49,7 +49,7 @@ def get_provider(
         store=store,
         browser=browser,
         terminal=terminal,
-        )
+    )
 
 
 def list_providers() -> list[str]:

@@ -25,6 +25,7 @@ from k_commerce_cli.services.providers.coupang.auth import (
 )
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
+from k_commerce_cli.services.types import ProviderName
 from k_commerce_cli.services.types.auth import StatusResult
 
 
@@ -100,7 +101,7 @@ def _make_auth_provider():
     browser = NodriverBrowser()
     store = ProviderStore(ProviderPaths("coupang"))
     return CoupangAuthService(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         store=store,
         browser=browser,
     )
@@ -108,7 +109,7 @@ def _make_auth_provider():
 
 def _make_coupang_provider(root_dir: Path) -> CoupangProvider:
     return CoupangProvider(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         store=ProviderStore(ProviderPaths("coupang", root_dir=root_dir)),
         browser=NodriverBrowser(),
     )
@@ -375,7 +376,7 @@ def test_default_store_uses_provider_paths() -> None:
 
 def test_store_can_be_replaced_with_overridden_root_dir(tmp_path: Path) -> None:
     provider = CoupangAuthService(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         store=ProviderStore(ProviderPaths("coupang", root_dir=tmp_path)),
         browser=NodriverBrowser(),
     )
@@ -532,7 +533,7 @@ async def test_login_status_opens_home_checks_state_and_closes_browser_session(
         result = await provider.status()
 
     assert result == StatusResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         logged_in=True,
         message="쿠팡 로그인 상태입니다",
     )
@@ -577,7 +578,7 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
         result = await provider.status()
 
     assert result == StatusResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         logged_in=False,
         message="쿠팡 로그인 상태가 아닙니다",
     )

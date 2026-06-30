@@ -14,6 +14,7 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderResult,
     CoupangOrderSummary,
 )
+from k_commerce_cli.services.types import ProviderName
 
 
 class ExceptionDetails:
@@ -160,7 +161,7 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
     payload = result.payload
@@ -184,7 +185,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(
         meta=CoupangOrderMeta(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
             failedPages=[],
@@ -198,7 +199,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
         ),
         orders=[
             CoupangOrderResult(
-                provider="coupang",
+                provider=ProviderName.COUPANG,
                 orderId=10,
                 title="first",
                 orderedAt=1,
@@ -271,7 +272,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=False)
     payload = result.payload
@@ -290,7 +291,7 @@ async def test_collect_orders_reuses_cached_tail_after_unchanged_page(tmp_path: 
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(
         meta=CoupangOrderMeta(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
             failedPages=[],
@@ -333,7 +334,7 @@ async def test_collect_orders_reuses_cached_tail_after_unchanged_page(tmp_path: 
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=False)
 
@@ -357,7 +358,7 @@ async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(
         meta=CoupangOrderMeta(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
             failedPages=[["2026", 2]],
@@ -414,7 +415,7 @@ async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=False)
 
@@ -445,7 +446,7 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
     payload = result.payload
@@ -465,7 +466,7 @@ async def test_collect_orders_failed_only_retries_recorded_pages(tmp_path: Path)
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(
         meta=CoupangOrderMeta(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
             failedPages=[["2026", 2]],
@@ -479,7 +480,7 @@ async def test_collect_orders_failed_only_retries_recorded_pages(tmp_path: Path)
         ),
         orders=[
             CoupangOrderResult(
-                provider="coupang",
+                provider=ProviderName.COUPANG,
                 orderId=10,
                 title="first",
                 orderedAt=1,
@@ -548,7 +549,7 @@ async def test_collect_orders_failed_only_retries_recorded_pages(tmp_path: Path)
         }
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(failed_only=True)
     payload = result.payload
@@ -573,7 +574,7 @@ async def test_collect_orders_failed_only_keeps_failed_pages_when_retry_fails(tm
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(
         meta=CoupangOrderMeta(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
             failedPages=[["2026", 1]],
@@ -602,7 +603,7 @@ async def test_collect_orders_failed_only_keeps_failed_pages_when_retry_fails(tm
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(failed_only=True)
 
@@ -647,7 +648,7 @@ async def test_collect_orders_unwraps_nodriver_evaluate_payloads(tmp_path: Path)
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 
@@ -677,7 +678,7 @@ async def test_collect_orders_retries_when_evaluate_returns_exception_details(tm
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 
@@ -707,7 +708,7 @@ async def test_collect_orders_waits_for_order_page_payload_after_navigation(tmp_
         ]
     )
 
-    service = CoupangOrderService(provider="coupang", store=store, browser=browser)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
     result = await service.list_orders(refresh=True)
 

@@ -8,6 +8,7 @@ from k_commerce_cli.cli import app
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
+    ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -31,7 +32,7 @@ SAMPLE_REVIEW_URL = (
 
 def _review_success_result() -> ReviewUploadResult:
     return ReviewUploadResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="쿠팡 리뷰 업로드 성공",
         order_id="22404668406",
@@ -41,7 +42,7 @@ def _review_success_result() -> ReviewUploadResult:
 
 def _review_list_result() -> ListReviewableResult:
     return ListReviewableResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="리뷰 작성 가능 (1건):\n\n    #  배송일        상품명",
         items=(),
@@ -50,7 +51,7 @@ def _review_list_result() -> ListReviewableResult:
 
 def _editable_list_result() -> ListEditableReviewsResult:
     return ListEditableReviewsResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="리뷰 수정 가능 (1건):\n\n    #  리뷰ID        상품ID        상품명",
         items=(),
@@ -71,7 +72,7 @@ def _reviewable_item() -> ReviewableItem:
 
 def _review_list_result_with_items() -> ListReviewableResult:
     return ListReviewableResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="리뷰 작성 가능 (1건):",
         items=(_reviewable_item(),),
@@ -80,7 +81,7 @@ def _review_list_result_with_items() -> ListReviewableResult:
 
 def _edit_success_result() -> ReviewEditResult:
     return ReviewEditResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="쿠팡 리뷰 수정 성공",
         order_id="22404668406",
@@ -91,7 +92,7 @@ def _edit_success_result() -> ReviewEditResult:
 
 def _delete_success_result() -> ReviewDeleteResult:
     return ReviewDeleteResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="쿠팡 리뷰 삭제 성공",
         order_id="22404668406",
@@ -115,7 +116,7 @@ def _editable_review_item() -> EditableReviewItem:
 
 def _editable_list_result_with_items() -> ListEditableReviewsResult:
     return ListEditableReviewsResult(
-        provider="coupang",
+        provider=ProviderName.COUPANG,
         success=True,
         message="리뷰 수정 가능 (1건):",
         items=(_editable_review_item(),),

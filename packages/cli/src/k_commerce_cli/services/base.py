@@ -11,6 +11,7 @@ from k_commerce_cli.services.types import (
     LoginResult,
     LogoutResult,
     OrderResult,
+    ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -146,7 +147,7 @@ class BaseProvider(Provider, Generic[AuthServiceT, OrderServiceT, ReviewServiceT
 
     def __init__(
         self,
-        provider: str,
+        provider: ProviderName,
         terminal: Terminal | None,
         browser: Browser | None,
         store: Store | None,

@@ -6,6 +6,7 @@ import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
+from k_commerce_cli.services.types import ProviderName
 from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderList,
     CoupangOrderListResult,
@@ -46,7 +47,7 @@ async def test_login_coupang_command_prints_login_message_once() -> None:
     provider = Mock()
     provider.login = AsyncMock(
         return_value=LoginResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             success=True,
             message="쿠팡 로그인 성공",
         )
@@ -66,7 +67,7 @@ async def test_login_coupang_command_passes_root_dir_to_service(tmp_path: Path) 
     provider = Mock()
     provider.login = AsyncMock(
         return_value=LoginResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             success=True,
             message="쿠팡 로그인 성공",
         )
@@ -85,7 +86,7 @@ async def test_status_coupang_command_prints_status_message_once() -> None:
     provider = Mock()
     provider.status = AsyncMock(
         return_value=StatusResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             logged_in=True,
             message="쿠팡 로그인 상태입니다",
         )
@@ -107,7 +108,7 @@ async def test_status_coupang_command_passes_root_dir_to_service(
     provider = Mock()
     provider.status = AsyncMock(
         return_value=StatusResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             logged_in=True,
             message="쿠팡 로그인 상태입니다",
         )
@@ -182,7 +183,7 @@ async def test_logout_coupang_command_prints_logout_message_once() -> None:
     provider = Mock()
     provider.logout = AsyncMock(
         return_value=LogoutResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             success=True,
             message="쿠팡 로그아웃 완료",
         )
@@ -202,7 +203,7 @@ async def test_logout_coupang_command_passes_root_dir_to_service(tmp_path: Path)
     provider = Mock()
     provider.logout = AsyncMock(
         return_value=LogoutResult(
-            provider="coupang",
+            provider=ProviderName.COUPANG,
             success=True,
             message="쿠팡 로그아웃 완료",
         )
@@ -224,7 +225,7 @@ async def test_order_list_command_prints_summary_once() -> None:
             message="주문 수집 완료: 총 1건, 추가 0건, 변경 1건, 삭제 0건",
             payload=CoupangOrderList(
                 meta=CoupangOrderMeta(
-                    provider="coupang",
+                    provider=ProviderName.COUPANG,
                     collectedAt="2026-06-28T12:00:00+09:00",
                     years=["2026"],
                     failedPages=[],
@@ -258,7 +259,7 @@ async def test_order_list_refresh_passes_refresh_flag(tmp_path: Path) -> None:
             message="주문 새로 생성 완료: 총 1건",
             payload=CoupangOrderList(
                 meta=CoupangOrderMeta(
-                    provider="coupang",
+                    provider=ProviderName.COUPANG,
                     collectedAt="2026-06-28T12:00:00+09:00",
                     years=["2026"],
                     failedPages=[],
@@ -295,7 +296,7 @@ async def test_order_list_failed_only_passes_failed_only_flag(tmp_path: Path) ->
             message="주문 수집 완료: 총 1건, 추가 1건, 변경 0건, 삭제 0건",
             payload=CoupangOrderList(
                 meta=CoupangOrderMeta(
-                    provider="coupang",
+                    provider=ProviderName.COUPANG,
                     collectedAt="2026-06-28T12:00:00+09:00",
                     years=["2026"],
                     failedPages=[],

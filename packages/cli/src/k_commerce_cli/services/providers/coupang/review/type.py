@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from k_commerce_cli.services.types.provider import ProviderName
+
 
 @dataclass(frozen=True)
 class ReviewUploadRequest:
@@ -12,7 +14,7 @@ class ReviewUploadRequest:
 
 @dataclass(frozen=True)
 class ReviewUploadResult:
-    provider: str
+    provider: ProviderName
     success: bool
     message: str
     order_id: str
@@ -30,7 +32,7 @@ class ReviewEditRequest:
 
 @dataclass(frozen=True)
 class ReviewEditResult:
-    provider: str
+    provider: ProviderName
     success: bool
     message: str
     order_id: str
@@ -47,7 +49,7 @@ class ReviewDeleteRequest:
 
 @dataclass(frozen=True)
 class ReviewDeleteResult:
-    provider: str
+    provider: ProviderName
     success: bool
     message: str
     review_id: str
@@ -69,7 +71,7 @@ class EditableReviewItem:
 
 @dataclass(frozen=True)
 class ListEditableReviewsResult:
-    provider: str
+    provider: ProviderName
     success: bool
     message: str
     items: tuple[EditableReviewItem, ...]
@@ -88,7 +90,7 @@ class ReviewableItem:
 
 @dataclass(frozen=True)
 class ListReviewableResult:
-    provider: str
+    provider: ProviderName
     success: bool
     message: str
     items: tuple[ReviewableItem, ...]
