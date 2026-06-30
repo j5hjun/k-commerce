@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, replace
@@ -696,7 +696,7 @@ class CoupangSearchService:
               if (window.location.href.includes('login.coupang.com')) {
                 return false;
               }
-              return !bodyText.includes('로그인이 필요');
+              return !bodyText.includes('濡쒓렇?몄씠 ?꾩슂');
             })()
             """,
         )
@@ -733,3 +733,4 @@ class CoupangSearchService:
                 return candidate
 
         return session.tab
+

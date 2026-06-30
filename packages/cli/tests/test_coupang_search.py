@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -213,3 +213,4 @@ async def test_to_search_result_formats_table() -> None:
     assert result.success is True
     assert result.items[0].index == 1
     assert "검색 결과" in result.message
+

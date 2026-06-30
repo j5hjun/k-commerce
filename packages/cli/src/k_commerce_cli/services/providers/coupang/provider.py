@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import cached_property
+
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import BaseProvider, Browser, Store
 from k_commerce_cli.services.types import ProviderName
@@ -8,6 +10,7 @@ from .auth import CoupangAuthService
 from .orders import CoupangOrderService
 from .review.service import CoupangReviewService
 from .search.service import CoupangSearchService
+from .search.type import SearchProductResult
 
 
 class CoupangProvider(
@@ -27,34 +30,20 @@ class CoupangProvider(
         super().__init__(
             provider=provider,
             terminal=terminal,
+            browser=browser,
+            store=store,
         )
-        self._review = CoupangReviewService(
-            provider_name=provider_name,
+
+    @cached_property
+    def search_service(self) -> CoupangSearchService:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return CoupangSearchService(
+            provider_name=self.provider.value,
             store=self.store,
-            browser=self._browser,
-            terminal=terminal,
+            browser=self.browser,
+            terminal=self.terminal,
         )
-        self._search = CoupangSearchService(
-            provider_name=provider_name,
-            store=self.store,
-            browser=self._browser,
-            terminal=terminal,
-        )
-
-    async def login(self) -> LoginResult:
-        return await self._auth.login()
-
-    async def status(self) -> StatusResult:
-        return await self._auth.status()
-
-    async def logout(self) -> LogoutResult:
-        return await self._auth.logout()
-
-    async def list_reviewable(self) -> ListReviewableResult:
-        return await self._review.list_reviewable()
-
-    async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
-        return await self._review.upload_review(request)
 
     async def search_products(
         self,
@@ -64,7 +53,7 @@ class CoupangProvider(
         sort: str = "relevance",
         max_results: int = 10,
     ) -> SearchProductResult:
-        return await self._search.search_products(
+        return await self.search_service.search_products(
             keyword,
             category=category,
             sort=sort,
