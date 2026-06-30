@@ -8,9 +8,12 @@ from k_commerce_cli.services.browser.nodriver import NodriverBrowser
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.services.types import (
+    ListEditableReviewsResult,
     ListReviewableResult,
     LoginResult,
     LogoutResult,
+    ReviewEditRequest,
+    ReviewEditResult,
     ReviewUploadRequest,
     ReviewUploadResult,
     StatusResult,
@@ -58,8 +61,14 @@ class CoupangProvider(Provider):
     async def list_reviewable(self) -> ListReviewableResult:
         return await self._review.list_reviewable()
 
+    async def list_editable(self) -> ListEditableReviewsResult:
+        return await self._review.list_editable()
+
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
         return await self._review.upload_review(request)
+
+    async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult:
+        return await self._review.edit_review(request)
 
 
 __all__ = ["CoupangProvider"]

@@ -40,13 +40,25 @@ uv run k-commerce logout coupang
 List reviewable products only:
 
 ```bash
-uv run k-commerce review list coupang
+uv run k-commerce review upload coupang --list
 ```
 
 Write a review interactively:
 
 ```bash
 uv run k-commerce review upload coupang
+```
+
+List editable reviews only:
+
+```bash
+uv run k-commerce review edit coupang --list
+```
+
+Edit a review interactively:
+
+```bash
+uv run k-commerce review edit coupang
 ```
 
 To isolate credentials and session data under a custom directory:
@@ -60,8 +72,10 @@ The same `--root-dir` option also applies to status, logout, and review commands
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce review list coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce review upload coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review upload coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
+uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -93,10 +107,25 @@ uv run k-commerce review upload coupang
 This loads the reviewable product list, lets you pick an item with arrow keys, then prompts
 for rating and review text before submitting.
 
-### List only
+### Upload list only
 
 ```bash
-uv run k-commerce review list coupang
+uv run k-commerce review upload coupang --list
+```
+
+### Interactive edit
+
+```bash
+uv run k-commerce review edit coupang
+```
+
+This loads the editable review list, lets you pick an existing review with arrow keys, then prompts
+for rating and review text before submitting the update.
+
+### Edit list only
+
+```bash
+uv run k-commerce review edit coupang --list
 ```
 
 If no saved session exists, or the session is no longer logged in, the command fails with a clear

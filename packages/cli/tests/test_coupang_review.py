@@ -9,6 +9,7 @@ from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 from k_commerce_cli.services.providers.coupang.review.service import (
     CoupangReviewService,
+    _EditableReviewItemData,
     _ListReviewableBrowserResult,
     _ReviewUploadBrowserResult,
     _ReviewableItemData,
@@ -16,12 +17,14 @@ from k_commerce_cli.services.providers.coupang.review.service import (
 )
 from k_commerce_cli.services.providers.coupang.review.state import CoupangReviewState
 from k_commerce_cli.services.providers.coupang.review.utils import (
+    build_review_modify_url,
     build_review_register_url,
     format_reviewable_list,
 )
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.providers.coupang.review.type import (
+from k_commerce_cli.services.types import (
+    ReviewEditRequest,
     ReviewUploadRequest,
     ReviewableItem,
 )
@@ -95,6 +98,16 @@ def _request() -> ReviewUploadRequest:
     )
 
 
+def _edit_request() -> ReviewEditRequest:
+    return ReviewEditRequest(
+        order_id="22404668406",
+        product_id="8825977723",
+        review_id="934113278",
+        rating=4,
+        text="수정된 리뷰",
+    )
+
+
 def test_build_review_register_url() -> None:
     assert build_review_register_url(
         completed_order_vendor_item_id="22404668406",
@@ -102,6 +115,12 @@ def test_build_review_register_url() -> None:
         delivery_date="2026-06-15",
         vendor_item_id="92707464866",
     ) == SAMPLE_REVIEW_URL
+
+
+def test_build_review_modify_url() -> None:
+    assert build_review_modify_url(review_id="934113278") == (
+        "https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1"
+    )
 
 
 def test_format_reviewable_list_returns_empty_message() -> None:
@@ -258,6 +277,124 @@ async def test_scrape_reviewable_items_skips_incomplete_entries() -> None:
     items = await service._scrape_reviewable_items(tab)
 
     assert items == ()
+
+
+@pytest.mark.anyio
+async def test_scrape_editable_review_items_parses_modify_links() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab(
+        [
+            [
+                {
+                    "type": "object",
+                    "value": [
+                        ["review_id", {"type": "string", "value": "934113278"}],
+                        ["product_id", {"type": "string", "value": "8825977723"}],
+                        ["order_id", {"type": "string", "value": "22404668406"}],
+                        ["product_name", {"type": "string", "value": "포스트 아몬드후레이크"}],
+                        ["rating", {"type": "number", "value": 5}],
+                        ["review_text", {"type": "string", "value": "예전 리뷰"}],
+                        [
+                            "modify_url",
+                            {
+                                "type": "string",
+                                "value": "https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1",
+                            },
+                        ],
+                    ],
+                }
+            ]
+        ]
+    )
+
+    items = await service._scrape_editable_review_items(tab)
+
+    assert len(items) == 1
+    assert items[0].review_id == "934113278"
+    assert items[0].product_id == "8825977723"
+    assert items[0].rating == 5
+    script = tab.evaluate_calls[0]
+    assert ".js_reviewWroteListModifyBtn" in script
+    assert "data-reviewid" in script
+    assert "li.my-review__wrote__list" in script
+    assert ".wrote-list-rating-active" in script
+
+
+@pytest.mark.anyio
+async def test_scrape_editable_review_items_builds_modify_url_from_review_id() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab(
+        [
+            [
+                {
+                    "review_id": "934113278",
+                    "product_id": "8723409516",
+                    "order_id": "",
+                    "product_name": "동원 어단백 닭가슴살 피쉬 프로틴바",
+                    "rating": 0,
+                    "review_text": "",
+                    "modify_url": "",
+                }
+            ]
+        ]
+    )
+
+    items = await service._scrape_editable_review_items(tab)
+
+    assert len(items) == 1
+    assert items[0].modify_url == (
+        "https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1"
+    )
+
+
+@pytest.mark.anyio
+async def test_submit_review_form_supports_coupang_modify_selectors() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+
+    submitted = await service._submit_review_form(tab, 4, "맛있어요")
+
+    assert submitted is True
+    script = tab.evaluate_calls[0]
+    assert ".js_reviewModifyStarBtn" in script
+    assert ".js_reviewModifyTextArea" in script
+    assert ".js_reviewModifySubmitBtn" in script
+    assert "label.includes('완료')" in script
+
+
+@pytest.mark.anyio
+async def test_list_editable_succeeds_with_saved_session(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._list_editable_review_items = AsyncMock(
+        return_value=_ListReviewableBrowserResult(
+            state=CoupangReviewState.SUCCESS,
+            items=(
+                _EditableReviewItemData(
+                    review_id="934113278",
+                    product_id="8825977723",
+                    order_id="22404668406",
+                    product_name="포스트 아몬드후레이크",
+                    rating=5,
+                    review_text="예전 리뷰",
+                    modify_url="https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1",
+                ),
+            ),
+        )
+    )
+
+    result = await service.list_editable()
+
+    assert result.success is True
+    assert len(result.items) == 1
+    assert result.items[0].review_id == "934113278"
+    assert result.items[0].rating == 5
+    assert "리뷰 수정 가능 (1건):" in result.message
+    assert "★★★★★" in result.message
+    assert "예전 리뷰" in result.message
 
 
 @pytest.mark.anyio
@@ -468,3 +605,163 @@ async def test_upload_review_fails_when_not_reviewable(tmp_path: Path) -> None:
 
     assert result.success is False
     assert result.message == "리뷰를 작성할 수 없는 상품입니다."
+
+
+@pytest.mark.anyio
+async def test_edit_review_succeeds_with_saved_session(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    session = object()
+    browser.launch.return_value = session
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
+    )
+
+    result = await service.edit_review(_edit_request())
+
+    assert result.success is True
+    assert result.message == "쿠팡 리뷰 수정 성공"
+    assert result.review_id == "934113278"
+    service._edit_review_browser.assert_awaited_once_with(
+        session,
+        order_id="22404668406",
+        product_id="8825977723",
+        review_id="934113278",
+        rating=4,
+        text="수정된 리뷰",
+    )
+
+
+@pytest.mark.anyio
+async def test_edit_review_fails_when_session_is_missing() -> None:
+    service = _make_review_service()
+
+    result = await service.edit_review(_edit_request())
+
+    assert result.success is False
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+
+
+@pytest.mark.anyio
+async def test_edit_review_fails_when_review_not_found(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(
+            state=CoupangReviewState.REVIEW_NOT_FOUND,
+            message="작성된 리뷰를 찾을 수 없습니다.",
+        )
+    )
+
+    result = await service.edit_review(_edit_request())
+
+    assert result.success is False
+    assert result.message == "작성된 리뷰를 찾을 수 없습니다."
+
+
+@pytest.mark.anyio
+async def test_edit_review_fails_when_not_editable(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(
+            state=CoupangReviewState.NOT_EDITABLE,
+            message="리뷰를 수정할 수 없는 상품입니다.",
+        )
+    )
+
+    result = await service.edit_review(_edit_request())
+
+    assert result.success is False
+    assert result.message == "리뷰를 수정할 수 없는 상품입니다."
+
+
+@pytest.mark.anyio
+async def test_edit_review_fails_when_identifier_mismatch(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(
+            state=CoupangReviewState.IDENTIFIER_MISMATCH,
+            message="주문/상품/리뷰 식별자가 일치하지 않습니다.",
+        )
+    )
+
+    result = await service.edit_review(_edit_request())
+
+    assert result.success is False
+    assert result.message == "주문/상품/리뷰 식별자가 일치하지 않습니다."
+
+
+@pytest.mark.anyio
+async def test_edit_review_fails_when_input_is_invalid() -> None:
+    service = _make_review_service()
+
+    result = await service.edit_review(
+        ReviewEditRequest(
+            order_id="22404668406",
+            product_id="8825977723",
+            review_id="",
+            rating=0,
+            text="",
+        )
+    )
+
+    assert result.success is False
+    assert result.message == "리뷰 ID는 비어 있을 수 없습니다."
+
+
+@pytest.mark.anyio
+async def test_read_review_edit_state_deserializes_cdp_success_result() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab(
+        [
+            {
+                "type": "object",
+                "value": [
+                    ["state", {"type": "string", "value": "success"}],
+                ],
+            }
+        ]
+    )
+
+    page_state = await service._read_review_edit_state(tab, "8825977723", "22404668406", "934113278")
+
+    assert page_state == "success"
+
+
+@pytest.mark.anyio
+async def test_read_review_edit_state_only_mismatches_known_dom_identifiers() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([{"state": "success"}])
+
+    page_state = await service._read_review_edit_state(tab, "8723409516", "", "934113278")
+
+    assert page_state == "success"
+    script = tab.evaluate_calls[0]
+    assert "hasMismatchedKnownValue(productId" in script
+    assert "!pageText.includes(productId)" not in script
+
+
+@pytest.mark.anyio
+async def test_read_review_edit_confirmation_accepts_coupang_success_modal() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([{"state": "success"}])
+
+    confirmation = await service._read_review_edit_confirmation(tab)
+
+    assert confirmation == "success"
+    script = tab.evaluate_calls[0]
+    assert "구매후기가 수정되었습니다" in script
+    assert "/productreview/wroteReviews" in script
