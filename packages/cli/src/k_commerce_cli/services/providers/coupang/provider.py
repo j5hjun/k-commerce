@@ -1,79 +1,34 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from k_commerce_cli.base import Terminal
-from k_commerce_cli.services.base import Provider
-from k_commerce_cli.services.browser.nodriver import NodriverBrowser
-from k_commerce_cli.services.paths import ProviderPaths
-from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.types import (
-    ListEditableReviewsResult,
-    ListReviewableResult,
-    LoginResult,
-    LogoutResult,
-    ReviewDeleteRequest,
-    ReviewDeleteResult,
-    ReviewEditRequest,
-    ReviewEditResult,
-    ReviewUploadRequest,
-    ReviewUploadResult,
-    StatusResult,
-)
+from k_commerce_cli.services.base import BaseProvider, Browser, Store
+from k_commerce_cli.services.types import ProviderName
 
 from .auth import CoupangAuthService
+from .orders import CoupangOrderService
 from .review.service import CoupangReviewService
 
 
-class CoupangProvider(Provider):
+class CoupangProvider(
+    BaseProvider[CoupangAuthService, CoupangOrderService, CoupangReviewService]
+):
+    auth_service_cls = CoupangAuthService
+    order_service_cls = CoupangOrderService
+    review_service_cls = CoupangReviewService
+
     def __init__(
         self,
-        provider_name: str,
-        root_dir: Path | None = None,
+        provider: ProviderName,
         terminal: Terminal | None = None,
+        browser: Browser | None = None,
+        store: Store | None = None,
     ) -> None:
-        self.provider_name = provider_name
-        self.terminal = terminal
-        self.store = ProviderStore(
-            ProviderPaths(provider_name, root_dir or Path.home() / ".k-commerce")
-        )
-        self._browser = NodriverBrowser()
-        self._auth = CoupangAuthService(
-            provider_name=provider_name,
-            store=self.store,
-            browser=self._browser,
+        super().__init__(
+            provider=provider,
             terminal=terminal,
+            browser=browser,
+            store=store,
         )
-        self._review = CoupangReviewService(
-            provider_name=provider_name,
-            store=self.store,
-            browser=self._browser,
-            terminal=terminal,
-        )
-
-    async def login(self) -> LoginResult:
-        return await self._auth.login()
-
-    async def status(self) -> StatusResult:
-        return await self._auth.status()
-
-    async def logout(self) -> LogoutResult:
-        return await self._auth.logout()
-
-    async def list_reviewable(self) -> ListReviewableResult:
-        return await self._review.list_reviewable()
-
-    async def list_editable(self) -> ListEditableReviewsResult:
-        return await self._review.list_editable()
-
-    async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
-        return await self._review.upload_review(request)
-
-    async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult:
-        return await self._review.edit_review(request)
-
-    async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult:
-        return await self._review.delete_review(request)
 
 
 __all__ = ["CoupangProvider"]

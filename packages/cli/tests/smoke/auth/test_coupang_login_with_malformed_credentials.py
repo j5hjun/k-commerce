@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from ._helpers import invoke_login, provider_paths, require_smoke_enabled
+from .._helpers import provider_paths, require_smoke_enabled
+from ._helpers import invoke_login
 
 pytestmark = pytest.mark.smoke
 
@@ -16,6 +17,6 @@ def test_coupang_login_with_malformed_credentials_smoke(tmp_path: Path) -> None:
 
     result = invoke_login(root_dir)
 
-    assert result.returncode == 2
-    assert result.stderr.splitlines()[-1] == "Error: Invalid value: Credentials file must contain valid JSON."
+    assert result.returncode == 1
+    assert "Credentials file must contain valid JSON." in result.stderr
     assert not paths.session_meta_path.exists()

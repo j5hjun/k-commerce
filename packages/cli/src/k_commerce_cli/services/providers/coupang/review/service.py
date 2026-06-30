@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from k_commerce_cli.base import Terminal
-from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
-from k_commerce_cli.services.store import ProviderStore
+from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, Store
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
     ListReviewableResult,
+    ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -18,7 +18,7 @@ from k_commerce_cli.services.types import (
     ReviewableItem,
 )
 
-from .browser import deserialize_evaluate_result
+from .browser import deserialize_evaluate_result  # noqa: F401
 from .delete import CoupangReviewDelete
 from .edit import CoupangReviewEdit
 from .state import CoupangReviewState, REVIEW_STATE_MESSAGES, review_state_message
@@ -26,7 +26,7 @@ from .type import (
     _EditableReviewItemData,
     _ListReviewableBrowserResult,
     _ReviewUploadBrowserResult,
-    _ReviewableItemData,
+    _ReviewableItemData,  # noqa: F401
 )
 from .upload import CoupangReviewUpload
 from .utils import (
@@ -44,12 +44,12 @@ class CoupangReviewService(
 ):
     def __init__(
         self,
-        provider_name: str,
-        store: ProviderStore,
+        provider: ProviderName,
+        store: Store,
         browser: Browser,
         terminal: Terminal | None = None,
     ) -> None:
-        self.provider_name = provider_name
+        self.provider = provider
         self.store = store
         self.terminal = terminal
         self.browser = browser
@@ -68,7 +68,7 @@ class CoupangReviewService(
         if not self.store.has_session():
             return self._emit_list_result(
                 ListReviewableResult(
-                    provider=self.provider_name,
+                    provider=self.provider,
                     success=False,
                     message=REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
                     items=(),
@@ -293,7 +293,7 @@ class CoupangReviewService(
         if not self.store.has_session():
             return self._emit_editable_list_result(
                 ListEditableReviewsResult(
-                    provider=self.provider_name,
+                    provider=self.provider,
                     success=False,
                     message=REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
                     items=(),
@@ -413,7 +413,7 @@ class CoupangReviewService(
                 fallback="리뷰 작성 가능 목록 조회에 실패했습니다.",
             )
             return ListReviewableResult(
-                provider=self.provider_name,
+                provider=self.provider,
                 success=False,
                 message=message,
                 items=(),
@@ -432,7 +432,7 @@ class CoupangReviewService(
             for index, item in enumerate(browser_result.items, start=1)
         )
         return ListReviewableResult(
-            provider=self.provider_name,
+            provider=self.provider,
             success=True,
             message=format_reviewable_list(items),
             items=items,
@@ -448,7 +448,7 @@ class CoupangReviewService(
                 fallback="리뷰 수정 가능 목록 조회에 실패했습니다.",
             )
             return ListEditableReviewsResult(
-                provider=self.provider_name,
+                provider=self.provider,
                 success=False,
                 message=message,
                 items=(),
@@ -469,7 +469,7 @@ class CoupangReviewService(
             if isinstance(item, _EditableReviewItemData)
         )
         return ListEditableReviewsResult(
-            provider=self.provider_name,
+            provider=self.provider,
             success=True,
             message=format_editable_review_list(items),
             items=items,
@@ -482,7 +482,7 @@ class CoupangReviewService(
     ) -> ReviewUploadResult:
         if browser_result.state == CoupangReviewState.SUCCESS:
             return ReviewUploadResult(
-                provider=self.provider_name,
+                provider=self.provider,
                 success=True,
                 message="쿠팡 리뷰 업로드 성공",
                 order_id=request.order_id,
@@ -501,7 +501,7 @@ class CoupangReviewService(
         message: str,
     ) -> ReviewUploadResult:
         return ReviewUploadResult(
-            provider=self.provider_name,
+            provider=self.provider,
             success=False,
             message=message,
             order_id=request.order_id,
@@ -515,7 +515,7 @@ class CoupangReviewService(
     ) -> ReviewEditResult:
         if browser_result.state == CoupangReviewState.SUCCESS:
             return ReviewEditResult(
-                provider=self.provider_name,
+                provider=self.provider,
                 success=True,
                 message="쿠팡 리뷰 수정 성공",
                 order_id=request.order_id,
@@ -535,7 +535,7 @@ class CoupangReviewService(
         message: str,
     ) -> ReviewEditResult:
         return ReviewEditResult(
-            provider=self.provider_name,
+            provider=self.provider,
             success=False,
             message=message,
             order_id=request.order_id,
@@ -550,7 +550,7 @@ class CoupangReviewService(
     ) -> ReviewDeleteResult:
         if browser_result.state == CoupangReviewState.SUCCESS:
             return ReviewDeleteResult(
-                provider=self.provider_name,
+                provider=self.provider,
                 success=True,
                 message="쿠팡 리뷰 삭제 성공",
                 review_id=request.review_id,
@@ -570,7 +570,7 @@ class CoupangReviewService(
         message: str,
     ) -> ReviewDeleteResult:
         return ReviewDeleteResult(
-            provider=self.provider_name,
+            provider=self.provider,
             success=False,
             message=message,
             review_id=request.review_id,
