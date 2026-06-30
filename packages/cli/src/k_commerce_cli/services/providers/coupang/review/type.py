@@ -39,6 +39,23 @@ class ReviewEditResult:
 
 
 @dataclass(frozen=True)
+class ReviewDeleteRequest:
+    review_id: str
+    product_id: str = ""
+    order_id: str = ""
+
+
+@dataclass(frozen=True)
+class ReviewDeleteResult:
+    provider: str
+    success: bool
+    message: str
+    review_id: str
+    product_id: str = ""
+    order_id: str = ""
+
+
+@dataclass(frozen=True)
 class EditableReviewItem:
     index: int
     review_id: str

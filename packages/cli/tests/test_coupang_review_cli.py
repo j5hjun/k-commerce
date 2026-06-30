@@ -9,6 +9,8 @@ from k_commerce_cli.cli import app
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
+    ReviewDeleteRequest,
+    ReviewDeleteResult,
     ReviewEditRequest,
     ReviewEditResult,
     ListReviewableResult,
@@ -82,6 +84,17 @@ def _edit_success_result() -> ReviewEditResult:
         provider="coupang",
         success=True,
         message="쿠팡 리뷰 수정 성공",
+        order_id="22404668406",
+        product_id="8825977723",
+        review_id="934113278",
+    )
+
+
+def _delete_success_result() -> ReviewDeleteResult:
+    return ReviewDeleteResult(
+        provider="coupang",
+        success=True,
+        message="쿠팡 리뷰 삭제 성공",
         order_id="22404668406",
         product_id="8825977723",
         review_id="934113278",
@@ -379,3 +392,67 @@ async def test_review_edit_interactive_cancel_raises_click_exception() -> None:
     assert result.exit_code == 1
     assert "리뷰 수정을 취소했습니다." in result.output
     provider.edit_review.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_review_delete_default_runs_interactive_flow() -> None:
+    provider = Mock()
+    provider.list_editable = AsyncMock(return_value=_editable_list_result_with_items())
+    provider.delete_review = AsyncMock(return_value=_delete_success_result())
+
+    with (
+        patch(
+            "k_commerce_cli.commands.review.delete.get_provider",
+            side_effect=[provider, provider],
+        ) as get_provider,
+        patch(
+            "k_commerce_cli.commands.review.delete.prompt_deletable_review_item",
+            new=AsyncMock(return_value=_editable_review_item()),
+        ),
+    ):
+        result = await RUNNER.invoke(
+            app,
+            [
+                "review",
+                "delete",
+                "coupang",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert get_provider.call_count == 2
+    get_provider.assert_any_call("coupang", root_dir=None, terminal=ANY)
+    get_provider.assert_any_call("coupang", root_dir=None, terminal=None)
+    provider.list_editable.assert_awaited_once_with()
+    provider.delete_review.assert_awaited_once_with(
+        ReviewDeleteRequest(
+            order_id="22404668406",
+            product_id="8825977723",
+            review_id="934113278",
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_review_delete_list_option_prints_deletable_items() -> None:
+    provider = Mock()
+    provider.list_editable = AsyncMock(return_value=_editable_list_result())
+
+    with patch(
+        "k_commerce_cli.commands.review.delete.get_provider",
+        return_value=provider,
+    ) as get_provider:
+        result = await RUNNER.invoke(
+            app,
+            [
+                "review",
+                "delete",
+                "coupang",
+                "--list",
+            ],
+        )
+
+    assert result.exit_code == 0
+    get_provider.assert_called_once_with("coupang", root_dir=None, terminal=None)
+    provider.list_editable.assert_awaited_once_with()
+    assert "쿠팡 리뷰 삭제 가능 목록을 조회합니다..." in result.output

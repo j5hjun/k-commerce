@@ -9,6 +9,8 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
+    ReviewDeleteRequest,
+    ReviewDeleteResult,
     ReviewEditRequest,
     ReviewEditResult,
     ReviewUploadRequest,
@@ -87,3 +89,5 @@ class Provider(Protocol):
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
 
     async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult: ...
+
+    async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...

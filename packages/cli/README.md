@@ -61,6 +61,18 @@ Edit a review interactively:
 uv run k-commerce review edit coupang
 ```
 
+List deletable reviews only:
+
+```bash
+uv run k-commerce review delete coupang --list
+```
+
+Delete a review interactively:
+
+```bash
+uv run k-commerce review delete coupang
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
@@ -76,6 +88,8 @@ uv run k-commerce review upload coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review upload coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
+uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -126,6 +140,21 @@ for rating and review text before submitting the update.
 
 ```bash
 uv run k-commerce review edit coupang --list
+```
+
+### Interactive delete
+
+```bash
+uv run k-commerce review delete coupang
+```
+
+This loads the written review list, lets you pick an existing review with arrow keys, then opens
+Coupang's delete confirmation flow in the browser.
+
+### Delete list only
+
+```bash
+uv run k-commerce review delete coupang --list
 ```
 
 If no saved session exists, or the session is no longer logged in, the command fails with a clear

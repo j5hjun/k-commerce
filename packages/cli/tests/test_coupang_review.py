@@ -24,6 +24,7 @@ from k_commerce_cli.services.providers.coupang.review.utils import (
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.services.types import (
+    ReviewDeleteRequest,
     ReviewEditRequest,
     ReviewUploadRequest,
     ReviewableItem,
@@ -105,6 +106,14 @@ def _edit_request() -> ReviewEditRequest:
         review_id="934113278",
         rating=4,
         text="수정된 리뷰",
+    )
+
+
+def _delete_request() -> ReviewDeleteRequest:
+    return ReviewDeleteRequest(
+        order_id="22404668406",
+        product_id="8825977723",
+        review_id="934113278",
     )
 
 
@@ -360,6 +369,42 @@ async def test_submit_review_form_supports_coupang_modify_selectors() -> None:
     assert ".js_reviewModifyTextArea" in script
     assert ".js_reviewModifySubmitBtn" in script
     assert "label.includes('완료')" in script
+
+
+@pytest.mark.anyio
+async def test_delete_review_succeeds_with_saved_session(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    session = object()
+    browser.launch.return_value = session
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+    service._delete_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
+    )
+
+    result = await service.delete_review(_delete_request())
+
+    assert result.success is True
+    assert result.message == "쿠팡 리뷰 삭제 성공"
+    assert result.review_id == "934113278"
+    service._delete_review_browser.assert_awaited_once_with(
+        session,
+        review_id="934113278",
+    )
+
+
+@pytest.mark.anyio
+async def test_read_review_delete_confirmation_accepts_success_modal() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([{"state": "success"}])
+
+    confirmation = await service._read_review_delete_confirmation(tab, "934113278")
+
+    assert confirmation == "success"
+    script = tab.evaluate_calls[0]
+    assert "구매후기가 삭제되었습니다" in script
+    assert ".js_reviewWroteListDeleteBtn" in script
 
 
 @pytest.mark.anyio
