@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -49,6 +50,7 @@ class NodriverBrowser(Browser):
                 "--lang=ko-KR",
             ],
             lang="ko-KR",
+            sandbox=_browser_sandbox_enabled(),
         )
         tab = await self._ensure_tab(browser)
         await self._load_cookies(browser, cookies_file)
@@ -119,3 +121,10 @@ class NodriverBrowser(Browser):
         load = getattr(cookies_api, "load", None)
         if load is not None:
             await load(file=str(cookies_file))
+
+
+def _browser_sandbox_enabled() -> bool:
+    value = os.environ.get("K_COMMERCE_BROWSER_SANDBOX")
+    if value is None:
+        return True
+    return value.strip().lower() not in {"0", "false", "no", "off"}

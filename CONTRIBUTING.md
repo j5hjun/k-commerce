@@ -59,8 +59,12 @@ uv run pytest packages/cli/tests/e2e
 CLI smoke 테스트를 명시적으로 실행합니다.
 
 ```bash
-RUN_COUPANG_SMOKE=1 uv run pytest packages/cli/tests/smoke -m smoke
+RUN_COUPANG_SMOKE=1 K_COMMERCE_BROWSER_SANDBOX=0 uv run pytest packages/cli/tests/smoke -m smoke
 ```
+
+`K_COMMERCE_BROWSER_SANDBOX=0`은 Chrome sandbox가 막힌 로컬/에이전트 실행 환경에서
+nodriver 브라우저 연결을 허용하기 위한 옵션입니다. 이 값을 지정하지 않으면 기본적으로
+Chrome sandbox를 켠 상태로 실행합니다.
 
 Smoke 입력은 케이스별로 다음과 같습니다.
 

@@ -115,7 +115,10 @@ def _make_coupang_provider(root_dir: Path) -> CoupangProvider:
 
 
 @pytest.mark.anyio
-async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
+async def test_launch_uses_profile_dir_loads_cookies_and_keeps_sandbox_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("K_COMMERCE_BROWSER_SANDBOX", raising=False)
     browser = NodriverBrowser()
     tab = _DummyTab()
     runtime_browser = _DummyBrowser(tab)
@@ -136,7 +139,29 @@ async def test_launch_uses_profile_dir_and_loads_cookies() -> None:
         nodriver_module.start = original_start
 
     assert start_mock.await_args.kwargs["user_data_dir"] == str(paths.profile_dir)
+    assert start_mock.await_args.kwargs["sandbox"] is True
     runtime_browser.cookies.load.assert_awaited_once_with(file=str(cookies_file))
+
+
+@pytest.mark.anyio
+async def test_launch_can_disable_browser_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("K_COMMERCE_BROWSER_SANDBOX", "0")
+    browser = NodriverBrowser()
+    runtime_browser = _DummyBrowser(_DummyTab())
+    nodriver_module = sys.modules["nodriver"]
+    original_start = nodriver_module.start
+    start_mock = AsyncMock(return_value=runtime_browser)
+    nodriver_module.start = start_mock
+
+    try:
+        await browser.launch(ProviderPaths("coupang", root_dir=tmp_path))
+    finally:
+        nodriver_module.start = original_start
+
+    assert start_mock.await_args.kwargs["sandbox"] is False
 
 
 @pytest.mark.anyio
