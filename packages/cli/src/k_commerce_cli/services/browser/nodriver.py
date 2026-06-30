@@ -73,6 +73,9 @@ class NodriverBrowser(Browser):
         process = getattr(browser, "_process", None)
         if process is not None:
             with contextlib.suppress(Exception):
+                transport = getattr(process, "_transport", None)
+                if transport is not None:
+                    transport.close()
                 if process.returncode is None:
                     process.terminate()
                     try:
@@ -80,6 +83,12 @@ class NodriverBrowser(Browser):
                     except TimeoutError:
                         process.kill()
                         await process.wait()
+                for pipe_name in ("stdin", "stdout", "stderr"):
+                    pipe = getattr(process, pipe_name, None)
+                    if pipe is not None:
+                        close = getattr(pipe, "close", None)
+                        if callable(close):
+                            close()
             browser._process = None
             if hasattr(browser, "_process_pid"):
                 browser._process_pid = None
