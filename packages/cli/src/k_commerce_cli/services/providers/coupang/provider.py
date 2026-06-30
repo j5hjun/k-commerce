@@ -40,6 +40,12 @@ class CoupangProvider(
             browser=self._browser,
             terminal=terminal,
         )
+        self._search = CoupangSearchService(
+            provider_name=provider_name,
+            store=self.store,
+            browser=self._browser,
+            terminal=terminal,
+        )
 
     async def login(self) -> LoginResult:
         return await self._auth.login()
