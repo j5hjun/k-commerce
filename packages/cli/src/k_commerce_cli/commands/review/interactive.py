@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from questionary import Choice
 
-from k_commerce_cli.terminal.prompts import Prompts
+from k_commerce_cli.base import Prompts
 from k_commerce_cli.services.providers.coupang.review.type import ReviewableItem
 from k_commerce_cli.services.providers.coupang.review.utils import PRODUCT_NAME_MAX_WIDTH
 

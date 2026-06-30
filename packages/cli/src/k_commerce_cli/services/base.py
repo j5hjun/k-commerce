@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.types import LoginResult, LogoutResult, StatusResult, ListReviewableResult, ReviewUploadRequest, ReviewUploadResult
+
+if TYPE_CHECKING:
+    from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
 
 class BrowserElement(Protocol):
     text_all: str
@@ -73,3 +78,12 @@ class Provider(Protocol):
     async def list_reviewable(self) -> ListReviewableResult: ...
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
+
+    async def search_products(
+        self,
+        keyword: str,
+        *,
+        category: str | None = None,
+        sort: str = "relevance",
+        max_results: int = 10,
+    ) -> "SearchProductResult": ...

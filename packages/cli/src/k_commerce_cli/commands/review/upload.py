@@ -4,8 +4,7 @@ from pathlib import Path
 
 import asyncclick as click
 
-from k_commerce_cli.base import Terminal
-from k_commerce_cli.terminal.prompts import Prompts
+from k_commerce_cli.base import Prompts, Terminal
 from k_commerce_cli.commands.review.interactive import (
     prompt_rating,
     prompt_review_text,

@@ -18,6 +18,7 @@ from k_commerce_cli.services.types import (
 
 from .auth import CoupangAuthService
 from .review.service import CoupangReviewService
+from .search.service import CoupangSearchService
 
 
 class CoupangProvider(Provider):
@@ -45,6 +46,12 @@ class CoupangProvider(Provider):
             browser=self._browser,
             terminal=terminal,
         )
+        self._search = CoupangSearchService(
+            provider_name=provider_name,
+            store=self.store,
+            browser=self._browser,
+            terminal=terminal,
+        )
 
     async def login(self) -> LoginResult:
         return await self._auth.login()
@@ -60,6 +67,21 @@ class CoupangProvider(Provider):
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
         return await self._review.upload_review(request)
+
+    async def search_products(
+        self,
+        keyword: str,
+        *,
+        category: str | None = None,
+        sort: str = "relevance",
+        max_results: int = 10,
+    ) -> SearchProductResult:
+        return await self._search.search_products(
+            keyword,
+            category=category,
+            sort=sort,
+            max_results=max_results,
+        )
 
 
 __all__ = ["CoupangProvider"]
