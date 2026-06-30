@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import asyncclick as click
+
+from k_commerce_cli.base import Terminal
+from k_commerce_cli.commands.review.interactive import prompt_deletable_review_item
+from k_commerce_cli.prompts import QuestionaryPrompts as Prompts
+from k_commerce_cli.services.registry import get_provider
+from k_commerce_cli.services.types import ReviewDeleteRequest
+
+MSG_NO_DELETABLE_ITEMS = "삭제 가능한 작성 리뷰가 없습니다."
+MSG_INTERACTIVE_CANCELLED = "리뷰 삭제를 취소했습니다."
+MSG_LIST_DELETABLE = "쿠팡 리뷰 삭제 가능 목록을 조회합니다..."
+
+
+def _resolve_root_dir(root_dir: str | None) -> Path | None:
+    return Path(root_dir) if root_dir is not None else None
+
+
+async def _run_interactive_delete(
+    provider: str,
+    root_dir,
+    terminal: Terminal,
+    prompts: Prompts,
+) -> None:
+    try:
+        review_provider = get_provider(
+            provider,
+            root_dir=root_dir,
+            terminal=terminal,
+        )
+        list_provider = get_provider(
+            provider,
+            root_dir=root_dir,
+            terminal=None,
+        )
+    except ValueError as error:
+        raise click.BadParameter(str(error), param_hint="provider") from error
+
+    list_result = await list_provider.list_editable()
+
+    if not list_result.success:
+        terminal.abort(list_result.message)
+    if not list_result.items:
+        terminal.abort(MSG_NO_DELETABLE_ITEMS)
+
+    try:
+        selected_item = await prompt_deletable_review_item(prompts, list_result.items)
+    except KeyboardInterrupt:
+        terminal.abort(MSG_INTERACTIVE_CANCELLED)
+
+    await review_provider.delete_review(
+        ReviewDeleteRequest(
+            order_id=selected_item.order_id,
+            product_id=selected_item.product_id,
+            review_id=selected_item.review_id,
+        )
+    )
+
+
+@click.command("delete")
+@click.argument("provider")
+@click.option("--list", "list_only", is_flag=True, help="List deletable reviews only.")
+@click.option(
+    "--root-dir",
+    "--root_dir",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Override the provider root directory.",
+)
+@click.pass_context
+async def review_delete(
+    ctx: click.Context,
+    provider: str,
+    list_only: bool,
+    root_dir: str | None,
+) -> None:
+    resolved_root_dir = _resolve_root_dir(root_dir)
+    if list_only:
+        try:
+            review_provider = get_provider(
+                provider,
+                root_dir=resolved_root_dir,
+                terminal=None,
+            )
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
+        terminal = ctx.obj["terminal"]
+        terminal.info(MSG_LIST_DELETABLE)
+        list_result = await review_provider.list_editable()
+        terminal.echo(list_result.message)
+        if not list_result.success:
+            terminal.abort(list_result.message)
+        return
+
+    await _run_interactive_delete(
+        provider,
+        resolved_root_dir,
+        ctx.obj["terminal"],
+        ctx.obj["prompts"],
+    )

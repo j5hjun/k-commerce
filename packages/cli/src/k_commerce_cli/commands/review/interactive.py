@@ -59,6 +59,31 @@ async def prompt_editable_review_item(
     items: tuple[EditableReviewItem, ...],
 ) -> EditableReviewItem:
     """조회된 작성 리뷰 목록에서 사용자가 수정할 리뷰 하나를 선택하게 합니다."""
+    return await _prompt_written_review_item(
+        prompts,
+        items,
+        message="수정할 리뷰를 선택하세요 (↑↓ 이동, Enter 선택, Ctrl+C 취소):",
+    )
+
+
+async def prompt_deletable_review_item(
+    prompts: Prompts,
+    items: tuple[EditableReviewItem, ...],
+) -> EditableReviewItem:
+    """조회된 작성 리뷰 목록에서 사용자가 삭제할 리뷰 하나를 선택하게 합니다."""
+    return await _prompt_written_review_item(
+        prompts,
+        items,
+        message="삭제할 리뷰를 선택하세요 (↑↓ 이동, Enter 선택, Ctrl+C 취소):",
+    )
+
+
+async def _prompt_written_review_item(
+    prompts: Prompts,
+    items: tuple[EditableReviewItem, ...],
+    *,
+    message: str,
+) -> EditableReviewItem:
     choices: list[Choice] = []
     for item in items:
         product_name = (
@@ -79,7 +104,7 @@ async def prompt_editable_review_item(
         )
 
     return await prompts.select(
-        "수정할 리뷰를 선택하세요 (↑↓ 이동, Enter 선택, Ctrl+C 취소):\n"
+        f"{message}\n"
         f"  {'#':>3}  {'상품ID':<12}  {'평점':<7}  상품명 / 후기",
         choices=choices,
     )
