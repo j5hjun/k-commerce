@@ -1,11 +1,17 @@
-from __future__ import annotations
-
 from urllib.parse import urlencode
 
-from .type import ReviewableItem
+from k_commerce_cli.services.types import EditableReviewItem, ReviewableItem
 
 COUPANG_REVIEW_REGISTER_URL = "https://my.coupang.com/productreview/register"
+COUPANG_WROTE_REVIEWS_URL = "https://my.coupang.com/productreview/wroteReviews"
 PRODUCT_NAME_MAX_WIDTH = 50
+REVIEW_TEXT_MAX_WIDTH = 30
+
+
+def format_rating(rating: int) -> str:
+    if not 1 <= rating <= 5:
+        return "-"
+    return f"{'★' * rating}{'☆' * (5 - rating)}"
 
 
 def build_review_register_url(
@@ -27,6 +33,12 @@ def build_review_register_url(
     return f"{COUPANG_REVIEW_REGISTER_URL}?{query}"
 
 
+def build_review_modify_url(*, review_id: str, page: int = 1) -> str:
+    """작성한 리뷰의 쿠팡 리뷰 수정 URL을 만듭니다."""
+    query = urlencode({"page": page})
+    return f"{COUPANG_WROTE_REVIEWS_URL}/{review_id}/modify?{query}"
+
+
 def format_reviewable_list(items: tuple[ReviewableItem, ...]) -> str:
     """리뷰 작성 가능한 상품 목록을 CLI 출력용 표 형태로 만듭니다."""
     if not items:
@@ -45,5 +57,33 @@ def format_reviewable_list(items: tuple[ReviewableItem, ...]) -> str:
         )
         lines.append(
             f"  {item.index:>3}  {item.delivery_date:<12}  {item.product_id:<12}  {product_name}"
+        )
+    return "\n".join(lines)
+
+
+def format_editable_review_list(items: tuple[EditableReviewItem, ...]) -> str:
+    """수정 가능한 작성 리뷰 목록을 CLI 출력용 표 형태로 만듭니다."""
+    if not items:
+        return "수정 가능한 작성 리뷰가 없습니다."
+
+    lines = [
+        f"리뷰 수정 가능 ({len(items)}건):",
+        "",
+        f"  {'#':>3}  {'평점':<7}  {'리뷰ID':<12}  {'상품ID':<12}  상품명 / 후기",
+    ]
+    for item in items:
+        product_name = (
+            item.product_name
+            if len(item.product_name) <= PRODUCT_NAME_MAX_WIDTH
+            else f"{item.product_name[: PRODUCT_NAME_MAX_WIDTH - 3]}..."
+        )
+        review_text = (
+            item.review_text
+            if len(item.review_text) <= REVIEW_TEXT_MAX_WIDTH
+            else f"{item.review_text[: REVIEW_TEXT_MAX_WIDTH - 3]}..."
+        )
+        suffix = f" / {review_text}" if review_text else ""
+        lines.append(
+            f"  {item.index:>3}  {format_rating(item.rating):<7}  {item.review_id:<12}  {item.product_id:<12}  {product_name}{suffix}"
         )
     return "\n".join(lines)

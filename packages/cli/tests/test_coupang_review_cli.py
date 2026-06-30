@@ -6,7 +6,11 @@ from asyncclick import ClickException
 from asyncclick.testing import CliRunner
 
 from k_commerce_cli.cli import app
-from k_commerce_cli.services.providers.coupang.review.type import (
+from k_commerce_cli.services.types import (
+    EditableReviewItem,
+    ListEditableReviewsResult,
+    ReviewEditRequest,
+    ReviewEditResult,
     ListReviewableResult,
     ReviewUploadRequest,
     ReviewUploadResult,
@@ -43,6 +47,15 @@ def _review_list_result() -> ListReviewableResult:
     )
 
 
+def _editable_list_result() -> ListEditableReviewsResult:
+    return ListEditableReviewsResult(
+        provider="coupang",
+        success=True,
+        message="리뷰 수정 가능 (1건):\n\n    #  리뷰ID        상품ID        상품명",
+        items=(),
+    )
+
+
 def _reviewable_item() -> ReviewableItem:
     return ReviewableItem(
         index=1,
@@ -61,6 +74,39 @@ def _review_list_result_with_items() -> ListReviewableResult:
         success=True,
         message="리뷰 작성 가능 (1건):",
         items=(_reviewable_item(),),
+    )
+
+
+def _edit_success_result() -> ReviewEditResult:
+    return ReviewEditResult(
+        provider="coupang",
+        success=True,
+        message="쿠팡 리뷰 수정 성공",
+        order_id="22404668406",
+        product_id="8825977723",
+        review_id="934113278",
+    )
+
+
+def _editable_review_item() -> EditableReviewItem:
+    return EditableReviewItem(
+        index=1,
+        review_id="934113278",
+        product_id="8825977723",
+        order_id="22404668406",
+        product_name="포스트 아몬드후레이크",
+        rating=5,
+        review_text="예전 리뷰",
+        modify_url="https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1",
+    )
+
+
+def _editable_list_result_with_items() -> ListEditableReviewsResult:
+    return ListEditableReviewsResult(
+        provider="coupang",
+        success=True,
+        message="리뷰 수정 가능 (1건):",
+        items=(_editable_review_item(),),
     )
 
 
@@ -143,50 +189,26 @@ async def test_review_upload_interactive_cancel_raises_click_exception() -> None
 
 
 @pytest.mark.anyio
-async def test_review_list_prints_reviewable_items() -> None:
+async def test_review_upload_list_option_prints_reviewable_items() -> None:
     provider = Mock()
     provider.list_reviewable = AsyncMock(return_value=_review_list_result())
 
     with patch(
-        "k_commerce_cli.commands.review.list.get_provider",
+        "k_commerce_cli.commands.review.upload.get_provider",
         return_value=provider,
     ) as get_provider:
         result = await RUNNER.invoke(
             app,
             [
                 "review",
-                "list",
+                "upload",
                 "coupang",
+                "--list",
             ],
         )
 
     assert result.exit_code == 0
     get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
-    provider.list_reviewable.assert_awaited_once_with()
-
-
-@pytest.mark.anyio
-async def test_review_list_passes_root_dir(tmp_path: Path) -> None:
-    provider = Mock()
-    provider.list_reviewable = AsyncMock(return_value=_review_list_result())
-
-    with patch(
-        "k_commerce_cli.commands.review.list.get_provider",
-        return_value=provider,
-    ) as get_provider:
-        result = await RUNNER.invoke(
-            app,
-            [
-                "review",
-                "list",
-                "coupang",
-                "--root-dir",
-                str(tmp_path),
-            ],
-        )
-
-    assert result.exit_code == 0
-    get_provider.assert_called_once_with("coupang", root_dir=tmp_path, terminal=ANY)
     provider.list_reviewable.assert_awaited_once_with()
 
 
@@ -206,7 +228,7 @@ async def test_review_upload_unsupported_provider_uses_bad_parameter() -> None:
         )
 
     assert result.exit_code == 2
-    assert "Invalid value: Unsupported provider: invalid" in result.output
+    assert "Invalid value for provider: Unsupported provider: invalid" in result.output
     get_provider.assert_called_once_with("invalid", root_dir=None, terminal=ANY)
 
 
@@ -247,3 +269,113 @@ async def test_review_upload_failure_raises_click_exception() -> None:
 
     assert result.exit_code == 1
     assert "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요." in result.output
+
+
+@pytest.mark.anyio
+async def test_review_edit_default_runs_interactive_flow() -> None:
+    provider = Mock()
+    provider.list_editable = AsyncMock(return_value=_editable_list_result_with_items())
+    provider.edit_review = AsyncMock(return_value=_edit_success_result())
+
+    with (
+        patch(
+            "k_commerce_cli.commands.review.edit.get_provider",
+            side_effect=[provider, provider],
+        ) as get_provider,
+        patch(
+            "k_commerce_cli.commands.review.edit.prompt_editable_review_item",
+            new=AsyncMock(return_value=_editable_review_item()),
+        ),
+        patch(
+            "k_commerce_cli.commands.review.edit.prompt_rating",
+            new=AsyncMock(return_value=4),
+        ) as prompt_rating,
+        patch(
+            "k_commerce_cli.commands.review.edit.prompt_review_text",
+            new=AsyncMock(return_value="수정된 리뷰"),
+        ) as prompt_review_text,
+    ):
+        result = await RUNNER.invoke(
+            app,
+            [
+                "review",
+                "edit",
+                "coupang",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert get_provider.call_count == 2
+    get_provider.assert_any_call("coupang", root_dir=None, terminal=ANY)
+    get_provider.assert_any_call("coupang", root_dir=None, terminal=None)
+    provider.list_editable.assert_awaited_once_with()
+    prompt_rating.assert_awaited_once_with(ANY, current_rating=5)
+    prompt_review_text.assert_awaited_once_with(
+        ANY,
+        max_length=800,
+        empty_message="리뷰 본문은 비어 있을 수 없습니다.",
+        too_long_message="리뷰 본문은 최대 800자까지 입력할 수 있습니다.",
+        current_text="예전 리뷰",
+    )
+    provider.edit_review.assert_awaited_once_with(
+        ReviewEditRequest(
+            order_id="22404668406",
+            product_id="8825977723",
+            review_id="934113278",
+            rating=4,
+            text="수정된 리뷰",
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_review_edit_list_option_prints_editable_items() -> None:
+    provider = Mock()
+    provider.list_editable = AsyncMock(return_value=_editable_list_result())
+
+    with patch(
+        "k_commerce_cli.commands.review.edit.get_provider",
+        return_value=provider,
+    ) as get_provider:
+        result = await RUNNER.invoke(
+            app,
+            [
+                "review",
+                "edit",
+                "coupang",
+                "--list",
+            ],
+        )
+
+    assert result.exit_code == 0
+    get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
+    provider.list_editable.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_review_edit_interactive_cancel_raises_click_exception() -> None:
+    provider = Mock()
+    provider.list_editable = AsyncMock(return_value=_editable_list_result_with_items())
+
+    with (
+        patch(
+            "k_commerce_cli.commands.review.edit.get_provider",
+            side_effect=[provider, provider],
+        ),
+        patch(
+            "k_commerce_cli.commands.review.edit.prompt_editable_review_item",
+            new=AsyncMock(side_effect=KeyboardInterrupt),
+        ),
+    ):
+        result = await RUNNER.invoke(
+            app,
+            [
+                "review",
+                "edit",
+                "coupang",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert "리뷰 수정을 취소했습니다." in result.output
+    provider.edit_review.assert_not_called()

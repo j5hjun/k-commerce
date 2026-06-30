@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from questionary import Choice
 
-from k_commerce_cli.terminal.prompts import Prompts
-from k_commerce_cli.services.providers.coupang.review.type import ReviewableItem
-from k_commerce_cli.services.providers.coupang.review.utils import PRODUCT_NAME_MAX_WIDTH
+from k_commerce_cli.prompts import QuestionaryPrompts as Prompts
+from k_commerce_cli.services.types import EditableReviewItem, ReviewableItem
+from k_commerce_cli.services.providers.coupang.review.utils import (
+    PRODUCT_NAME_MAX_WIDTH,
+    REVIEW_TEXT_MAX_WIDTH,
+    format_rating,
+)
 
 
 async def prompt_reviewable_item(
@@ -32,17 +36,52 @@ async def prompt_reviewable_item(
     )
 
 
-async def prompt_rating(prompts: Prompts) -> int:
+async def prompt_rating(prompts: Prompts, *, current_rating: int | None = None) -> int:
     """사용자가 1-5점 별점을 선택하게 합니다."""
+    message = "별점을 선택하세요 (↑↓ 이동, Enter 선택):"
+    if current_rating is not None and 1 <= current_rating <= 5:
+        message = f"별점을 선택하세요 (현재: {format_rating(current_rating)} {current_rating}점, ↑↓ 이동, Enter 선택):"
+
     return await prompts.select(
-        "별점을 선택하세요 (↑↓ 이동, Enter 선택):",
+        message,
         choices=[
-            Choice("★★★★★  5점", value=5),
-            Choice("★★★★☆  4점", value=4),
-            Choice("★★★☆☆  3점", value=3),
-            Choice("★★☆☆☆  2점", value=2),
-            Choice("★☆☆☆☆  1점", value=1),
+            Choice(f"★★★★★  5점{'  (현재)' if current_rating == 5 else ''}", value=5),
+            Choice(f"★★★★☆  4점{'  (현재)' if current_rating == 4 else ''}", value=4),
+            Choice(f"★★★☆☆  3점{'  (현재)' if current_rating == 3 else ''}", value=3),
+            Choice(f"★★☆☆☆  2점{'  (현재)' if current_rating == 2 else ''}", value=2),
+            Choice(f"★☆☆☆☆  1점{'  (현재)' if current_rating == 1 else ''}", value=1),
         ],
+    )
+
+
+async def prompt_editable_review_item(
+    prompts: Prompts,
+    items: tuple[EditableReviewItem, ...],
+) -> EditableReviewItem:
+    """조회된 작성 리뷰 목록에서 사용자가 수정할 리뷰 하나를 선택하게 합니다."""
+    choices: list[Choice] = []
+    for item in items:
+        product_name = (
+            item.product_name
+            if len(item.product_name) <= PRODUCT_NAME_MAX_WIDTH
+            else f"{item.product_name[: PRODUCT_NAME_MAX_WIDTH - 3]}..."
+        )
+        review_text = (
+            item.review_text
+            if len(item.review_text) <= REVIEW_TEXT_MAX_WIDTH
+            else f"{item.review_text[: REVIEW_TEXT_MAX_WIDTH - 3]}..."
+        )
+        choices.append(
+            Choice(
+                f"{item.index:>3}  {item.product_id or '-':<12}  {format_rating(item.rating):<7}  {product_name} / {review_text}",
+                value=item,
+            )
+        )
+
+    return await prompts.select(
+        "수정할 리뷰를 선택하세요 (↑↓ 이동, Enter 선택, Ctrl+C 취소):\n"
+        f"  {'#':>3}  {'상품ID':<12}  {'평점':<7}  상품명 / 후기",
+        choices=choices,
     )
 
 
@@ -52,10 +91,15 @@ async def prompt_review_text(
     max_length: int,
     empty_message: str,
     too_long_message: str,
+    current_text: str | None = None,
 ) -> str:
     """허용 길이 안에서 비어 있지 않은 리뷰 본문을 입력받습니다."""
+    message = "리뷰 본문을 입력하세요:"
+    if current_text:
+        message = f"리뷰 본문을 입력하세요 (현재: {current_text}):"
+
     while True:
-        normalized = (await prompts.text("리뷰 본문을 입력하세요:")).strip()
+        normalized = (await prompts.text(message)).strip()
         if not normalized:
             await prompts.print_message(empty_message)
             continue
