@@ -52,6 +52,7 @@ class CoupangOrderProduct:
     discountedUnitPrice: int
     combinedUnitPrice: int
     imagePath: str
+    productUrl: str = ""
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderProduct":
@@ -64,6 +65,7 @@ class CoupangOrderProduct:
             discountedUnitPrice=int(payload["discountedUnitPrice"]),
             combinedUnitPrice=int(payload["combinedUnitPrice"]),
             imagePath=str(payload["imagePath"]),
+            productUrl=str(payload.get("productUrl") or ""),
         )
 
 

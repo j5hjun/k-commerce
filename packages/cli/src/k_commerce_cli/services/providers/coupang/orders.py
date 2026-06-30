@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime
 import inspect
 from typing import Any
+from urllib.parse import urlencode
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, Store
@@ -324,6 +325,7 @@ class CoupangOrderService:
                             discountedUnitPrice=int(product["discountedUnitPrice"]),
                             combinedUnitPrice=int(product["combinedUnitPrice"]),
                             imagePath=str(product["imagePath"]),
+                            productUrl=self._build_product_url(product),
                         )
                         for product in group.get("productList", [])
                     ],
@@ -331,6 +333,21 @@ class CoupangOrderService:
                 for group in data.get("deliveryGroupList", [])
             ],
         )
+
+    def _build_product_url(self, product: dict[str, Any]) -> str:
+        product_id = product.get("productId")
+        item_id = product.get("itemId")
+        vendor_item_id = product.get("vendorItemId")
+        if product_id is None or item_id is None or vendor_item_id is None:
+            return ""
+
+        query = urlencode(
+            {
+                "itemId": str(item_id),
+                "vendorItemId": str(vendor_item_id),
+            }
+        )
+        return f"https://www.coupang.com/vp/products/{product_id}?{query}"
 
     def _read_message(self, value: Any) -> str | None:
         if not isinstance(value, dict):
@@ -465,9 +482,18 @@ class CoupangOrderService:
 
         page_size = len(page_orders)
         cached_page = cached_orders[offset : offset + page_size]
-        if cached_page == page_orders:
+        if self._orders_match(cached_page, page_orders):
             return cached_orders[offset:]
         return None
+
+    def _orders_match(
+        self,
+        left: list[CoupangOrderResult],
+        right: list[CoupangOrderResult],
+    ) -> bool:
+        if [order.orderId for order in left] != [order.orderId for order in right]:
+            return False
+        return self._item_map(left) == self._item_map(right)
 
     def _item_map(
         self,
@@ -492,7 +518,16 @@ class CoupangOrderService:
                         "invoiceNumber": group.invoiceNumber,
                         "invoiceStatus": group.invoiceStatus,
                         "pddMessage": group.pddMessage,
-                        "product": product,
+                        "product": {
+                            "vendorItemId": product.vendorItemId,
+                            "vendorItemName": product.vendorItemName,
+                            "productName": product.productName,
+                            "quantity": product.quantity,
+                            "unitPrice": product.unitPrice,
+                            "discountedUnitPrice": product.discountedUnitPrice,
+                            "combinedUnitPrice": product.combinedUnitPrice,
+                            "imagePath": product.imagePath,
+                        },
                     }
         return items
 

@@ -62,6 +62,8 @@ def _order_payload(
     invoice_status: str = "FINAL_DELIVERY",
     message: str = "done",
     vendor_item_id: int = 101,
+    product_id: int = 1001,
+    item_id: int = 2001,
     item_name: str = "item",
     price: int = 1000,
 ) -> dict[str, Any]:
@@ -78,6 +80,8 @@ def _order_payload(
                 "productList": [
                     {
                         "vendorItemId": vendor_item_id,
+                        "productId": product_id,
+                        "itemId": item_id,
                         "vendorItemName": item_name,
                         "productName": item_name,
                         "quantity": 1,
@@ -131,6 +135,8 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
                                 "productList": [
                                     {
                                         "vendorItemId": 101,
+                                        "productId": 1001,
+                                        "itemId": 2001,
                                         "vendorItemName": "item",
                                         "productName": "item",
                                         "quantity": 1,
@@ -164,6 +170,10 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     assert payload.meta.refresh is True
     assert payload.orders[0].provider == "coupang"
     assert payload.orders[0].orderId == 10
+    product = payload.orders[0].deliveryGroupList[0].productList[0]
+    assert product.productUrl == (
+        "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    )
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     assert store._orders == payload.to_dict()
     assert result.message == "주문 새로 생성 완료: 총 1건"
