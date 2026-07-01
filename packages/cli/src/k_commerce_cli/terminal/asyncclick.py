@@ -19,6 +19,9 @@ class AsyncClickTerminal(Terminal):
     def warn(self, message: str) -> None:
         click.secho(f"[warn] {message}", fg="yellow")
 
+    def error(self, message: str) -> None:
+        click.secho(f"[error] {message}", fg="red")
+
     def cache(self, message: str) -> None:
         click.secho(f"[cache] {message}", dim=True)
 

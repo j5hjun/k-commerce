@@ -117,7 +117,11 @@ class NodriverBrowser(Browser):
                 return None
 
     async def _ensure_tab(self, browser: BrowserRuntime) -> BrowserTab:
-        main_tab = getattr(browser, "main_tab", None)
+        main_tab = None
+        try:
+            main_tab = browser.main_tab
+        except (StopIteration, RuntimeError):
+            main_tab = None
         if main_tab is not None:
             return main_tab
         return await browser.get("about:blank")
