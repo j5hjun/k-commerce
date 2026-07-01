@@ -92,13 +92,37 @@ Retry only the year/page pairs recorded in the previous `orders.json` failure me
 uv run k-commerce order list coupang --failed-only
 ```
 
+Search Coupang products by keyword:
+
+```bash
+uv run k-commerce search coupang KEYWORD
+```
+
+Print search results as JSON:
+
+```bash
+uv run k-commerce search coupang KEYWORD --output json
+```
+
+Save search results to a JSON file:
+
+```bash
+uv run k-commerce search coupang KEYWORD --output json --save ./search.json
+```
+
+Sort search results by lowest price:
+
+```bash
+uv run k-commerce search coupang KEYWORD --sort low_price
+```
+
 To isolate credentials and session data under a custom directory:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status, logout, review, and order list commands:
+The same `--root-dir` option also applies to status, logout, review, order list, and search commands:
 
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
@@ -110,6 +134,7 @@ uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce search coupang KEYWORD --root-dir /tmp/test-k-commerce
 ```
 
 This option is intended for local verification and automated tests where credentials and session files
@@ -181,6 +206,51 @@ If no saved session exists, or the session is no longer logged in, the command f
 message instead of opening a login flow automatically.
 
 Image or video attachments are not supported in this command.
+
+## Coupang Search Command
+
+The `search` command reuses a saved Coupang session.
+
+### Basic search
+
+```bash
+uv run k-commerce search coupang KEYWORD
+```
+
+This opens the saved Coupang session, searches for `KEYWORD`, and prints up to 10 products as a
+table in the terminal.
+
+### JSON output
+
+```bash
+uv run k-commerce search coupang KEYWORD --output json
+```
+
+### Save JSON output
+
+```bash
+uv run k-commerce search coupang KEYWORD --output json --save ./search.json
+```
+
+`--save` writes the same JSON payload to the given file path.
+
+### Sort
+
+Supported `--sort` values are `relevance` (default), `latest`, `low_price`, `high_price`, and
+`review`.
+
+```bash
+uv run k-commerce search coupang KEYWORD --sort low_price
+```
+
+### Category filter
+
+```bash
+uv run k-commerce search coupang KEYWORD --category CATEGORY_ID
+```
+
+If no saved session exists, or the session is no longer logged in, the command fails with a clear
+message instead of opening a login flow automatically.
 
 ## Login Status
 

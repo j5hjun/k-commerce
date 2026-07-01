@@ -199,23 +199,25 @@ class CoupangSearchService:
         max_results: int,
     ) -> _SearchBrowserResult:
         search_url = self._build_search_url(keyword, category, sort)
-        await self._open_search_page(session, search_url)
-
         active_tab = self._active_tab(session)
+        await active_tab.get(search_url)
+        await self._sleep_ms(2000)
+
         if not await self._is_logged_in(active_tab):
             return _SearchBrowserResult(
                 state="not_logged_in",
                 message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
             )
 
-        items, found_rank_markers = await self._scrape_search_results(
+        await self._wait_for_search_page_ready(active_tab)
+        items, _found_rank_markers = await self._scrape_search_results(
             active_tab,
             max_results=max_results,
         )
-        if not found_rank_markers and not items:
+        if not items:
             return _SearchBrowserResult(
-                state="no_rank_markers",
-                message="랭크 마커를 찾지 못했습니다.",
+                state="no_results",
+                message="검색 결과를 찾지 못했습니다. 로그인 상태와 검색 페이지 로딩을 확인해주세요.",
             )
 
         items = await self._apply_product_detail_prices(session, items)
@@ -231,9 +233,41 @@ class CoupangSearchService:
         query = urlencode({k: v for k, v in params.items() if v is not None}, encoding="utf-8", doseq=True)
         return f"{COUPANG_SEARCH_URL}?{query}"
 
-    async def _open_search_page(self, session: BrowserSession, search_url: str) -> None:
-        await session.tab.get(search_url)
-        await self._sleep_ms(3500)
+    async def _wait_for_search_page_ready(self, tab: BrowserTab, timeout_ms: int = 20000) -> None:
+        elapsed_ms = 0
+        step_ms = 500
+        while elapsed_ms < timeout_ms:
+            ready = await self._evaluate_json(
+                tab,
+                """
+                (() => {
+                  const parseJsonLdReady = () => {
+                    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                      try {
+                        const data = JSON.parse(script.textContent || '');
+                        const list = data?.mainEntity?.itemListElement || data?.itemListElement;
+                        if (Array.isArray(list) && list.length) {
+                          return true;
+                        }
+                      } catch (error) {
+                      }
+                    }
+                    return false;
+                  };
+                  const root = document.querySelector('#product-list');
+                  if (parseJsonLdReady()) return true;
+                  if (!root) return false;
+                  if (root.querySelector('li[class*="ProductUnit_productUnit"]')) return true;
+                  if (root.querySelector('[class*="RankMark_rank"]')) return true;
+                  if (root.querySelector('a[href*="/vp/products/"]')) return true;
+                  return false;
+                })()
+                """,
+            )
+            if ready:
+                return
+            await self._sleep_ms(step_ms)
+            elapsed_ms += step_ms
 
     async def _apply_product_detail_prices(
         self,
@@ -536,6 +570,46 @@ class CoupangSearchService:
 
                 return lowestPrice(Array.from(element.querySelectorAll('span, strong, div')));
               }};
+              const readReviewStat = (element) => {{
+                const ratingRoot = element.querySelector('[class*="ProductRating_productRating"]');
+                if (!ratingRoot) {{
+                  const legacyRating = element.querySelector(
+                    '[class*="rating"], [class*="Rating"], .rating-total > em, .star-rating, .rating-stars'
+                  );
+                  return normalizeText(legacyRating?.textContent || '') || '-';
+                }}
+                const reviewMatch = normalizeText(ratingRoot.textContent || '').match(/\(([0-9,]+)\)/);
+                if (reviewMatch) {{
+                  return reviewMatch[1];
+                }}
+                const score = ratingRoot.querySelector('[aria-label]')?.getAttribute('aria-label') || '';
+                return score || '-';
+              }};
+              const buildItemFromElement = (element) => {{
+                const linkElement = element.querySelector('a[href*="/vp/products/"]');
+                const productLink = linkElement?.href || '';
+                const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
+                const productId = productIdMatch ? productIdMatch[1] : '';
+                const titleElement = element.querySelector(
+                  '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name'
+                );
+                const productName = truncateText(
+                  normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
+                  30
+                );
+                if (!productId || !productName) {{
+                  return null;
+                }}
+                const imageElement = element.querySelector('img');
+                return {{
+                  product_id: productId,
+                  product_name: productName,
+                  price: readPrice(element) || '-',
+                  rating: readReviewStat(element),
+                  image_url: imageElement?.src || imageElement?.dataset?.src || '',
+                  product_link: productLink,
+                }};
+              }};
               const items = [];
               const productList = document.querySelector('#product-list');
               const productRoot = productList || document;
@@ -557,7 +631,7 @@ class CoupangSearchService:
                   break;
                 }}
 
-                const element = rankMarker.closest('li');
+                const element = rankMarker.closest('li[class*="ProductUnit_productUnit"], li');
                 if (!element || seenElements.has(element)) {{
                   continue;
                 }}
@@ -567,12 +641,33 @@ class CoupangSearchService:
               }}
 
               if (!candidates.length) {{
+                const productUnits = Array.from(
+                  productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"]')
+                );
+                for (const element of productUnits) {{
+                  if (candidates.length >= {max_results}) {{
+                    break;
+                  }}
+                  if (seenElements.has(element)) {{
+                    continue;
+                  }}
+                  seenElements.add(element);
+                  candidates.push(element);
+                }}
+              }}
+
+              if (!candidates.length) {{
                 const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
                 for (const productLink of productLinks) {{
                   if (candidates.length >= {max_results}) {{
                     break;
                   }}
-                  const element = productLink.closest('li');
+                  const element =
+                    productLink.closest('li') ||
+                    productLink.closest('[class*="ProductUnit"]') ||
+                    productLink.closest('article') ||
+                    productLink.closest('div[class*="product"]') ||
+                    productLink.parentElement;
                   if (!element || seenElements.has(element)) {{
                     continue;
                   }}
@@ -582,45 +677,101 @@ class CoupangSearchService:
               }}
 
               if (!candidates.length) {{
-                return {{foundRankMarkers: false, items: []}};
-              }}
-
+                const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
+                const seenProductIds = new Set();
+                for (const linkElement of productLinks) {{
+                  if (items.length >= {max_results}) {{
+                    break;
+                  }}
+                  const productLink = linkElement.href || '';
+                  const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
+                  const productId = productIdMatch ? productIdMatch[1] : '';
+                  if (!productId || seenProductIds.has(productId)) {{
+                    continue;
+                  }}
+                  const container =
+                    linkElement.closest('[class*="ProductUnit"]') ||
+                    linkElement.closest('li') ||
+                    linkElement.parentElement;
+                  const titleElement =
+                    container?.querySelector(
+                      '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name'
+                    ) || linkElement;
+                  const productName = truncateText(
+                    normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
+                    30
+                  );
+                  if (!productName) {{
+                    continue;
+                  }}
+                  seenProductIds.add(productId);
+                  const price = container ? readPrice(container) : '';
+                  const rating = container ? readReviewStat(container) : '-';
+                  const imageElement = container?.querySelector('img');
+                  const imageUrl = imageElement?.src || imageElement?.dataset?.src || '';
+                  items.push({{
+                    product_id: productId,
+                    product_name: productName,
+                    price: price || '-',
+                    rating: rating || '-',
+                    image_url: imageUrl,
+                    product_link: productLink,
+                  }});
+                }}
+                if (items.length) {{
+                  return {{foundRankMarkers: false, items}};
+                }}
+              }} else {{
               for (const element of candidates) {{
-                const linkElement = element.querySelector(
-                  'a[href*="/vp/products/"]'
-                );
-                const productLink = linkElement?.href || '';
-                const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
-                const productId = productIdMatch ? productIdMatch[1] : '';
-                const titleElement = element.querySelector(
-                  '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name, a'
-                );
-                const productName = truncateText(normalizeText(
-                  titleElement?.textContent || linkElement?.textContent || ''
-                ), 30);
-                const price = readPrice(element);
-                const ratingElement = element.querySelector(
-                  '[class*="rating"], [class*="Rating"], .rating-total > em, .star-rating, .rating-stars'
-                );
-                const rating = normalizeText(ratingElement?.textContent || '');
-                const imageElement = element.querySelector('img');
-                const imageUrl = imageElement?.src || imageElement?.dataset?.src || '';
-
-                if (!productId || !productName) {{
+                const item = buildItemFromElement(element);
+                if (!item) {{
                   continue;
                 }}
 
-                items.push({{
-                  product_id: productId,
-                  product_name: productName,
-                  price: price || '-',
-                  rating: rating || '-',
-                  image_url: imageUrl,
-                  product_link: productLink,
-                }});
+                items.push(item);
 
                 if (items.length >= {max_results}) {{
                   break;
+                }}
+              }}
+              }}
+              if (!items.length) {{
+                for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {{
+                  try {{
+                    const data = JSON.parse(script.textContent || '');
+                    const list = data?.mainEntity?.itemListElement || data?.itemListElement;
+                    if (!Array.isArray(list)) {{
+                      continue;
+                    }}
+                    const ranked = list
+                      .filter((entry) => entry?.item)
+                      .sort((left, right) => Number(left.position) - Number(right.position))
+                      .slice(0, {max_results});
+                    for (const entry of ranked) {{
+                      const item = entry.item || {{}};
+                      const productLink = String(item.url || '');
+                      const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
+                      const productId = productIdMatch ? productIdMatch[1] : '';
+                      const productName = truncateText(normalizeText(item.name || ''), 30);
+                      if (!productId || !productName) {{
+                        continue;
+                      }}
+                      const offerPrice = item?.offers?.price;
+                      const reviewCount = item?.aggregateRating?.reviewCount;
+                      items.push({{
+                        product_id: productId,
+                        product_name: productName,
+                        price: offerPrice !== undefined && offerPrice !== null ? String(offerPrice) : '-',
+                        rating: reviewCount !== undefined && reviewCount !== null ? String(reviewCount) : '-',
+                        image_url: String(item.image || ''),
+                        product_link: productLink,
+                      }});
+                    }}
+                    if (items.length) {{
+                      break;
+                    }}
+                  }} catch (error) {{
+                  }}
                 }}
               }}
               return {{foundRankMarkers: rankMarkers.length > 0, items}};
@@ -667,6 +818,9 @@ class CoupangSearchService:
         try:
             result = await evaluate(script)
         except Exception:
+            return None
+
+        if getattr(result, "__class__", None) and result.__class__.__name__ == "ExceptionDetails":
             return None
 
         return deserialize_evaluate_result(result)
