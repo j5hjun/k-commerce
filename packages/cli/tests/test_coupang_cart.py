@@ -84,3 +84,25 @@ def test_cart_quantity_update_request_requires_positive_quantity() -> None:
 
     assert result.success is False
     assert result.message == "수량은 1개 이상이어야 합니다."
+
+
+def test_cart_quantity_update_result_uses_applied_quantity_and_notice() -> None:
+    service = CoupangCartService(
+        provider=ProviderName.COUPANG,
+        store=None,  # type: ignore[arg-type]
+        browser=None,  # type: ignore[arg-type]
+    )
+
+    result = service._to_quantity_update_result(
+        CartQuantityUpdateRequest(vendor_item_id="95103608027", quantity=100_000_000),
+        _ListCartBrowserResult(
+            state=CoupangCartState.SUCCESS,
+            message="최대 구매 가능한 수량으로 변경되었습니다.",
+            applied_quantity=10,
+        ),
+    )
+
+    assert result.success is True
+    assert result.message == "쿠팡 장바구니 수량 수정 성공"
+    assert result.notice == "최대 구매 가능한 수량으로 변경되었습니다."
+    assert result.quantity == 10

@@ -12,7 +12,7 @@ def format_cart_list(items: tuple[CartItem, ...]) -> str:
     lines = [
         f"장바구니 상품 ({len(items)}건):",
         "",
-        f"  {'#':>3}  {_pad_display('상품명', PRODUCT_NAME_DISPLAY_WIDTH)}  {_pad_display('옵션', OPTION_TEXT_DISPLAY_WIDTH)}  {'수량':>4}  {'가격':>12}",
+        f"  {'No':>3}  {_pad_display('상품명', PRODUCT_NAME_DISPLAY_WIDTH)}  {_pad_display('옵션', OPTION_TEXT_DISPLAY_WIDTH)}  {'수량':>4}  {'가격':>12}",
     ]
     for item in items:
         product_name = item.product_name

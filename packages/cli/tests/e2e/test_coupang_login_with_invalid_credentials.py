@@ -44,9 +44,9 @@ async def test_login_coupang_command_fails_with_invalid_credentials(tmp_path: Pa
         "쿠팡 로그인을 시작합니다...",
         "자동 로그인을 시도합니다...",
         "[warn] 브라우저에서 직접 로그인해주세요...",
-        "[error] 쿠팡 로그인 실패",
     ]
-    assert result.output.splitlines()[-1] == "[error] 쿠팡 로그인 실패"
+    assert result.stderr.splitlines() == ["Error: 쿠팡 로그인 실패"]
+    assert result.output.splitlines()[-1] == "Error: 쿠팡 로그인 실패"
     launch.assert_awaited_once_with(provider.store.paths)
     open_login_entry.assert_awaited_once_with(session)
     fill_login_form.assert_awaited_once_with(session, "wrong@example.com", "wrong-password")

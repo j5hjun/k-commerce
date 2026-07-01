@@ -50,7 +50,6 @@ class CoupangCartBrowserSession:
         return await self._service._list_cart_with_session(
             self._session,
             reload_page=False,
-            announce=False,
         )
 
     async def update_cart_quantity(
@@ -105,14 +104,9 @@ class CoupangCartService(CoupangReviewBrowser):
         session: BrowserSession,
         *,
         reload_page: bool = True,
-        announce: bool = True,
     ) -> ListCartResult:
-        terminal = self.terminal
-        if announce and terminal is not None:
-            terminal.info("쿠팡 장바구니 목록을 조회합니다...")
-
         browser_result = await self._list_cart_items(session, reload_page=reload_page)
-        return self._emit_list_result(self._to_list_result(browser_result))
+        return self._to_list_result(browser_result)
 
     async def _update_cart_quantity_with_session(
         self,
@@ -121,21 +115,13 @@ class CoupangCartService(CoupangReviewBrowser):
     ) -> CartQuantityUpdateResult:
         validation_error = self._validate_quantity_update_request(request)
         if validation_error is not None:
-            return self._emit_quantity_update_result(
-                self._failure_quantity_update_result(request, validation_error)
-            )
-
-        terminal = self.terminal
-        if terminal is not None:
-            terminal.info("쿠팡 장바구니 수량 수정을 시작합니다...")
+            return self._failure_quantity_update_result(request, validation_error)
 
         browser_result = await self._update_cart_quantity_browser(
             session,
             request,
         )
-        return self._emit_quantity_update_result(
-            self._to_quantity_update_result(request, browser_result)
-        )
+        return self._to_quantity_update_result(request, browser_result)
 
     async def _list_cart_items(
         self,
@@ -421,9 +407,14 @@ class CoupangCartService(CoupangReviewBrowser):
                 if state == CoupangCartState.SUCCESS:
                     await self._sleep_ms(1500)
                     notice = await self._read_cart_notice(active_tab)
+                    applied_quantity = await self._read_cart_item_quantity(
+                        active_tab,
+                        request,
+                    )
                     return _ListCartBrowserResult(
                         state=CoupangCartState.SUCCESS,
                         message=notice,
+                        applied_quantity=applied_quantity,
                     )
                 if state == CoupangCartState.ITEM_NOT_FOUND:
                     return _ListCartBrowserResult(state=CoupangCartState.ITEM_NOT_FOUND)
@@ -464,6 +455,118 @@ class CoupangCartService(CoupangReviewBrowser):
         )
         notice = str(result or "").strip()
         return notice or None
+
+    async def _read_cart_item_quantity(
+        self,
+        tab: BrowserTab,
+        request: CartQuantityUpdateRequest,
+    ) -> int | None:
+        result = await self._evaluate_json(
+            tab,
+            f"""
+            (() => {{
+              const request = {{
+                productId: {request.product_id!r},
+                vendorItemId: {request.vendor_item_id!r},
+                itemId: {request.item_id!r},
+              }};
+              const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+              const readAttributes = (element) =>
+                Array.from(element?.attributes || [])
+                  .map((attribute) => `${{attribute.name}}=${{attribute.value}}`)
+                  .join(' ');
+              const findDataValue = (container, names) => {{
+                for (const name of names) {{
+                  const direct = container?.getAttribute(name);
+                  if (direct) return String(direct).trim();
+                  const child = container?.querySelector(`[${{name}}]`);
+                  const childValue = child?.getAttribute(name);
+                  if (childValue) return String(childValue).trim();
+                }}
+                return '';
+              }};
+              const findIdByPattern = (container, names) => {{
+                const raw = [
+                  readAttributes(container),
+                  ...Array.from(container?.querySelectorAll('a[href], input, button, [onclick], [data-product-id], [data-vendor-item-id], [data-item-id]') || [])
+                    .flatMap((element) => [
+                      readAttributes(element),
+                      element.getAttribute('href') || '',
+                      element.getAttribute('onclick') || '',
+                      element.value || '',
+                    ]),
+                ].filter(Boolean).join(' ');
+
+                for (const name of names) {{
+                  const match = raw.match(new RegExp(`${{name}}["'=:\\\\s-]+([0-9]{{4,}})`, 'i'));
+                  if (match) return match[1];
+                }}
+                return '';
+              }};
+              const findItemContainer = (element) => {{
+                let current = element;
+                for (let depth = 0; current && depth < 8; depth += 1) {{
+                  const text = normalizeText(current.innerText || '');
+                  if (
+                    current.querySelector?.('a[href*="/vp/products"][href*="vendorItemId"], a[href*="/products"][href*="vendorItemId"]') &&
+                    /[0-9,]+\\s*원/.test(text)
+                  ) {{
+                    return current;
+                  }}
+                  current = current.parentElement;
+                }}
+                return element.closest('li, tr, article, section, div') || element;
+              }};
+              const matchesRequestedItem = ({{ productId, vendorItemId, itemId }}) => {{
+                if (request.vendorItemId) {{
+                  return String(vendorItemId || '') === String(request.vendorItemId);
+                }}
+                if (request.itemId) {{
+                  return String(itemId || '') === String(request.itemId);
+                }}
+                if (request.productId) {{
+                  return String(productId || '') === String(request.productId);
+                }}
+                return false;
+              }};
+              const quantityInputs = Array.from(document.querySelectorAll('.cart-quantity-input, [data-component-id="quantity-input"] input'));
+              for (const input of quantityInputs) {{
+                const container = findItemContainer(input);
+                const link = (
+                  container.querySelector('a[href*="/vp/products"][href*="vendorItemId"][href*="sourceType=CART"], a[href*="/products"][href*="vendorItemId"][href*="sourceType=CART"]') ||
+                  container.querySelector('a[href*="/vp/products"][href*="vendorItemId"], a[href*="/products"][href*="vendorItemId"]')
+                );
+                const href = link?.href || '';
+                const vendorItemId = (
+                  findDataValue(container, ['data-vendor-item-id', 'data-vendoritemid', 'vendor-item-id', 'vendorItemId']) ||
+                  new URL(href || window.location.href).searchParams.get('vendorItemId') ||
+                  findIdByPattern(container, ['vendorItemId', 'vendor-item-id', 'vendorItem'])
+                );
+                const productId = (
+                  findDataValue(container, ['data-product-id', 'data-productid', 'product-id', 'productId']) ||
+                  (href || '').match(/\\/products\\/(\\d+)/)?.[1] ||
+                  findIdByPattern(container, ['productId', 'product-id'])
+                );
+                const itemId = (
+                  findDataValue(container, ['data-cart-item-id', 'data-item-id', 'cart-item-id', 'item-id', 'cartItemId']) ||
+                  findIdByPattern(container, ['cartItemId', 'cart-item-id', 'itemId', 'item-id'])
+                );
+
+                if (matchesRequestedItem({{ productId, vendorItemId, itemId }})) {{
+                  const value = Number(String(input.value || '').replace(/[^0-9]/g, ''));
+                  return Number.isFinite(value) && value > 0 ? value : null;
+                }}
+              }}
+              return null;
+            }})()
+            """,
+        )
+        if isinstance(result, bool):
+            return None
+        if isinstance(result, (int, float)):
+            parsed = int(result)
+            return parsed if parsed > 0 else None
+        return None
 
     async def _scrape_cart_items(self, tab: BrowserTab) -> tuple[_CartItemData, ...]:
         result = await self._evaluate_json(
@@ -712,17 +815,17 @@ class CoupangCartService(CoupangReviewBrowser):
         browser_result: _ListCartBrowserResult,
     ) -> CartQuantityUpdateResult:
         if browser_result.state == CoupangCartState.SUCCESS:
-            message = "쿠팡 장바구니 수량 수정 성공"
-            if browser_result.message:
-                message = f"{message}\n{browser_result.message}"
+            applied_quantity = browser_result.applied_quantity
+            quantity = applied_quantity if applied_quantity is not None else request.quantity
             return CartQuantityUpdateResult(
                 provider=self.provider.value,
                 success=True,
-                message=message,
-                quantity=request.quantity,
+                message="쿠팡 장바구니 수량 수정 성공",
+                quantity=quantity,
                 product_id=request.product_id,
                 vendor_item_id=request.vendor_item_id,
                 item_id=request.item_id,
+                notice=browser_result.message or "",
             )
 
         message = cart_state_message(
@@ -745,24 +848,3 @@ class CoupangCartService(CoupangReviewBrowser):
             vendor_item_id=request.vendor_item_id,
             item_id=request.item_id,
         )
-
-    def _emit_list_result(
-        self,
-        result: ListCartResult,
-    ) -> ListCartResult:
-        terminal = self.terminal
-        if not result.success and terminal is not None:
-            terminal.abort(result.message)
-        return result
-
-    def _emit_quantity_update_result(
-        self,
-        result: CartQuantityUpdateResult,
-    ) -> CartQuantityUpdateResult:
-        terminal = self.terminal
-        if terminal is not None:
-            if result.success:
-                terminal.success(result.message)
-        if not result.success and terminal is not None:
-            terminal.abort(result.message)
-        return result

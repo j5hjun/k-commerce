@@ -73,6 +73,20 @@ Delete a review interactively:
 uv run k-commerce review delete coupang
 ```
 
+List cart products and browse item details:
+
+```bash
+uv run k-commerce cart coupang
+```
+
+The `--list` flag runs the same interactive browse flow.
+
+Update a cart product quantity interactively:
+
+```bash
+uv run k-commerce cart coupang --quantity
+```
+
 Collect visible-year Coupang orders except the `최근 6개월` tab and update `orders.json` with a
 diff summary:
 
@@ -122,7 +136,7 @@ To isolate credentials and session data under a custom directory:
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status, logout, review, order list, and search commands:
+The same `--root-dir` option also applies to status, logout, review, cart, order list, and search commands:
 
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
@@ -133,6 +147,8 @@ uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --list --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --quantity --root-dir /tmp/test-k-commerce
 uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce search coupang KEYWORD --root-dir /tmp/test-k-commerce
 ```
@@ -256,20 +272,14 @@ message instead of opening a login flow automatically.
 
 The `cart` command reuses a saved Coupang session.
 
-### Interactive cart flow
-
-```bash
-uv run k-commerce cart coupang
-```
-
-This currently loads and prints the cart product list. Quantity update and delete actions will be
-added to the same interactive flow.
-
-### Cart list only
+### Cart list browse
 
 ```bash
 uv run k-commerce cart coupang --list
 ```
+
+This loads the cart product list, lets you pick an item with arrow keys, then shows full item
+details. You can go back to the list or exit. Running without flags uses the same browse flow.
 
 The list includes product name, quantity, price, and available identifiers such as `vendorItemId`.
 
@@ -280,7 +290,9 @@ uv run k-commerce cart coupang --quantity
 ```
 
 This loads the cart product list, lets you pick an item with arrow keys, then prompts for the new
-quantity before applying it to the Coupang cart page.
+quantity before applying it to the Coupang cart page. You can update multiple items in one session.
+
+`--list` and `--quantity` cannot be used together.
 
 ## Login Status
 

@@ -40,6 +40,7 @@ class CartQuantityUpdateResult:
     product_id: str = ""
     vendor_item_id: str = ""
     item_id: str = ""
+    notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,3 +61,4 @@ class _ListCartBrowserResult:
     state: str
     items: tuple[_CartItemData, ...] = ()
     message: str | None = None
+    applied_quantity: int | None = None
