@@ -106,8 +106,54 @@ class CoupangReviewBrowser:
 
         return deserialize_evaluate_result(result)
 
+    async def _read_review_page_state(self, tab: BrowserTab) -> dict[str, object]:
+        result = await self._evaluate_json(
+            tab,
+            """
+            (() => ({
+              url: window.location.href,
+              body_text: document.body?.innerText || ''
+            }))()
+            """,
+        )
+        if not isinstance(result, dict):
+            return {
+                "read_failed": True,
+                "url": "",
+                "body_text": "",
+            }
+
+        return {
+            "read_failed": False,
+            "url": str(result.get("url", "")),
+            "body_text": str(result.get("body_text", "")),
+        }
+
+    async def _is_review_login_screen(self, tab: BrowserTab) -> bool:
+        """탭 속성이 아닌 실제 DOM 기준으로 로그인 화면인지 확인합니다."""
+        result = await self._evaluate_json(
+            tab,
+            """
+            (() => {
+              const url = window.location.href;
+              const bodyText = document.body?.innerText || '';
+              if (url.includes('login.coupang.com') || url.includes('login/login.pang')) {
+                return true;
+              }
+              if (bodyText.includes('로그인이 필요')) {
+                return true;
+              }
+              const passwordInput = document.querySelector(
+                'input[type="password"], #login-password, input[name="password"]'
+              );
+              return passwordInput !== null && url.includes('coupang.com');
+            })()
+            """,
+        )
+        return result is True
+
     async def _scroll_page(self, tab: BrowserTab) -> None:
-        """현재 페이지를 맨 아래로 스크롤합니다."""
+        """현재 페이지와 내부 스크롤 영역을 아래로 내립니다."""
         evaluate = getattr(tab, "evaluate", None)
         if not callable(evaluate):
             return
@@ -116,10 +162,41 @@ class CoupangReviewBrowser:
             await evaluate(
                 """
                 (() => {
+                  window.scrollBy(0, window.innerHeight);
                   window.scrollTo(0, document.documentElement.scrollHeight);
+                  const containers = document.querySelectorAll(
+                    '.my-review__wrote, [class*="wrote"], [class*="review-list"], main, [class*="scroll"]'
+                  );
+                  for (const container of containers) {
+                    if (container.scrollHeight > container.clientHeight + 20) {
+                      container.scrollTop = container.scrollHeight;
+                    }
+                  }
                 })()
                 """
             )
+
+    async def _is_page_scrolled_to_bottom(self, tab: BrowserTab) -> bool:
+        """윈도우와 내부 스크롤 영역이 하단에 도달했는지 확인합니다."""
+        result = await self._evaluate_json(
+            tab,
+            """
+            (() => {
+              const nearBottom = (element, threshold = 80) =>
+                element.scrollTop + element.clientHeight >= element.scrollHeight - threshold;
+              const windowBottom =
+                window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+              const containers = Array.from(
+                document.querySelectorAll(
+                  '.my-review__wrote, [class*="wrote"], [class*="review-list"], main'
+                )
+              ).filter((element) => element.scrollHeight > element.clientHeight + 20);
+              if (containers.length === 0) return windowBottom;
+              return containers.every((element) => nearBottom(element));
+            })()
+            """,
+        )
+        return result is True
 
     async def _sleep_ms(self, timeout_ms: int) -> None:
         """밀리초 단위 대기 시간을 asyncio sleep으로 처리합니다."""
@@ -138,7 +215,11 @@ class CoupangReviewBrowser:
             if isinstance(tabs, list):
                 candidates.extend(reversed(tabs))
 
-            main_tab = getattr(runtime, "main_tab", None)
+            main_tab = None
+            try:
+                main_tab = runtime.main_tab  # type: ignore[attr-defined]
+            except (StopIteration, RuntimeError):
+                main_tab = None
             if main_tab is not None:
                 candidates.append(main_tab)
         candidates.append(session.tab)

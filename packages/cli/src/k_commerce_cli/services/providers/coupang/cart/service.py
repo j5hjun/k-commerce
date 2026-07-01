@@ -763,8 +763,6 @@ class CoupangCartService(CoupangReviewBrowser):
         if terminal is not None:
             if result.success:
                 terminal.success(result.message)
-            else:
-                terminal.echo(result.message)
         if not result.success and terminal is not None:
             terminal.abort(result.message)
         return result

@@ -1,6 +1,4 @@
-"""쿠팡 리뷰 조회/업로드/수정 서비스 진입점입니다."""
-
-from __future__ import annotations
+from urllib.parse import quote
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, Store
@@ -30,11 +28,15 @@ from .type import (
 )
 from .upload import CoupangReviewUpload
 from .utils import (
+    COUPANG_REVIEW_REGISTER_URL,
     COUPANG_WROTE_REVIEWS_URL,
     build_review_modify_url,
     format_editable_review_list,
     format_reviewable_list,
 )
+
+COUPANG_REVIEWABLE_URL = "https://my.coupang.com/productreview/reviewable"
+COUPANG_REVIEW_LOGIN_URL = "https://login.coupang.com/login/login.pang?rtnUrl={return_url}"
 
 
 class CoupangReviewService(
@@ -55,40 +57,84 @@ class CoupangReviewService(
         self.browser = browser
         self._browser_session: BrowserSession | None = None
 
-    async def list_reviewable(
-        self,
-        *,
-        print_result: bool = True,
-    ) -> ListReviewableResult:
+    async def list_reviewable(self) -> ListReviewableResult:
         """저장된 세션으로 쿠팡 리뷰 작성 가능 상품 목록을 조회합니다."""
-        terminal = self.terminal
-        if terminal is not None:
-            terminal.info("쿠팡 리뷰 작성 가능 목록을 조회합니다...")
-
-        if not self.store.has_session():
-            return self._emit_list_result(
-                ListReviewableResult(
-                    provider=self.provider,
-                    success=False,
-                    message=REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
-                    items=(),
-                ),
-                print_result=print_result,
-            )
-
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._list_reviewable_items(self._browser_session)
-            return self._emit_list_result(
-                self._to_list_result(browser_result),
-                print_result=print_result,
-            )
+            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_REVIEWABLE_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    browser_result = await self._list_reviewable_items(self._browser_session)
+                else:
+                    browser_result = _ListReviewableBrowserResult(state=login_state)
+            return self._to_list_result(browser_result)
         finally:
             await self._close_browser_session()
 
     async def _open_wrote_reviews(self, session: BrowserSession) -> None:
         await session.tab.get(COUPANG_WROTE_REVIEWS_URL)
         await self._sleep_ms(3000)
+
+    async def _open_login_and_wait_for_review(
+        self,
+        session: BrowserSession,
+        return_url: str,
+        *,
+        poll_count: int = 300,
+    ) -> str:
+        terminal = self.terminal
+        if terminal is not None:
+            terminal.warn("쿠팡 로그인이 필요합니다. 브라우저에서 로그인해주세요...")
+
+        active_tab = self._active_tab(session)
+        if not await self._is_review_login_screen(active_tab):
+            try:
+                await active_tab.get(
+                    COUPANG_REVIEW_LOGIN_URL.format(return_url=quote(return_url, safe=""))
+                )
+            except Exception:
+                return CoupangReviewState.BROWSER_CLOSED
+            await self._sleep_ms(1000)
+
+        read_failures = 0
+        for _ in range(poll_count):
+            active_tab = self._active_tab(session)
+            page_state = await self._read_review_page_state(active_tab)
+            if page_state["read_failed"]:
+                read_failures += 1
+                if read_failures >= 3:
+                    return CoupangReviewState.BROWSER_CLOSED
+                await self._sleep_ms(1000)
+                continue
+
+            read_failures = 0
+            page_url = str(page_state["url"])
+            body_text = str(page_state["body_text"])
+            if (
+                not body_text.strip()
+                or "login.coupang.com" in page_url
+                or "로그인이 필요" in body_text
+            ):
+                await self._sleep_ms(1000)
+                continue
+
+            if await self._is_logged_in(active_tab):
+                try:
+                    await self.browser.save_session(session, self.store.cookies_file)
+                    self.store.write_session_metadata({"login_method": "manual"})
+                except Exception:
+                    return CoupangReviewState.BROWSER_CLOSED
+                if terminal is not None:
+                    terminal.info("쿠팡 로그인 상태입니다. 리뷰 작업을 계속합니다...")
+                return CoupangReviewState.SUCCESS
+
+            await self._sleep_ms(1000)
+
+        return CoupangReviewState.NOT_LOGGED_IN
 
     async def _list_editable_review_items(
         self,
@@ -98,9 +144,15 @@ class CoupangReviewService(
         stable_scroll_rounds: int = 3,
         min_scroll_attempts: int = 3,
     ) -> _ListReviewableBrowserResult:
-        await self._open_wrote_reviews(session)
+        try:
+            await self._open_wrote_reviews(session)
+        except Exception:
+            return _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
 
         active_tab = self._active_tab(session)
+        page_state = await self._read_review_page_state(active_tab)
+        if page_state["read_failed"]:
+            return _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
         if not await self._is_logged_in(active_tab):
             return _ListReviewableBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
 
@@ -110,11 +162,16 @@ class CoupangReviewService(
 
         for attempt in range(max_scroll_attempts):
             items = await self._scrape_editable_review_items(active_tab)
+            if items is None:
+                return _ListReviewableBrowserResult(
+                    state=CoupangReviewState.BROWSER_CLOSED
+                )
             count = len(items)
             if count == previous_count and attempt >= min_scroll_attempts:
-                stable_rounds += 1
-                if stable_rounds >= stable_scroll_rounds:
-                    break
+                if await self._is_page_scrolled_to_bottom(active_tab):
+                    stable_rounds += 1
+                    if stable_rounds >= stable_scroll_rounds:
+                        break
             else:
                 stable_rounds = 0
                 previous_count = count
@@ -130,7 +187,7 @@ class CoupangReviewService(
     async def _scrape_editable_review_items(
         self,
         tab: BrowserTab,
-    ) -> tuple[_EditableReviewItemData, ...]:
+    ) -> tuple[_EditableReviewItemData, ...] | None:
         result = await self._evaluate_json(
             tab,
             """
@@ -177,39 +234,7 @@ class CoupangReviewService(
                 }
                 return '';
               };
-              const candidates = Array.from(
-                document.querySelectorAll(
-                  '.js_reviewWroteListModifyBtn, a, button, [role="button"], [onclick], [data-reviewid], [data-review-id], [data-product-review-id], [data-review-no], [data-review-seq]'
-                )
-              ).filter((element) => {
-                const href = element.href || element.getAttribute('href') || '';
-                const label = normalizeText(element.textContent || element.getAttribute('aria-label') || '');
-                return (
-                  href.includes('/productreview/wroteReviews/') ||
-                  href.includes('/modify') ||
-                  label.includes('수정') ||
-                  element.classList.contains('js_reviewWroteListModifyBtn') ||
-                  element.hasAttribute('data-reviewid') ||
-                  element.hasAttribute('data-review-id') ||
-                  element.hasAttribute('data-product-review-id') ||
-                  element.hasAttribute('data-review-no') ||
-                  element.hasAttribute('data-review-seq')
-                );
-              });
-              const items = [];
-              const seen = new Set();
-
-              for (const element of candidates) {
-                const href = element.href || element.getAttribute('href') || '';
-                const reviewId = findReviewId(element, href);
-                if (!reviewId || seen.has(reviewId)) continue;
-                seen.add(reviewId);
-
-                const container = (
-                  element.closest('li.my-review__wrote__list, li, article, section') ||
-                  element.closest('[data-product-review-id], [data-reviewid], [data-review-id], [data-review-no], [data-review-seq]') ||
-                  element.parentElement
-                );
+              const buildItem = (container, element, href, reviewId) => {
                 const titleElement = (
                   container?.querySelector('.js_reviewWroteListProductTitle') ||
                   container?.querySelector('.my-review__wrote__item_name') ||
@@ -239,8 +264,7 @@ class CoupangReviewService(
                   'data-completed-order-vendor-item-id',
                   'completed-order-vendor-item-id',
                 ]);
-
-                items.push({
+                return {
                   review_id: reviewId,
                   product_id: productId.trim(),
                   order_id: orderId.trim(),
@@ -248,7 +272,68 @@ class CoupangReviewService(
                   rating,
                   review_text: reviewText,
                   modify_url: href || modifyUrlFromReviewId(reviewId),
-                });
+                };
+              };
+              const items = [];
+              const seen = new Set();
+              const listContainers = Array.from(
+                document.querySelectorAll(
+                  'li.my-review__wrote__list, .my-review__wrote__list > li, li[class*="my-review__wrote"]'
+                )
+              );
+
+              for (const container of listContainers) {
+                const modifyElement =
+                  container.querySelector(
+                    '.js_reviewWroteListModifyBtn, a[href*="/wroteReviews/"][href*="/modify"]'
+                  );
+                const deleteElement =
+                  container.querySelector(
+                    '.js_reviewWroteListDeleteBtn, [data-reviewid], [data-review-id]'
+                  );
+                const element = modifyElement || deleteElement || container;
+                const href = element.href || element.getAttribute('href') || '';
+                const reviewId = findReviewId(element, href);
+                if (!reviewId || seen.has(reviewId)) continue;
+                seen.add(reviewId);
+                items.push(buildItem(container, element, href, reviewId));
+              }
+
+              if (items.length > 0) return items;
+
+              const candidates = Array.from(
+                document.querySelectorAll(
+                  '.js_reviewWroteListModifyBtn, .js_reviewWroteListDeleteBtn, a, button, [role="button"], [onclick], [data-reviewid], [data-review-id], [data-product-review-id], [data-review-no], [data-review-seq]'
+                )
+              ).filter((element) => {
+                const href = element.href || element.getAttribute('href') || '';
+                const label = normalizeText(element.textContent || element.getAttribute('aria-label') || '');
+                return (
+                  href.includes('/productreview/wroteReviews/') ||
+                  href.includes('/modify') ||
+                  label.includes('수정') ||
+                  label.includes('삭제') ||
+                  element.classList.contains('js_reviewWroteListModifyBtn') ||
+                  element.classList.contains('js_reviewWroteListDeleteBtn') ||
+                  element.hasAttribute('data-reviewid') ||
+                  element.hasAttribute('data-review-id') ||
+                  element.hasAttribute('data-product-review-id') ||
+                  element.hasAttribute('data-review-no') ||
+                  element.hasAttribute('data-review-seq')
+                );
+              });
+              for (const element of candidates) {
+                const href = element.href || element.getAttribute('href') || '';
+                const reviewId = findReviewId(element, href);
+                if (!reviewId || seen.has(reviewId)) continue;
+                seen.add(reviewId);
+
+                const container = (
+                  element.closest('li.my-review__wrote__list, li, article, section') ||
+                  element.closest('[data-product-review-id], [data-reviewid], [data-review-id], [data-review-no], [data-review-seq]') ||
+                  element.parentElement
+                );
+                items.push(buildItem(container, element, href, reviewId));
               }
 
               return items;
@@ -256,7 +341,7 @@ class CoupangReviewService(
             """,
         )
         if not isinstance(result, list):
-            return ()
+            return None
 
         items: list[_EditableReviewItemData] = []
         for entry in result:
@@ -280,34 +365,21 @@ class CoupangReviewService(
 
         return tuple(items)
 
-    async def list_editable(
-        self,
-        *,
-        print_result: bool = True,
-    ) -> ListEditableReviewsResult:
+    async def list_editable(self) -> ListEditableReviewsResult:
         """저장된 세션으로 쿠팡 작성 리뷰 목록을 조회합니다."""
-        terminal = self.terminal
-        if terminal is not None:
-            terminal.info("쿠팡 리뷰 수정 가능 목록을 조회합니다...")
-
-        if not self.store.has_session():
-            return self._emit_editable_list_result(
-                ListEditableReviewsResult(
-                    provider=self.provider,
-                    success=False,
-                    message=REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
-                    items=(),
-                ),
-                print_result=print_result,
-            )
-
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._list_editable_review_items(self._browser_session)
-            return self._emit_editable_list_result(
-                self._to_editable_list_result(browser_result),
-                print_result=print_result,
-            )
+            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_WROTE_REVIEWS_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    browser_result = await self._list_editable_review_items(self._browser_session)
+                else:
+                    browser_result = _ListReviewableBrowserResult(state=login_state)
+            return self._to_editable_list_result(browser_result)
         finally:
             await self._close_browser_session()
 
@@ -316,14 +388,6 @@ class CoupangReviewService(
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 리뷰 업로드를 시작합니다...")
-
-        if not self.store.has_session():
-            return self._emit_upload_result(
-                self._failure_result(
-                    request,
-                    REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
-                )
-            )
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
@@ -335,6 +399,22 @@ class CoupangReviewService(
                 rating=request.rating,
                 text=request.text,
             )
+            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    request.review_url or COUPANG_REVIEW_REGISTER_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    browser_result = await self._upload_review_browser(
+                        self._browser_session,
+                        review_url=request.review_url,
+                        order_id=request.order_id,
+                        product_id=request.product_id,
+                        rating=request.rating,
+                        text=request.text,
+                    )
+                else:
+                    browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_upload_result(self._to_result(request, browser_result))
         finally:
             await self._close_browser_session()
@@ -351,14 +431,6 @@ class CoupangReviewService(
         if terminal is not None:
             terminal.info("쿠팡 리뷰 수정을 시작합니다...")
 
-        if not self.store.has_session():
-            return self._emit_edit_result(
-                self._failure_edit_result(
-                    request,
-                    REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
-                )
-            )
-
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._edit_review_browser(
@@ -369,6 +441,22 @@ class CoupangReviewService(
                 rating=request.rating,
                 text=request.text,
             )
+            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    build_review_modify_url(review_id=request.review_id),
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    browser_result = await self._edit_review_browser(
+                        self._browser_session,
+                        order_id=request.order_id,
+                        product_id=request.product_id,
+                        review_id=request.review_id,
+                        rating=request.rating,
+                        text=request.text,
+                    )
+                else:
+                    browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_edit_result(self._to_edit_result(request, browser_result))
         finally:
             await self._close_browser_session()
@@ -385,20 +473,24 @@ class CoupangReviewService(
         if terminal is not None:
             terminal.info("쿠팡 리뷰 삭제를 시작합니다...")
 
-        if not self.store.has_session():
-            return self._emit_delete_result(
-                self._failure_delete_result(
-                    request,
-                    REVIEW_STATE_MESSAGES[CoupangReviewState.NOT_LOGGED_IN],
-                )
-            )
-
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._delete_review_browser(
                 self._browser_session,
                 review_id=request.review_id,
             )
+            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_WROTE_REVIEWS_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    browser_result = await self._delete_review_browser(
+                        self._browser_session,
+                        review_id=request.review_id,
+                    )
+                else:
+                    browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_delete_result(self._to_delete_result(request, browser_result))
         finally:
             await self._close_browser_session()
@@ -578,54 +670,31 @@ class CoupangReviewService(
             order_id=request.order_id,
         )
 
-    def _emit_list_result(
-        self,
-        result: ListReviewableResult,
-        *,
-        print_result: bool = True,
-    ) -> ListReviewableResult:
-        terminal = self.terminal
-        if print_result and terminal is not None:
-            terminal.echo(result.message)
-        if not result.success and terminal is not None:
-            terminal.abort(result.message)
-        return result
-
     def _emit_upload_result(self, result: ReviewUploadResult) -> ReviewUploadResult:
         terminal = self.terminal
         if terminal is not None:
-            terminal.echo(result.message)
+            if result.success:
+                terminal.success(result.message)
         if not result.success and terminal is not None:
-            terminal.abort(result.message)
-        return result
-
-    def _emit_editable_list_result(
-        self,
-        result: ListEditableReviewsResult,
-        *,
-        print_result: bool = True,
-    ) -> ListEditableReviewsResult:
-        terminal = self.terminal
-        if print_result and terminal is not None:
-            terminal.echo(result.message)
-        if not result.success and terminal is not None:
-            terminal.abort(result.message)
+            terminal.error(result.message)
         return result
 
     def _emit_edit_result(self, result: ReviewEditResult) -> ReviewEditResult:
         terminal = self.terminal
         if terminal is not None:
-            terminal.echo(result.message)
+            if result.success:
+                terminal.success(result.message)
         if not result.success and terminal is not None:
-            terminal.abort(result.message)
+            terminal.error(result.message)
         return result
 
     def _emit_delete_result(self, result: ReviewDeleteResult) -> ReviewDeleteResult:
         terminal = self.terminal
         if terminal is not None:
-            terminal.echo(result.message)
+            if result.success:
+                terminal.success(result.message)
         if not result.success and terminal is not None:
-            terminal.abort(result.message)
+            terminal.error(result.message)
         return result
 
     def _validate_edit_request(self, request: ReviewEditRequest) -> str | None:
@@ -633,8 +702,6 @@ class CoupangReviewService(
             return "리뷰 ID는 비어 있을 수 없습니다."
         if not 1 <= request.rating <= 5:
             return "별점은 1점부터 5점 사이여야 합니다."
-        if not request.text.strip():
-            return "리뷰 본문은 비어 있을 수 없습니다."
         return None
 
     def _validate_delete_request(self, request: ReviewDeleteRequest) -> str | None:

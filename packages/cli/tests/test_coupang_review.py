@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from itertools import repeat
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,11 +20,13 @@ from k_commerce_cli.services.providers.coupang.review.state import CoupangReview
 from k_commerce_cli.services.providers.coupang.review.utils import (
     build_review_modify_url,
     build_review_register_url,
+    format_deletable_review_list,
     format_reviewable_list,
 )
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.services.types import (
+    EditableReviewItem,
     ProviderName,
     ReviewDeleteRequest,
     ReviewEditRequest,
@@ -61,6 +64,7 @@ def test_list_providers_includes_builtin_coupang_provider() -> None:
 class _BrowserSpy:
     def __init__(self) -> None:
         self.launch = AsyncMock()
+        self.save_session = AsyncMock()
         self.close = AsyncMock()
         self.select = AsyncMock(return_value=None)
 
@@ -75,6 +79,16 @@ class _EvaluateTab:
         if not self._payloads:
             return []
         return self._payloads.pop(0)
+
+
+class _ClosingTab:
+    async def get(self, _url: str) -> None:
+        raise RuntimeError("browser closed")
+
+
+class _Session:
+    def __init__(self, tab: object) -> None:
+        self.tab = tab
 
 
 def _make_review_service(
@@ -177,6 +191,29 @@ def test_format_reviewable_list_truncates_long_product_name() -> None:
     assert "가" * 60 not in output
 
 
+def test_format_deletable_review_list_uses_delete_label() -> None:
+    items = (
+        EditableReviewItem(
+            index=2,
+            review_id="934113278",
+            product_id="8825977723",
+            order_id="22404668406",
+            product_name="포스트 아몬드후레이크",
+            rating=5,
+            review_text="예전 리뷰",
+            modify_url="https://my.coupang.com/productreview/wroteReviews/934113278/modify?page=1",
+        ),
+    )
+
+    output = format_deletable_review_list(items)
+
+    assert "리뷰 삭제 가능 (1건):" in output
+    assert "  2  " in output
+    assert "No" in output
+    assert "리뷰ID" not in output
+    assert "934113278" not in output
+
+
 def test_deserialize_evaluate_result_converts_cdp_object() -> None:
     value = {
         "type": "object",
@@ -190,6 +227,74 @@ def test_deserialize_evaluate_result_converts_cdp_object() -> None:
         "product_id": "8825977723",
         "completed_order_vendor_item_id": "22404668406",
     }
+
+
+@pytest.mark.anyio
+async def test_active_tab_falls_back_when_browser_has_no_page_targets() -> None:
+    class _RuntimeWithoutPages:
+        tabs: list[object] = []
+
+        @property
+        def main_tab(self) -> object:
+            raise StopIteration
+
+    service = _make_review_service()
+    tab = _EvaluateTab([])
+    session = _Session(tab)
+    session.browser = _RuntimeWithoutPages()  # type: ignore[attr-defined]
+
+    assert service._active_tab(session) is tab
+
+
+@pytest.mark.anyio
+async def test_is_review_login_screen_uses_dom_not_tab_url_attribute() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+
+    assert await service._is_review_login_screen(tab) is True
+    assert "login.coupang.com" in tab.evaluate_calls[0]
+    assert "로그인이 필요" in tab.evaluate_calls[0]
+
+
+@pytest.mark.anyio
+async def test_open_login_and_wait_skips_login_navigation_when_already_on_login_screen() -> None:
+    class _LoginScreenTab:
+        url = "https://my.coupang.com/productreview/reviewable"
+
+        def __init__(self) -> None:
+            self.get_calls: list[str] = []
+
+        async def get(self, url: str) -> None:
+            self.get_calls.append(url)
+
+        async def evaluate(self, script: str):
+            if "passwordInput" in script:
+                return True
+            if "window.location.href" in script and "body_text" in script:
+                return {
+                    "url": "https://login.coupang.com/login/login.pang",
+                    "body_text": "로그인",
+                }
+            if "login.coupang.com" in script and "has_login_link" in script:
+                return {
+                    "url": "https://login.coupang.com/login/login.pang",
+                    "has_login_link": False,
+                    "has_mycoupang_link": False,
+                }
+            return False
+
+    service = _make_review_service()
+    tab = _LoginScreenTab()
+    session = _Session(tab)
+
+    state = await service._open_login_and_wait_for_review(
+        session,
+        "https://my.coupang.com/productreview/reviewable",
+        poll_count=1,
+    )
+
+    assert tab.get_calls == []
+    assert state == CoupangReviewState.NOT_LOGGED_IN
 
 
 @pytest.mark.anyio
@@ -325,7 +430,7 @@ async def test_scrape_editable_review_items_parses_modify_links() -> None:
     assert items[0].rating == 5
     script = tab.evaluate_calls[0]
     assert ".js_reviewWroteListModifyBtn" in script
-    assert "data-reviewid" in script
+    assert "js_reviewWroteListDeleteBtn" in script
     assert "li.my-review__wrote__list" in script
     assert ".wrote-list-rating-active" in script
 
@@ -358,6 +463,57 @@ async def test_scrape_editable_review_items_builds_modify_url_from_review_id() -
 
 
 @pytest.mark.anyio
+async def test_is_page_scrolled_to_bottom_returns_true_when_evaluate_succeeds() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+
+    assert await service._is_page_scrolled_to_bottom(tab) is True
+
+
+@pytest.mark.anyio
+async def test_list_editable_waits_for_bottom_before_stopping_scroll() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+    session = _Session(tab)
+    service._open_wrote_reviews = AsyncMock()
+    service._is_logged_in = AsyncMock(return_value=True)
+    service._read_review_page_state = AsyncMock(return_value={"read_failed": False})
+    service._scroll_page = AsyncMock()
+    service._is_page_scrolled_to_bottom = AsyncMock(side_effect=[False, False, True, True, True])
+    two_items = (
+        _EditableReviewItemData(
+            review_id="1",
+            product_id="p1",
+            order_id="o1",
+            product_name="상품1",
+            rating=5,
+            review_text="",
+            modify_url="https://my.coupang.com/productreview/wroteReviews/1/modify?page=1",
+        ),
+        _EditableReviewItemData(
+            review_id="2",
+            product_id="p2",
+            order_id="o2",
+            product_name="상품2",
+            rating=4,
+            review_text="",
+            modify_url="https://my.coupang.com/productreview/wroteReviews/2/modify?page=1",
+        ),
+    )
+    one_item = (two_items[0],)
+    service._scrape_editable_review_items = AsyncMock(
+        side_effect=[one_item, one_item, two_items, *repeat(two_items, 10)]
+    )
+
+    result = await service._list_editable_review_items(session)
+
+    assert result.state == CoupangReviewState.SUCCESS
+    assert len(result.items) == 2
+    assert service._scroll_page.await_count >= 3
+    assert service._is_page_scrolled_to_bottom.await_count >= 3
+
+
+@pytest.mark.anyio
 async def test_submit_review_form_supports_coupang_modify_selectors() -> None:
     service = _make_review_service()
     tab = _EvaluateTab([True])
@@ -370,6 +526,20 @@ async def test_submit_review_form_supports_coupang_modify_selectors() -> None:
     assert ".js_reviewModifyTextArea" in script
     assert ".js_reviewModifySubmitBtn" in script
     assert "label.includes('완료')" in script
+    assert ".js_reviewWritableStarBtn" in script
+
+
+@pytest.mark.anyio
+async def test_submit_review_form_allows_empty_review_text() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+
+    submitted = await service._submit_review_form(tab, 3, "")
+
+    assert submitted is True
+    script = tab.evaluate_calls[0]
+    assert "if (!textarea && text) return false;" in script
+    assert "textarea.value = text;" in script
 
 
 @pytest.mark.anyio
@@ -409,6 +579,39 @@ async def test_read_review_delete_confirmation_accepts_success_modal() -> None:
 
 
 @pytest.mark.anyio
+async def test_click_delete_review_button_finds_delete_via_modify_container() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+
+    clicked = await service._click_delete_review_button(tab, "934113278")
+
+    assert clicked is True
+    script = tab.evaluate_calls[0]
+    assert "js_reviewWroteListModifyBtn" in script
+    assert "/wroteReviews/${reviewId}/" in script
+
+
+@pytest.mark.anyio
+async def test_delete_review_browser_scrolls_until_delete_button_found() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+    session = _Session(tab)
+    service._open_wrote_reviews = AsyncMock()
+    service._is_logged_in = AsyncMock(return_value=True)
+    service._read_review_page_state = AsyncMock(return_value={"read_failed": False})
+    service._click_delete_review_button = AsyncMock(side_effect=[False, False, True])
+    service._scroll_page = AsyncMock()
+    service._confirm_delete_review = AsyncMock(return_value=True)
+    service._read_review_delete_confirmation = AsyncMock(return_value=CoupangReviewState.SUCCESS)
+
+    result = await service._delete_review_browser(session, review_id="934113278")
+
+    assert result.state == CoupangReviewState.SUCCESS
+    assert service._click_delete_review_button.await_count == 3
+    assert service._scroll_page.await_count == 2
+
+
+@pytest.mark.anyio
 async def test_list_editable_succeeds_with_saved_session(tmp_path: Path) -> None:
     browser = _BrowserSpy()
     browser.launch.return_value = object()
@@ -441,6 +644,49 @@ async def test_list_editable_succeeds_with_saved_session(tmp_path: Path) -> None
     assert "리뷰 수정 가능 (1건):" in result.message
     assert "★★★★★" in result.message
     assert "예전 리뷰" in result.message
+
+
+@pytest.mark.anyio
+async def test_list_reviewable_waits_for_bottom_before_stopping_scroll() -> None:
+    service = _make_review_service()
+    tab = _EvaluateTab([True])
+    session = _Session(tab)
+    service._open_reviewable_list = AsyncMock()
+    service._is_logged_in = AsyncMock(return_value=True)
+    service._read_review_page_state = AsyncMock(
+        return_value={"read_failed": False, "url": "https://my.coupang.com/productreview/reviewable"}
+    )
+    service._scroll_page = AsyncMock()
+    service._is_page_scrolled_to_bottom = AsyncMock(side_effect=[False, False, True, True, True])
+    two_items = (
+        _ReviewableItemData(
+            product_id="p1",
+            product_name="상품1",
+            delivery_date="2026-03-29",
+            completed_order_vendor_item_id="o1",
+            vendor_item_id="v1",
+            review_url="https://my.coupang.com/productreview/register?productId=p1",
+        ),
+        _ReviewableItemData(
+            product_id="p2",
+            product_name="상품2",
+            delivery_date="2026-03-30",
+            completed_order_vendor_item_id="o2",
+            vendor_item_id="v2",
+            review_url="https://my.coupang.com/productreview/register?productId=p2",
+        ),
+    )
+    one_item = (two_items[0],)
+    service._scrape_reviewable_items = AsyncMock(
+        side_effect=[one_item, one_item, two_items, *repeat(two_items, 10)]
+    )
+
+    result = await service._list_reviewable_items(session)
+
+    assert result.state == CoupangReviewState.SUCCESS
+    assert len(result.items) == 2
+    assert service._scroll_page.await_count >= 3
+    assert service._is_page_scrolled_to_bottom.await_count >= 3
 
 
 @pytest.mark.anyio
@@ -482,8 +728,27 @@ async def test_list_reviewable_succeeds_with_saved_session(tmp_path: Path) -> No
 
 
 @pytest.mark.anyio
-async def test_list_reviewable_fails_when_session_is_missing(tmp_path: Path) -> None:
+async def test_list_reviewable_returns_browser_closed_when_tab_is_closed() -> None:
     service = _make_review_service()
+
+    result = await service._list_reviewable_items(_Session(_ClosingTab()))
+
+    assert result.state == CoupangReviewState.BROWSER_CLOSED
+
+
+@pytest.mark.anyio
+async def test_list_reviewable_fails_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service._list_reviewable_items = AsyncMock(
+        return_value=_ListReviewableBrowserResult(
+            state=CoupangReviewState.NOT_LOGGED_IN,
+        )
+    )
+    service._open_login_and_wait_for_review = AsyncMock(
+        return_value=CoupangReviewState.NOT_LOGGED_IN
+    )
 
     result = await service.list_reviewable()
 
@@ -504,6 +769,9 @@ async def test_list_reviewable_fails_when_not_logged_in(tmp_path: Path) -> None:
             state=CoupangReviewState.NOT_LOGGED_IN,
             message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
         )
+    )
+    service._open_login_and_wait_for_review = AsyncMock(
+        return_value=CoupangReviewState.NOT_LOGGED_IN
     )
 
     result = await service.list_reviewable()
@@ -545,7 +813,17 @@ async def test_upload_review_succeeds_with_saved_session(tmp_path: Path) -> None
 
 @pytest.mark.anyio
 async def test_upload_review_fails_when_session_is_missing(tmp_path: Path) -> None:
-    service = _make_review_service()
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service._upload_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(
+            state=CoupangReviewState.NOT_LOGGED_IN,
+        )
+    )
+    service._open_login_and_wait_for_review = AsyncMock(
+        return_value=CoupangReviewState.NOT_LOGGED_IN
+    )
 
     result = await service.upload_review(_request())
 
@@ -565,6 +843,9 @@ async def test_upload_review_fails_when_not_logged_in(tmp_path: Path) -> None:
             state=CoupangReviewState.NOT_LOGGED_IN,
             message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
         )
+    )
+    service._open_login_and_wait_for_review = AsyncMock(
+        return_value=CoupangReviewState.NOT_LOGGED_IN
     )
 
     result = await service.upload_review(_request())
@@ -681,8 +962,18 @@ async def test_edit_review_succeeds_with_saved_session(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_edit_review_fails_when_session_is_missing() -> None:
-    service = _make_review_service()
+async def test_edit_review_fails_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(
+            state=CoupangReviewState.NOT_LOGGED_IN,
+        )
+    )
+    service._open_login_and_wait_for_review = AsyncMock(
+        return_value=CoupangReviewState.NOT_LOGGED_IN
+    )
 
     result = await service.edit_review(_edit_request())
 
@@ -766,6 +1057,29 @@ async def test_edit_review_fails_when_input_is_invalid() -> None:
 
     assert result.success is False
     assert result.message == "리뷰 ID는 비어 있을 수 없습니다."
+
+
+@pytest.mark.anyio
+async def test_edit_review_allows_empty_review_text(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    browser.launch.return_value = object()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service._edit_review_browser = AsyncMock(
+        return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
+    )
+
+    result = await service.edit_review(
+        ReviewEditRequest(
+            order_id="22404668406",
+            product_id="8825977723",
+            review_id="934113278",
+            rating=4,
+            text="",
+        )
+    )
+
+    assert result.success is True
+    service._edit_review_browser.assert_awaited_once()
 
 
 @pytest.mark.anyio

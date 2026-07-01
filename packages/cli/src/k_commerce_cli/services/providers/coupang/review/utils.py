@@ -47,7 +47,7 @@ def format_reviewable_list(items: tuple[ReviewableItem, ...]) -> str:
     lines = [
         f"리뷰 작성 가능 ({len(items)}건):",
         "",
-        f"  {'#':>3}  {'배송일':<12}  {'상품ID':<12}  상품명",
+        f"  {'No':>3}  {'배송일':<12}  {'상품ID':<12}  상품명",
     ]
     for item in items:
         product_name = (
@@ -63,13 +63,42 @@ def format_reviewable_list(items: tuple[ReviewableItem, ...]) -> str:
 
 def format_editable_review_list(items: tuple[EditableReviewItem, ...]) -> str:
     """수정 가능한 작성 리뷰 목록을 CLI 출력용 표 형태로 만듭니다."""
+    return _format_written_review_list(
+        items,
+        list_label="리뷰 수정 가능",
+        empty_message="수정 가능한 작성 리뷰가 없습니다.",
+    )
+
+
+def format_deletable_review_list(items: tuple[EditableReviewItem, ...]) -> str:
+    """삭제 가능한 작성 리뷰 목록을 CLI 출력용 표 형태로 만듭니다."""
+    return _format_written_review_list(
+        items,
+        list_label="리뷰 삭제 가능",
+        empty_message="삭제 가능한 작성 리뷰가 없습니다.",
+        show_review_id=False,
+    )
+
+
+def _format_written_review_list(
+    items: tuple[EditableReviewItem, ...],
+    *,
+    list_label: str,
+    empty_message: str,
+    show_review_id: bool = True,
+) -> str:
     if not items:
-        return "수정 가능한 작성 리뷰가 없습니다."
+        return empty_message
+
+    if show_review_id:
+        header = f"  {'No':>3}  {'평점':<7}  {'리뷰ID':<12}  {'상품ID':<12}  상품명 / 후기"
+    else:
+        header = f"  {'No':>3}  {'상품ID':<12}  {'평점':<7}  상품명 / 후기"
 
     lines = [
-        f"리뷰 수정 가능 ({len(items)}건):",
+        f"{list_label} ({len(items)}건):",
         "",
-        f"  {'#':>3}  {'평점':<7}  {'리뷰ID':<12}  {'상품ID':<12}  상품명 / 후기",
+        header,
     ]
     for item in items:
         product_name = (
@@ -83,7 +112,12 @@ def format_editable_review_list(items: tuple[EditableReviewItem, ...]) -> str:
             else f"{item.review_text[: REVIEW_TEXT_MAX_WIDTH - 3]}..."
         )
         suffix = f" / {review_text}" if review_text else ""
-        lines.append(
-            f"  {item.index:>3}  {format_rating(item.rating):<7}  {item.review_id:<12}  {item.product_id:<12}  {product_name}{suffix}"
-        )
+        if show_review_id:
+            lines.append(
+                f"  {item.index:>3}  {format_rating(item.rating):<7}  {item.review_id:<12}  {item.product_id:<12}  {product_name}{suffix}"
+            )
+        else:
+            lines.append(
+                f"  {item.index:>3}  {item.product_id:<12}  {format_rating(item.rating):<7}  {product_name}{suffix}"
+            )
     return "\n".join(lines)

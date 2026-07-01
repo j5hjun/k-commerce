@@ -1,5 +1,6 @@
 class CoupangReviewState:
     SUCCESS = "success"
+    BROWSER_CLOSED = "browser_closed"
     NOT_LOGGED_IN = "not_logged_in"
     ORDER_NOT_FOUND = "order_not_found"
     PRODUCT_NOT_FOUND = "product_not_found"
@@ -13,6 +14,7 @@ class CoupangReviewState:
 
 
 REVIEW_STATE_MESSAGES: dict[str, str] = {
+    CoupangReviewState.BROWSER_CLOSED: "브라우저가 닫혀 작업을 계속할 수 없습니다.",
     CoupangReviewState.NOT_LOGGED_IN: "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
     CoupangReviewState.ORDER_NOT_FOUND: "지정한 주문을 찾을 수 없습니다.",
     CoupangReviewState.PRODUCT_NOT_FOUND: "지정한 상품을 찾을 수 없습니다.",

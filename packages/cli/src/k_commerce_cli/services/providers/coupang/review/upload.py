@@ -29,17 +29,23 @@ class CoupangReviewUpload(CoupangReviewBrowser):
         self,
         session: BrowserSession,
         *,
-        max_scroll_attempts: int = 50,
+        max_scroll_attempts: int = 30,
         stable_scroll_rounds: int = 3,
         min_scroll_attempts: int = 8,
     ) -> _ListReviewableBrowserResult:
-        await self._open_reviewable_list(session)
+        try:
+            await self._open_reviewable_list(session)
+        except Exception:
+            return _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
 
         active_tab = self._active_tab(session)
+        page_state = await self._read_review_page_state(active_tab)
+        if page_state["read_failed"]:
+            return _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
         if not await self._is_logged_in(active_tab):
             return _ListReviewableBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
 
-        page_url = str(getattr(active_tab, "url", ""))
+        page_url = str(page_state["url"])
         if "login.coupang.com" in page_url:
             return _ListReviewableBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
 
@@ -51,9 +57,10 @@ class CoupangReviewUpload(CoupangReviewBrowser):
             items = await self._scrape_reviewable_items(active_tab)
             count = len(items)
             if count == previous_count and attempt >= min_scroll_attempts:
-                stable_rounds += 1
-                if stable_rounds >= stable_scroll_rounds:
-                    break
+                if await self._is_page_scrolled_to_bottom(active_tab):
+                    stable_rounds += 1
+                    if stable_rounds >= stable_scroll_rounds:
+                        break
             else:
                 stable_rounds = 0
                 previous_count = count
@@ -170,15 +177,12 @@ class CoupangReviewUpload(CoupangReviewBrowser):
         rating: int,
         text: str,
     ) -> _ReviewUploadBrowserResult:
-        await self._open_home(session)
+        await self._open_review_register(session, review_url)
 
         active_tab = self._active_tab(session)
         if not await self._is_logged_in(active_tab):
             return _ReviewUploadBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
 
-        await self._open_review_register(session, review_url)
-
-        active_tab = self._active_tab(session)
         page_state = await self._read_review_register_state(active_tab, product_id, order_id)
         if page_state != CoupangReviewState.SUCCESS:
             return _ReviewUploadBrowserResult(state=page_state)
@@ -343,12 +347,13 @@ class CoupangReviewUpload(CoupangReviewBrowser):
               const textarea = document.querySelector(
                 '.js_reviewModifyTextArea, .js_reviewWritableTextArea, textarea[name*="review"], textarea[placeholder*="리뷰"], textarea.review-content, textarea'
               );
-              if (!textarea) return false;
-
-              textarea.focus();
-              textarea.value = text;
-              textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-              textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
+              if (!textarea && text) return false;
+              if (textarea) {{
+                textarea.focus();
+                textarea.value = text;
+                textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
+              }}
 
               const submitButton =
                 document.querySelector('.js_reviewModifySubmitBtn, .js_reviewWritableSubmitBtn') ||
@@ -374,19 +379,23 @@ class CoupangReviewUpload(CoupangReviewBrowser):
         if isinstance(result, bool):
             return result
 
-        textarea = await self._safe_select(
-            tab,
-            'textarea[name*="review"], textarea[placeholder*="리뷰"], textarea.review-content, textarea',
-            timeout=3,
-        )
+        if text:
+            textarea = await self._safe_select(
+                tab,
+                'textarea[name*="review"], textarea[placeholder*="리뷰"], textarea.review-content, textarea',
+                timeout=3,
+            )
+            if textarea is None:
+                return False
+            await textarea.send_keys(text)
+
         submit_button = await self._safe_select(
             tab,
-            'button[type="submit"], button.review-submit, button',
+            'button[type="submit"], button.review-submit, .js_reviewModifySubmitBtn, .js_reviewWritableSubmitBtn, button',
             timeout=3,
         )
-        if textarea is None or submit_button is None:
+        if submit_button is None:
             return False
 
-        await textarea.send_keys(text)
         await submit_button.click()
         return True

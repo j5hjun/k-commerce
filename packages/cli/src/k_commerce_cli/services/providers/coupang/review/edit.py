@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 
 from k_commerce_cli.services.base import BrowserSession, BrowserTab
@@ -25,15 +23,12 @@ class CoupangReviewEdit(CoupangReviewBrowser):
         rating: int,
         text: str,
     ) -> _ReviewUploadBrowserResult:
-        await self._open_home(session)
+        await self._open_review_modify(session, review_id)
 
         active_tab = self._active_tab(session)
         if not await self._is_logged_in(active_tab):
             return _ReviewUploadBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
 
-        await self._open_review_modify(session, review_id)
-
-        active_tab = self._active_tab(session)
         page_state = await self._read_review_edit_state(active_tab, product_id, order_id, review_id)
         if page_state != CoupangReviewState.SUCCESS:
             return _ReviewUploadBrowserResult(state=page_state)
