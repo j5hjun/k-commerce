@@ -164,7 +164,7 @@ class CoupangSearchService:
         lines = [
             f"검색 결과 ({len(items)}개):",
             "",
-            f"  {'#':>3}  {'상품ID':<14}  {'가격':<12}  {'평점':<6}  상품명",
+            f"  {'#':>3}  {'상품ID':<14}  {'가격':<12}  {'리뷰':<6}  상품명",
         ]
         for item in items:
             price = item.price or "-"
@@ -238,42 +238,78 @@ class CoupangSearchService:
             (() => {{
               const normalizeText = (text) => (text || '').replace(/\s+/g, ' ').trim();
               const items = [];
-              const candidates = Array.from(document.querySelectorAll(
-                'li.search-product, li.baby-product, div.search-product'
-              ));
+              const rankSpans = Array.from(document.querySelectorAll('#product-list span[class*="RankMark_rank"]'))
+                .map((span) => {{
+                  const rankClass = Array.from(span.classList).find((cls) => /^RankMark_rank(\d+)__/.test(cls));
+                  const rank = rankClass ? Number(rankClass.replace(/^RankMark_rank(\d+)__.*/, '$1')) : Number.NaN;
+                  return {{rank, span}};
+                }})
+                .filter((entry) => Number.isFinite(entry.rank) && entry.rank >= 1 && entry.rank <= {max_results})
+                .sort((a, b) => a.rank - b.rank)
+                .map((entry) => entry.span);
+              const candidates = [];
+              const seenElements = new Set();
+
+              for (const rankSpan of rankSpans) {{
+                if (candidates.length >= {max_results}) {{
+                  break;
+                }}
+
+                const element = rankSpan.closest('li');
+                if (!element || seenElements.has(element)) {{
+                  continue;
+                }}
+
+                seenElements.add(element);
+                candidates.push(element);
+              }}
+
+              if (!candidates.length) {{
+                candidates.push(...Array.from(document.querySelectorAll(
+                  '#product-list > li, li[class*="ProductUnit_productUnit__"], li[data-id], li[data-product-id], li[data-productid]'
+                )));
+              }}
 
               for (const element of candidates) {{
-                const productId =
-                  element.dataset.productId ||
+                let productId =
+                  element.dataset.id ||
+                  element.getAttribute('data-id') ||
                   element.getAttribute('data-product-id') ||
+                  element.getAttribute('data-productid') ||
                   '';
-                const linkElement =
-                  element.querySelector('a.search-product-link, a.prod-link, a');
+                const linkElement = element.querySelector(
+                  'a[href*="/vp/products"], a[href*="/products"], a'
+                );
                 const productLink = linkElement?.href || '';
-                const titleElement =
-                  element.querySelector('div.name, .name, .product-name, .prod-name, a');
+                const titleElement = element.querySelector(
+                  '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name, a'
+                );
                 const productName = normalizeText(
                   titleElement?.textContent || linkElement?.textContent || ''
                 );
-                const priceElement =
-                  element.querySelector('strong.price-value, .price-value, .price, .product-price');
+                const priceElement = element.querySelector(
+                  '[class*="PriceInfo_priceInfo__"], [class*="PriceArea_priceArea__"], strong.price-value, .price-value, .price, .product-price'
+                );
                 const priceText = normalizeText(priceElement?.textContent || '');
                 const price = priceText.replace(/[^0-9]/g, '');
-                const ratingElement =
-                  element.querySelector('.rating, .rating-total > em, .star-rating, .rating-stars');
+                const ratingElement = element.querySelector(
+                  '[class*="rating"], [class*="Rating"], .rating-total > em, .star-rating, .rating-stars'
+                );
                 const rating = normalizeText(ratingElement?.textContent || '');
                 const imageElement = element.querySelector('img');
-                const imageUrl = imageElement?.src || '';
+                const imageUrl = imageElement?.src || imageElement?.dataset?.src || '';
 
                 if (!productId && productLink) {{
-                  const match = productLink.match(/productId=(\\d+)/) ||
-                    productLink.match(/\\/products?\\/(\\d+)/);
+                  const match =
+                    productLink.match(/productId=(\d+)/) ||
+                    productLink.match(/itemId=(\d+)/) ||
+                    productLink.match(/\/products?\/(\d+)/);
                   if (match) {{
                     productId = match[1];
                   }}
                 }}
 
-                if (!productId || !productName) {{
+                if (!productName) {{
                   continue;
                 }}
 

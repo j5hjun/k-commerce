@@ -91,6 +91,33 @@ async def test_search_products_fails_when_session_is_missing(tmp_path: Path) -> 
 
 
 @pytest.mark.anyio
+async def test_scrapes_top_ranked_items_from_rank_markers() -> None:
+    service = _make_search_service()
+    tab = _SearchTab(
+        payloads=[
+            [
+                {
+                    "product_id": "8825977723",
+                    "product_name": "포스트 아몬드후레이크",
+                    "price": "12300",
+                    "rating": "4.8",
+                    "image_url": "https://example.com/image.jpg",
+                    "product_link": "https://www.coupang.com/vp/products/8825977723",
+                }
+            ]
+        ]
+    )
+
+    items = await service._scrape_search_results(tab, max_results=1)
+
+    assert len(items) == 1
+    assert items[0].product_id == "8825977723"
+    assert tab.evaluate_calls
+    assert "querySelectorAll('#product-list span[class*=\"RankMark_rank\"]')" in tab.evaluate_calls[0]
+    assert "closest('li')" in tab.evaluate_calls[0]
+
+
+@pytest.mark.anyio
 async def test_search_products_succeeds_with_saved_session(tmp_path: Path) -> None:
     browser = _BrowserSpy()
     browser.launch.return_value = object()

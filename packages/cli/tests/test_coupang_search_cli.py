@@ -34,7 +34,7 @@ async def test_search_coupang_command_prints_table_result() -> None:
         return_value=SearchProductResult(
             provider="coupang",
             success=True,
-            message="검색 결과 (1개):\n  #  상품ID         가격          평점    상품명\n  1  8825977723     12300        4.8     포스트 아몬드후레이크",
+            message="검색 결과 (1개):\n  #  상품ID         가격          리뷰    상품명\n  1  8825977723     12300        4.8     포스트 아몬드후레이크",
             items=_search_items(),
         )
     )
