@@ -6,6 +6,7 @@ import pytest
 from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.types import (
+    CartDeleteResult,
     CartItem,
     CartQuantityUpdateResult,
     ListCartResult,
@@ -156,6 +157,26 @@ async def test_cart_coupang_command_lists_cart() -> None:
     assert result.exit_code == 0
     get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
     provider.list_cart.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_cart_coupang_command_handles_browser_closed_gracefully() -> None:
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=False,
+            message="브라우저가 닫혀 장바구니 작업을 취소했습니다.",
+            items=(),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider):
+        result = await RUNNER.invoke(app, ["cart", "coupang"])
+
+    assert result.exit_code == 0
+    assert "[error] 브라우저가 닫혀 장바구니 작업을 취소했습니다." in result.output
+    assert "Traceback" not in result.output
 
 
 @pytest.mark.anyio
@@ -456,6 +477,205 @@ async def test_cart_quantity_command_shows_error_when_update_fails() -> None:
     assert "[error] 브라우저가 닫혀 장바구니 작업을 취소했습니다." in result.output
     assert "Error:" not in result.output
     provider.update_cart_quantity.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_cart_delete_command_rejects_conflicting_flags() -> None:
+    result = await RUNNER.invoke(app, ["cart", "coupang", "--quantity", "--delete"])
+    assert result.exit_code == 2
+    assert "--list, --quantity, --delete는 함께 사용할 수 없습니다." in result.output
+
+
+@pytest.mark.anyio
+async def test_cart_delete_single_item_flow() -> None:
+    selected_item = CartItem(
+        index=1,
+        product_name="테스트 상품",
+        option_text="옵션",
+        quantity=2,
+        unit_price="1,000원",
+        total_price="2,000원",
+        product_id="1",
+        vendor_item_id="2",
+        item_id="3",
+    )
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(selected_item,),
+        )
+    )
+    provider.delete_cart_item = AsyncMock(
+        return_value=CartDeleteResult(
+            provider="coupang",
+            success=True,
+            message="쿠팡 장바구니 상품 삭제 성공",
+            deleted_count=1,
+        )
+    )
+
+    with (
+        patch(
+            "k_commerce_cli.commands.cart.get_provider",
+            side_effect=[provider, provider],
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            AsyncMock(return_value="single"),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_cart_item",
+            AsyncMock(side_effect=[selected_item, "exit"]),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_bulk_delete_confirmation",
+            AsyncMock(return_value="confirm"),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            AsyncMock(return_value=False),
+        ),
+    ):
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--delete"])
+
+    assert result.exit_code == 0
+    provider.delete_cart_item.assert_awaited_once()
+    assert "[ok] 쿠팡 장바구니 상품 삭제 성공" in result.output
+    assert "삭제할 상품 (1건):" in result.output
+    assert "테스트 상품 / 옵션 / 2개" in result.output
+
+
+@pytest.mark.anyio
+async def test_cart_delete_all_flow() -> None:
+    item = CartItem(
+        index=1,
+        product_name="테스트 상품",
+        option_text="옵션",
+        quantity=1,
+        unit_price="1,000원",
+        total_price="1,000원",
+        product_id="1",
+        vendor_item_id="2",
+        item_id="3",
+    )
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (1건):",
+            items=(item,),
+        )
+    )
+    provider.clear_cart = AsyncMock(
+        return_value=CartDeleteResult(
+            provider="coupang",
+            success=True,
+            message="쿠팡 장바구니 비우기 성공",
+            deleted_count=0,
+        )
+    )
+
+    with (
+        patch(
+            "k_commerce_cli.commands.cart.get_provider",
+            side_effect=[provider, provider],
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            AsyncMock(return_value="all"),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_clear_cart_action",
+            AsyncMock(return_value="clear"),
+        ),
+    ):
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--delete"])
+
+    assert result.exit_code == 0
+    provider.clear_cart.assert_awaited_once()
+    assert "[ok] 쿠팡 장바구니 비우기 성공" in result.output
+    provider.list_cart.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_cart_delete_selected_items_flow() -> None:
+    items = (
+        CartItem(
+            index=1,
+            product_name="테스트 상품 A",
+            option_text="옵션 A",
+            quantity=1,
+            unit_price="1,000원",
+            total_price="1,000원",
+            product_id="1",
+            vendor_item_id="11",
+            item_id="101",
+        ),
+        CartItem(
+            index=2,
+            product_name="테스트 상품 B",
+            option_text="옵션 B",
+            quantity=2,
+            unit_price="2,000원",
+            total_price="4,000원",
+            product_id="2",
+            vendor_item_id="22",
+            item_id="202",
+        ),
+    )
+    selected = items[:2]
+    provider = Mock()
+    provider.list_cart = AsyncMock(
+        return_value=ListCartResult(
+            provider="coupang",
+            success=True,
+            message="장바구니 상품 (2건):",
+            items=items,
+        )
+    )
+    provider.delete_cart_items = AsyncMock(
+        return_value=CartDeleteResult(
+            provider="coupang",
+            success=True,
+            message="쿠팡 장바구니 상품 2개 삭제 성공",
+            deleted_count=2,
+        )
+    )
+
+    with (
+        patch(
+            "k_commerce_cli.commands.cart.get_provider",
+            side_effect=[provider, provider],
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            AsyncMock(return_value="selected"),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_cart_items",
+            AsyncMock(return_value=selected),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_bulk_delete_confirmation",
+            AsyncMock(return_value="confirm"),
+        ),
+        patch(
+            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            AsyncMock(return_value=False),
+        ),
+    ):
+        result = await RUNNER.invoke(app, ["cart", "coupang", "--delete"])
+
+    assert result.exit_code == 0
+    provider.delete_cart_items.assert_awaited_once()
+    assert "[ok] 쿠팡 장바구니 상품 2개 삭제 성공" in result.output
+    assert "테스트 상품 A / 옵션 A / 1개" in result.output
+    assert "테스트 상품 B / 옵션 B / 2개" in result.output
+    assert "삭제할 상품 (2건):" in result.output
 
 
 @pytest.mark.anyio

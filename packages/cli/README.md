@@ -87,6 +87,12 @@ Update a cart product quantity interactively:
 uv run k-commerce cart coupang --quantity
 ```
 
+Delete cart products interactively:
+
+```bash
+uv run k-commerce cart coupang --delete
+```
+
 Collect visible-year Coupang orders except the `최근 6개월` tab and update `orders.json` with a
 diff summary:
 
@@ -149,6 +155,7 @@ uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce cart coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce cart coupang --quantity --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --delete --root-dir /tmp/test-k-commerce
 uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce search coupang KEYWORD --root-dir /tmp/test-k-commerce
 ```
@@ -292,7 +299,22 @@ uv run k-commerce cart coupang --quantity
 This loads the cart product list, lets you pick an item with arrow keys, then prompts for the new
 quantity before applying it to the Coupang cart page. You can update multiple items in one session.
 
-`--list` and `--quantity` cannot be used together.
+### Delete cart products
+
+```bash
+uv run k-commerce cart coupang --delete
+```
+
+This loads the cart product list, then lets you choose a delete mode:
+
+- **Single item**: pick one product, confirm, and delete it. You can delete more items in the same
+  session.
+- **Multiple items**: pick several products with checkboxes, confirm, and delete them together.
+- **Clear cart**: view the current list or clear the entire cart after confirmation.
+
+Each mode supports going back to the delete-mode menu or exiting without changes.
+
+`--list`, `--quantity`, and `--delete` cannot be used together.
 
 ## Login Status
 

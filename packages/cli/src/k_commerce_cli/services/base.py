@@ -8,6 +8,8 @@ from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.types import (
+    CartDeleteRequest,
+    CartDeleteResult,
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
     ListCartResult,
@@ -105,6 +107,14 @@ class Provider(Protocol):
         self, request: CartQuantityUpdateRequest
     ) -> CartQuantityUpdateResult: ...
 
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
+
     def cart_session(self) -> AsyncContextManager["CartSession"]: ...
 
     async def list_reviewable(self) -> ListReviewableResult: ...
@@ -179,6 +189,14 @@ class CartService(Protocol):
         self, request: CartQuantityUpdateRequest
     ) -> CartQuantityUpdateResult: ...
 
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
+
     def cart_session(self) -> AsyncContextManager["CartSession"]: ...
 
 
@@ -190,6 +208,14 @@ class CartSession(Protocol):
     async def update_cart_quantity(
         self, request: CartQuantityUpdateRequest
     ) -> CartQuantityUpdateResult: ...
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
 
 
 AuthServiceT = TypeVar("AuthServiceT", bound=AuthService)
@@ -299,6 +325,18 @@ class BaseProvider(
         request: CartQuantityUpdateRequest,
     ) -> CartQuantityUpdateResult:
         return await self.cart_service.update_cart_quantity(request)
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        return await self.cart_service.delete_cart_item(request)
+
+    async def delete_cart_items(
+        self,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        return await self.cart_service.delete_cart_items(requests)
+
+    async def clear_cart(self) -> CartDeleteResult:
+        return await self.cart_service.clear_cart()
 
     def cart_session(self) -> AsyncContextManager[CartSession]:
         return self.cart_service.cart_session()

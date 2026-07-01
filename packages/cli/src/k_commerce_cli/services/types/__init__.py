@@ -1,6 +1,8 @@
 from .auth import LoginResult, LogoutResult, StatusResult
 from .cart import (
     CartItem,
+    CartDeleteRequest,
+    CartDeleteResult,
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
     ListCartResult,
@@ -27,6 +29,8 @@ __all__ = [
     "StatusResult",
     "CartItem",
     "ListCartResult",
+    "CartDeleteRequest",
+    "CartDeleteResult",
     "CartQuantityUpdateRequest",
     "CartQuantityUpdateResult",
     "OrderResult",

@@ -1,5 +1,7 @@
 from k_commerce_cli.services.providers.coupang.cart.type import (
     CartItem,
+    CartDeleteRequest,
+    CartDeleteResult,
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
     ListCartResult,
@@ -8,6 +10,8 @@ from k_commerce_cli.services.providers.coupang.cart.type import (
 __all__ = [
     "CartItem",
     "ListCartResult",
+    "CartDeleteRequest",
+    "CartDeleteResult",
     "CartQuantityUpdateRequest",
     "CartQuantityUpdateResult",
 ]

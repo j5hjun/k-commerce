@@ -5,6 +5,7 @@ class CoupangCartState:
     ITEM_NOT_FOUND = "item_not_found"
     VALIDATION_ERROR = "validation_error"
     UPDATE_FAILED = "update_failed"
+    DELETE_FAILED = "delete_failed"
     BROWSER_CLOSED = "browser_closed"
 
 
@@ -14,6 +15,7 @@ CART_STATE_MESSAGES: dict[str, str] = {
     CoupangCartState.ITEM_NOT_FOUND: "지정한 장바구니 상품을 찾을 수 없습니다.",
     CoupangCartState.VALIDATION_ERROR: "장바구니 입력값이 올바르지 않습니다.",
     CoupangCartState.UPDATE_FAILED: "장바구니 수량 수정에 실패했습니다.",
+    CoupangCartState.DELETE_FAILED: "장바구니 상품 삭제에 실패했습니다.",
     CoupangCartState.BROWSER_CLOSED: "브라우저가 닫혀 장바구니 작업을 취소했습니다.",
 }
 

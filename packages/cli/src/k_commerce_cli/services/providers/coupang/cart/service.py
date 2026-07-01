@@ -10,6 +10,7 @@ from k_commerce_cli.services.providers.coupang.cart.state import (
     CoupangCartState,
     cart_state_message,
 )
+from k_commerce_cli.services.providers.coupang.cart.delete import CoupangCartDelete
 from k_commerce_cli.services.providers.coupang.cart.type import (
     _CartItemData,
     _ListCartBrowserResult,
@@ -19,8 +20,9 @@ from k_commerce_cli.services.providers.coupang.cart.utils import (
     format_cart_list,
 )
 from k_commerce_cli.services.base import Store
-from k_commerce_cli.services.providers.coupang.review.browser import CoupangReviewBrowser
 from k_commerce_cli.services.types import (
+    CartDeleteRequest,
+    CartDeleteResult,
     CartItem,
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
@@ -61,8 +63,20 @@ class CoupangCartBrowserSession:
             request,
         )
 
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        return await self._service._delete_cart_item_with_session(self._session, request)
 
-class CoupangCartService(CoupangReviewBrowser):
+    async def delete_cart_items(
+        self,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        return await self._service._delete_cart_items_with_session(self._session, requests)
+
+    async def clear_cart(self) -> CartDeleteResult:
+        return await self._service._clear_cart_with_session(self._session)
+
+
+class CoupangCartService(CoupangCartDelete):
     def __init__(
         self,
         provider: ProviderName,
@@ -87,6 +101,21 @@ class CoupangCartService(CoupangReviewBrowser):
         async with self.cart_session() as cart_session:
             return await cart_session.update_cart_quantity(request)
 
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        async with self.cart_session() as cart_session:
+            return await cart_session.delete_cart_item(request)
+
+    async def delete_cart_items(
+        self,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        async with self.cart_session() as cart_session:
+            return await cart_session.delete_cart_items(requests)
+
+    async def clear_cart(self) -> CartDeleteResult:
+        async with self.cart_session() as cart_session:
+            return await cart_session.clear_cart()
+
     @asynccontextmanager
     async def cart_session(self) -> AsyncIterator[CoupangCartBrowserSession]:
         if self._browser_session is not None:
@@ -105,7 +134,10 @@ class CoupangCartService(CoupangReviewBrowser):
         *,
         reload_page: bool = True,
     ) -> ListCartResult:
-        browser_result = await self._list_cart_items(session, reload_page=reload_page)
+        try:
+            browser_result = await self._list_cart_items(session, reload_page=reload_page)
+        except Exception:
+            browser_result = _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
         return self._to_list_result(browser_result)
 
     async def _update_cart_quantity_with_session(
@@ -117,11 +149,55 @@ class CoupangCartService(CoupangReviewBrowser):
         if validation_error is not None:
             return self._failure_quantity_update_result(request, validation_error)
 
-        browser_result = await self._update_cart_quantity_browser(
-            session,
-            request,
-        )
+        try:
+            browser_result = await self._update_cart_quantity_browser(
+                session,
+                request,
+            )
+        except Exception:
+            browser_result = _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
         return self._to_quantity_update_result(request, browser_result)
+
+    async def _delete_cart_item_with_session(
+        self,
+        session: BrowserSession,
+        request: CartDeleteRequest,
+    ) -> CartDeleteResult:
+        validation_error = self._validate_delete_request(request)
+        if validation_error is not None:
+            return self._failure_delete_result(validation_error)
+
+        try:
+            browser_result = await self._delete_cart_item_browser(session, request)
+        except Exception:
+            browser_result = _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
+        return self._to_delete_result(browser_result, deleted_count=1)
+
+    async def _delete_cart_items_with_session(
+        self,
+        session: BrowserSession,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        if not requests:
+            return self._failure_delete_result("삭제할 상품을 선택해주세요.")
+
+        for request in requests:
+            validation_error = self._validate_delete_request(request)
+            if validation_error is not None:
+                return self._failure_delete_result(validation_error)
+
+        try:
+            browser_result = await self._delete_cart_items_browser(session, requests)
+        except Exception:
+            browser_result = _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
+        return self._to_delete_result(browser_result, deleted_count=len(requests))
+
+    async def _clear_cart_with_session(self, session: BrowserSession) -> CartDeleteResult:
+        try:
+            browser_result = await self._clear_cart_browser(session)
+        except Exception:
+            browser_result = _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
+        return self._to_delete_result(browser_result, deleted_count=0)
 
     async def _list_cart_items(
         self,
@@ -130,7 +206,10 @@ class CoupangCartService(CoupangReviewBrowser):
         reload_page: bool = True,
     ) -> _ListCartBrowserResult:
         if reload_page:
-            await session.tab.get(COUPANG_CART_URL)
+            try:
+                await session.tab.get(COUPANG_CART_URL)
+            except Exception:
+                return _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
             await self._sleep_ms(2500)
 
         for _ in range(8):
@@ -269,7 +348,10 @@ class CoupangCartService(CoupangReviewBrowser):
         session: BrowserSession,
         request: CartQuantityUpdateRequest,
     ) -> _ListCartBrowserResult:
-        await session.tab.get(COUPANG_CART_URL)
+        try:
+            await session.tab.get(COUPANG_CART_URL)
+        except Exception:
+            return _ListCartBrowserResult(state=CoupangCartState.BROWSER_CLOSED)
         await self._sleep_ms(2500)
 
         for _ in range(10):
@@ -677,6 +759,7 @@ class CoupangCartService(CoupangReviewBrowser):
 
               for (const candidate of candidates) {
                 const container = candidate.container;
+                const itemRoot = container.closest('[id^="item_"], [data-bundle-id]') || container;
                 const productLink = candidate.link;
                 const productText = splitProductText(
                   productLink?.textContent ||
@@ -688,18 +771,21 @@ class CoupangCartService(CoupangReviewBrowser):
                 if (!productName) continue;
 
                 const vendorItemId = (
-                  findDataValue(container, ['data-vendor-item-id', 'data-vendoritemid', 'vendor-item-id', 'vendorItemId']) ||
+                  itemRoot.getAttribute('data-vid') ||
+                  findDataValue(itemRoot, ['data-vid', 'data-vendor-item-id', 'data-vendoritemid', 'vendor-item-id', 'vendorItemId']) ||
                   new URL(productLink?.href || window.location.href).searchParams.get('vendorItemId') ||
-                  findIdByPattern(container, ['vendorItemId', 'vendor-item-id', 'vendorItem'])
+                  findIdByPattern(itemRoot, ['vendorItemId', 'vendor-item-id', 'vendorItem'])
                 );
                 const productId = (
-                  findDataValue(container, ['data-product-id', 'data-productid', 'product-id', 'productId']) ||
+                  findDataValue(itemRoot, ['data-product-id', 'data-productid', 'product-id', 'productId']) ||
                   (productLink?.href || '').match(/\\/products\\/(\\d+)/)?.[1] ||
-                  findIdByPattern(container, ['productId', 'product-id'])
+                  findIdByPattern(itemRoot, ['productId', 'product-id'])
                 );
                 const itemId = (
-                  findDataValue(container, ['data-cart-item-id', 'data-item-id', 'cart-item-id', 'item-id', 'cartItemId']) ||
-                  findIdByPattern(container, ['cartItemId', 'cart-item-id', 'itemId', 'item-id'])
+                  itemRoot.getAttribute('data-bundle-id') ||
+                  (itemRoot.id || '').replace(/^item_/, '') ||
+                  findDataValue(itemRoot, ['data-bundle-id', 'data-cart-item-id', 'data-item-id', 'cart-item-id', 'item-id', 'cartItemId']) ||
+                  findIdByPattern(itemRoot, ['cartItemId', 'cart-item-id', 'itemId', 'item-id', 'bundleId', 'bundle-id'])
                 );
                 const dedupeKey = vendorItemId || itemId || productId || productName;
                 if (seen.has(dedupeKey)) continue;
@@ -770,6 +856,11 @@ class CoupangCartService(CoupangReviewBrowser):
     ) -> str | None:
         if request.quantity < 1:
             return "수량은 1개 이상이어야 합니다."
+        if not (request.product_id.strip() or request.vendor_item_id.strip() or request.item_id.strip()):
+            return "장바구니 상품 식별자는 비어 있을 수 없습니다."
+        return None
+
+    def _validate_delete_request(self, request: CartDeleteRequest) -> str | None:
         if not (request.product_id.strip() or request.vendor_item_id.strip() or request.item_id.strip()):
             return "장바구니 상품 식별자는 비어 있을 수 없습니다."
         return None
@@ -847,4 +938,43 @@ class CoupangCartService(CoupangReviewBrowser):
             product_id=request.product_id,
             vendor_item_id=request.vendor_item_id,
             item_id=request.item_id,
+        )
+
+    def _to_delete_result(
+        self,
+        browser_result: _ListCartBrowserResult,
+        *,
+        deleted_count: int,
+    ) -> CartDeleteResult:
+        if browser_result.state == CoupangCartState.SUCCESS:
+            if deleted_count == 0:
+                message = "쿠팡 장바구니 비우기 성공"
+            elif deleted_count == 1:
+                message = "쿠팡 장바구니 상품 삭제 성공"
+            else:
+                message = f"쿠팡 장바구니 상품 {deleted_count}개 삭제 성공"
+            return CartDeleteResult(
+                provider=self.provider.value,
+                success=True,
+                message=message,
+                deleted_count=deleted_count,
+            )
+
+        message = browser_result.message or cart_state_message(
+            browser_result.state,
+            fallback="장바구니 상품 삭제에 실패했습니다.",
+        )
+        return self._failure_delete_result(message, deleted_count=deleted_count)
+
+    def _failure_delete_result(
+        self,
+        message: str,
+        *,
+        deleted_count: int = 0,
+    ) -> CartDeleteResult:
+        return CartDeleteResult(
+            provider=self.provider.value,
+            success=False,
+            message=message,
+            deleted_count=deleted_count,
         )

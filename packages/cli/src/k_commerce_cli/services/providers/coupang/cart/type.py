@@ -24,6 +24,21 @@ class ListCartResult:
 
 
 @dataclass(frozen=True)
+class CartDeleteRequest:
+    product_id: str = ""
+    vendor_item_id: str = ""
+    item_id: str = ""
+
+
+@dataclass(frozen=True)
+class CartDeleteResult:
+    provider: str
+    success: bool
+    message: str
+    deleted_count: int = 0
+
+
+@dataclass(frozen=True)
 class CartQuantityUpdateRequest:
     quantity: int
     product_id: str = ""
