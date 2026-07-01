@@ -28,12 +28,21 @@ class _SearchTab:
     def __init__(self, payloads: list[object]) -> None:
         self._payloads = list(payloads)
         self.evaluate_calls: list[str] = []
+        self.get_calls: list[str] = []
 
     async def evaluate(self, script: str):
         self.evaluate_calls.append(script)
         if not self._payloads:
             return []
         return self._payloads.pop(0)
+
+    async def get(self, url: str) -> None:
+        self.get_calls.append(url)
+
+
+class _Session:
+    def __init__(self, tab: _SearchTab) -> None:
+        self.tab = tab
 
 
 def _make_search_service(*, root_dir: Path | None = None, browser: _BrowserSpy | None = None) -> CoupangSearchService:
@@ -95,26 +104,85 @@ async def test_scrapes_top_ranked_items_from_rank_markers() -> None:
     service = _make_search_service()
     tab = _SearchTab(
         payloads=[
-            [
-                {
-                    "product_id": "8825977723",
-                    "product_name": "포스트 아몬드후레이크",
-                    "price": "12300",
-                    "rating": "4.8",
-                    "image_url": "https://example.com/image.jpg",
-                    "product_link": "https://www.coupang.com/vp/products/8825977723",
-                }
-            ]
+            {
+                "foundRankMarkers": True,
+                "items": [
+                    {
+                        "product_id": "8825977723",
+                        "product_name": "포스트 아몬드후레이크",
+                        "price": "12300",
+                        "rating": "4.8",
+                        "image_url": "https://example.com/image.jpg",
+                        "product_link": "https://www.coupang.com/vp/products/8825977723",
+                    }
+                ],
+            }
         ]
     )
 
-    items = await service._scrape_search_results(tab, max_results=1)
+    items, found_rank_markers = await service._scrape_search_results(tab, max_results=1)
 
+    assert found_rank_markers is True
     assert len(items) == 1
     assert items[0].product_id == "8825977723"
     assert tab.evaluate_calls
-    assert "querySelectorAll('#product-list span[class*=\"RankMark_rank\"]')" in tab.evaluate_calls[0]
+    assert "document.querySelector('#product-list')" in tab.evaluate_calls[0]
+    assert "const productRoot = productList || document" in tab.evaluate_calls[0]
+    assert "productRoot.querySelectorAll('[class*=\"RankMark_rank\"]')" in tab.evaluate_calls[0]
+    assert "productRoot.querySelectorAll('a[href*=\"/vp/products/\"]')" in tab.evaluate_calls[0]
+    assert "productLink.match(/\\/vp\\/products\\/(\\d+)/)" in tab.evaluate_calls[0]
+    assert "itemId" not in tab.evaluate_calls[0]
     assert "closest('li')" in tab.evaluate_calls[0]
+    assert "truncateText" in tab.evaluate_calls[0]
+    assert "custom-oos" in tab.evaluate_calls[0]
+    assert "fw-font-bold" in tab.evaluate_calls[0]
+    assert "Math.min(...prices)" in tab.evaluate_calls[0]
+    assert "excludeMemberOnly" in tab.evaluate_calls[0]
+    assert "parseDiscountRates" in tab.evaluate_calls[0]
+    assert "calculatedDiscountCandidates" in tab.evaluate_calls[0]
+    assert "basePrice" in tab.evaluate_calls[0]
+    assert "\\uC640\\uC6B0" in tab.evaluate_calls[0]
+    assert "\\uD68C\\uC6D0" in tab.evaluate_calls[0]
+    assert "\\uCFE0\\uD3F0" in tab.evaluate_calls[0]
+    assert "fw-gap-y-" in tab.evaluate_calls[0]
+
+
+@pytest.mark.anyio
+async def test_scrape_search_results_fails_when_rank_markers_are_missing() -> None:
+    service = _make_search_service()
+    tab = _SearchTab(payloads=[{"foundRankMarkers": False, "items": []}])
+
+    items, found_rank_markers = await service._scrape_search_results(tab, max_results=10)
+
+    assert found_rank_markers is False
+    assert items == ()
+
+
+@pytest.mark.anyio
+async def test_apply_product_detail_prices_uses_product_page_price() -> None:
+    service = _make_search_service()
+    tab = _SearchTab(payloads=["9900"])
+    session = _Session(tab)
+    item = _SearchResultItemData(
+        product_id="8825977723",
+        product_name="포스트 아몬드후레이크",
+        price="12300",
+        rating="4.8",
+        image_url="https://example.com/image.jpg",
+        product_link="https://www.coupang.com/vp/products/8825977723?itemId=1",
+    )
+
+    items = await service._apply_product_detail_prices(session, (item,))
+
+    assert tab.get_calls == ["https://www.coupang.com/vp/products/8825977723"]
+    assert items[0].price == "9900"
+    assert "readTwcRegularSalePrice" in tab.evaluate_calls[0]
+    assert "twc-font-bold" in tab.evaluate_calls[0]
+    assert "\\uC77C\\uBC18\\uD560\\uC778\\uAC00" in tab.evaluate_calls[0]
+    assert "prices.length >= 2 ? Math.min(...prices) : prices[0]" in tab.evaluate_calls[0]
+    assert "parseDiscountRates" in tab.evaluate_calls[0]
+    assert "total-price" in tab.evaluate_calls[0]
+    assert "\\uCFE0\\uD3F0" in tab.evaluate_calls[0]
 
 
 @pytest.mark.anyio
