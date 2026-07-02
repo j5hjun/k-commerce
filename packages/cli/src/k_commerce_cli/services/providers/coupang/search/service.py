@@ -287,9 +287,13 @@ class CoupangSearchService:
                 return (
                   context.includes('\\uC640\\uC6B0') ||
                   context.includes('\\uD68C\\uC6D0') ||
-                  context.includes('\\uCFE0\\uD3F0')
+                  context.includes('\\uCFE0\\uD3F0') ||
+                  context.includes('\\uCD94\\uAC00') ||
+                  context.includes('\\uD560\\uC778\\uBC1B\\uAE30') ||
+                  context.includes('\\uC801\\uC6A9')
                 );
               };
+              const productPriceCandidates = (prices) => prices.filter((price) => price >= 1000);
               const uniqueNumbers = (values) => Array.from(new Set(values));
               const calculatedDiscountCandidates = (basePrice, discountRate) => {
                 const raw = basePrice * (100 - discountRate) / 100;
@@ -317,7 +321,7 @@ class CoupangSearchService:
                 const followingNodes = orderedNodes.slice(labelIndex >= 0 ? labelIndex + 1 : 0);
                 for (const node of followingNodes) {
                   if (hasCouponOnlyKeyword(node)) continue;
-                  const prices = parsePrices(node.textContent || '');
+                  const prices = productPriceCandidates(parsePrices(node.textContent || ''));
                   if (prices.length) {
                     return String(prices.length >= 2 ? Math.min(...prices) : prices[0]);
                   }
@@ -325,8 +329,57 @@ class CoupangSearchService:
 
                 return '';
               };
+              const readDiscountAdjacentPrice = () => {
+                const compact = (text) => normalizeText(text).replace(/\\s+/g, '');
+                const hasReturnedOrNewProductKeyword = (node) => {
+                  const relatedNodes = [
+                    node,
+                    node?.closest?.('div, a'),
+                    node?.parentElement,
+                    node?.previousElementSibling?.matches?.('div, a') ? node.previousElementSibling : null,
+                    node?.nextElementSibling?.matches?.('div, a') ? node.nextElementSibling : null,
+                  ].filter(Boolean);
+                  const context = compact(relatedNodes.map((relatedNode) => relatedNode.textContent || '').join(' '));
+                  return context.includes('\\uC0C8\\uC0C1\\uD488') || context.includes('\\uBC18\\uD488');
+                };
+                const discountDivs = Array.from(document.querySelectorAll('div')).filter((node) =>
+                  compact(node.textContent || '').includes('\\uD560\\uC778') && !hasCouponOnlyKeyword(node)
+                );
+
+                for (const discountDiv of discountDivs) {
+                  const scope =
+                    discountDiv.parentElement?.parentElement ||
+                    discountDiv.parentElement ||
+                    document.body;
+                  const orderedNodes = Array.from(scope.querySelectorAll('div, a, span, strong, del'));
+                  const discountIndex = orderedNodes.indexOf(discountDiv);
+                  const followingNodes = orderedNodes.slice(discountIndex >= 0 ? discountIndex + 1 : 0);
+                  const adjacentPrices = [];
+
+                  for (const node of followingNodes) {
+                    if (hasCouponOnlyKeyword(node)) continue;
+                    if (hasReturnedOrNewProductKeyword(node)) continue;
+                    const context = compact([discountDiv.textContent || '', node.textContent || ''].join(' '));
+                    for (const price of parsePrices(node.textContent || '')) {
+                      if (price <= 1000 && context.includes('\\uD560\\uC778')) continue;
+                      if (price < 1000) continue;
+                      if (!adjacentPrices.includes(price)) {
+                        adjacentPrices.push(price);
+                      }
+                    }
+                  }
+
+                  if (adjacentPrices.length) {
+                    return String(Math.min(...adjacentPrices));
+                  }
+                }
+
+                return '';
+              };
               const twcRegularSalePrice = readTwcRegularSalePrice();
               if (twcRegularSalePrice) return twcRegularSalePrice;
+              const discountAdjacentPrice = readDiscountAdjacentPrice();
+              if (discountAdjacentPrice) return discountAdjacentPrice;
 
               const priceRoot =
                 document.querySelector('.prod-price') ||
@@ -360,10 +413,10 @@ class CoupangSearchService:
               const discountRate = Math.max(...parseDiscountRates(priceRoot.textContent || ''), 0);
               const regularEntries = nodes
                 .filter((node) => !hasCouponOnlyKeyword(node))
-                .flatMap((node) => parsePrices(node.textContent || '').map((price) => ({price, node})));
+                .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')).map((price) => ({price, node})));
               const couponEntries = nodes
                 .filter((node) => hasCouponOnlyKeyword(node))
-                .flatMap((node) => parsePrices(node.textContent || '').map((price) => ({price, node})));
+                .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')).map((price) => ({price, node})));
 
               if (originalPrice && discountRate) {
                 const expectedPrices = calculatedDiscountCandidates(originalPrice, discountRate);
@@ -382,7 +435,7 @@ class CoupangSearchService:
               for (const selector of saleSelectors) {
                 const selected = Array.from(priceRoot.querySelectorAll(selector))
                   .filter((node) => !hasCouponOnlyKeyword(node))
-                  .flatMap((node) => parsePrices(node.textContent || ''));
+                  .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')));
                 if (selected.length) return String(Math.min(...selected));
               }
 
@@ -438,9 +491,13 @@ class CoupangSearchService:
                   return (
                     context.includes('\uC640\uC6B0') ||
                     context.includes('\uD68C\uC6D0') ||
-                    context.includes('\uCFE0\uD3F0')
+                    context.includes('\uCFE0\uD3F0') ||
+                    context.includes('\uCD94\uAC00') ||
+                    context.includes('\uD560\uC778\uBC1B\uAE30') ||
+                    context.includes('\uC801\uC6A9')
                   );
                 }};
+                const productPriceCandidates = (prices) => prices.filter((price) => price >= 1000);
                 const uniqueNumbers = (values) => Array.from(new Set(values));
                 const lowestPrice = (nodes, options = {{}}) => {{
                   const excludeMemberOnly = Boolean(options.excludeMemberOnly);
@@ -448,7 +505,7 @@ class CoupangSearchService:
                     if (excludeMemberOnly && hasMemberOnlyKeyword(node)) {{
                       return [];
                     }}
-                    return parsePrices(node?.textContent || '');
+                    return productPriceCandidates(parsePrices(node?.textContent || ''));
                   }});
                   if (!prices.length) {{
                     return '';
@@ -481,17 +538,17 @@ class CoupangSearchService:
                 if (customOos) {{
                   const boldPriceDivs = Array.from(customOos.querySelectorAll('div[class*="fw-font-bold"]'));
                   const boldPrices = uniqueNumbers(
-                    boldPriceDivs.flatMap((node) => parsePrices(node.textContent || ''))
+                    boldPriceDivs.flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
                   );
                   const regularBoldPrices = uniqueNumbers(
                     boldPriceDivs
                       .filter((node) => !hasMemberOnlyKeyword(node))
-                      .flatMap((node) => parsePrices(node.textContent || ''))
+                      .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
                   );
                   const couponBoldPrices = uniqueNumbers(
                     boldPriceDivs
                       .filter((node) => hasMemberOnlyKeyword(node))
-                      .flatMap((node) => parsePrices(node.textContent || ''))
+                      .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
                   );
                   const basePrices = parsePrices(
                     Array.from(customOos.querySelectorAll('del, [class*="basePrice"], [class*="BasePrice"]'))
