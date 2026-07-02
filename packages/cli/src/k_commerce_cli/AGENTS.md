@@ -10,6 +10,6 @@ This package contains the command-line application and service layer.
 
 ## Subpackages
 
-- `commands/` - user-facing CLI commands (`login`, `logout`, `status`, `order`). See `commands/AGENTS.md`.
+- `commands/` - user-facing CLI commands (`login`, `logout`, `status`, `order`, `review`, `cart`). See `commands/AGENTS.md`.
 - `services/` - provider interfaces, stores, browser automation, provider registry, and provider implementations. See `services/AGENTS.md`.
 - `terminal/` - concrete terminal output adapter. See `terminal/AGENTS.md`.
