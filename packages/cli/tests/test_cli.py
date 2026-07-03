@@ -151,7 +151,7 @@ async def test_cart_coupang_command_lists_cart() -> None:
         )
     )
 
-    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider) as get_provider:
+    with patch("k_commerce_cli.commands.cart.common.get_provider", return_value=provider) as get_provider:
         result = await RUNNER.invoke(app, ["cart", "coupang"])
 
     assert result.exit_code == 0
@@ -171,7 +171,7 @@ async def test_cart_coupang_command_handles_browser_closed_gracefully() -> None:
         )
     )
 
-    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider):
+    with patch("k_commerce_cli.commands.cart.common.get_provider", return_value=provider):
         result = await RUNNER.invoke(app, ["cart", "coupang"])
 
     assert result.exit_code == 0
@@ -191,7 +191,7 @@ async def test_cart_coupang_command_passes_root_dir_to_service(tmp_path: Path) -
         )
     )
 
-    with patch("k_commerce_cli.commands.cart.get_provider", return_value=provider) as get_provider:
+    with patch("k_commerce_cli.commands.cart.common.get_provider", return_value=provider) as get_provider:
         result = await RUNNER.invoke(app, ["cart", "coupang", "--root_dir", str(tmp_path)])
 
     assert result.exit_code == 0
@@ -236,16 +236,16 @@ async def test_cart_quantity_command_updates_selected_item_quantity() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ) as get_provider,
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_item",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_item",
             AsyncMock(side_effect=[selected_item, None]),
         ),
-        patch("k_commerce_cli.commands.cart.prompt_quantity", AsyncMock(return_value=3)),
+        patch("k_commerce_cli.commands.cart.interactive.prompt_quantity", AsyncMock(return_value=3)),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_continue",
             AsyncMock(return_value=False),
         ) as prompt_cart_continue,
     ):
@@ -303,16 +303,16 @@ async def test_cart_quantity_command_shows_applied_quantity_when_capped() -> Non
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_item",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_item",
             AsyncMock(side_effect=[selected_item, None]),
         ),
-        patch("k_commerce_cli.commands.cart.prompt_quantity", AsyncMock(return_value=100_000_000)),
+        patch("k_commerce_cli.commands.cart.interactive.prompt_quantity", AsyncMock(return_value=100_000_000)),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_continue",
             AsyncMock(return_value=False),
         ),
     ):
@@ -368,16 +368,16 @@ async def test_cart_quantity_command_reloads_list_when_user_continues() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_item",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_item",
             AsyncMock(side_effect=[selected_item, None]),
         ),
-        patch("k_commerce_cli.commands.cart.prompt_quantity", AsyncMock(return_value=2)),
+        patch("k_commerce_cli.commands.cart.interactive.prompt_quantity", AsyncMock(return_value=2)),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_continue",
             AsyncMock(return_value=True),
         ),
     ):
@@ -414,10 +414,10 @@ async def test_cart_quantity_command_exits_cleanly_on_exit_choice_string() -> No
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
-        patch("k_commerce_cli.commands.cart.prompt_cart_item", AsyncMock(return_value="나가기")),
+        patch("k_commerce_cli.commands.cart.interactive.prompt_cart_item", AsyncMock(return_value="나가기")),
     ):
         result = await RUNNER.invoke(app, ["cart", "coupang", "--quantity"])
 
@@ -462,14 +462,14 @@ async def test_cart_quantity_command_shows_error_when_update_fails() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_item",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_item",
             AsyncMock(side_effect=[selected_item, None]),
         ),
-        patch("k_commerce_cli.commands.cart.prompt_quantity", AsyncMock(return_value=3)),
+        patch("k_commerce_cli.commands.cart.interactive.prompt_quantity", AsyncMock(return_value=3)),
     ):
         result = await RUNNER.invoke(app, ["cart", "coupang", "--quantity"])
 
@@ -519,23 +519,23 @@ async def test_cart_delete_single_item_flow() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            "k_commerce_cli.commands.cart.interactive.prompt_delete_mode",
             AsyncMock(return_value="single"),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_item",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_item",
             AsyncMock(side_effect=[selected_item, "exit"]),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_bulk_delete_confirmation",
+            "k_commerce_cli.commands.cart.interactive.prompt_bulk_delete_confirmation",
             AsyncMock(return_value="confirm"),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_continue",
             AsyncMock(return_value=False),
         ),
     ):
@@ -581,15 +581,15 @@ async def test_cart_delete_all_flow() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            "k_commerce_cli.commands.cart.interactive.prompt_delete_mode",
             AsyncMock(return_value="all"),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_clear_cart_action",
+            "k_commerce_cli.commands.cart.interactive.prompt_clear_cart_action",
             AsyncMock(return_value="clear"),
         ),
     ):
@@ -648,23 +648,23 @@ async def test_cart_delete_selected_items_flow() -> None:
 
     with (
         patch(
-            "k_commerce_cli.commands.cart.get_provider",
+            "k_commerce_cli.commands.cart.common.get_provider",
             side_effect=[provider, provider],
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_delete_mode",
+            "k_commerce_cli.commands.cart.interactive.prompt_delete_mode",
             AsyncMock(return_value="selected"),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_items",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_items",
             AsyncMock(return_value=selected),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_bulk_delete_confirmation",
+            "k_commerce_cli.commands.cart.interactive.prompt_bulk_delete_confirmation",
             AsyncMock(return_value="confirm"),
         ),
         patch(
-            "k_commerce_cli.commands.cart.prompt_cart_continue",
+            "k_commerce_cli.commands.cart.interactive.prompt_cart_continue",
             AsyncMock(return_value=False),
         ),
     ):

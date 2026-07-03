@@ -33,8 +33,45 @@ uv run k-commerce-mcp
   - example: `provider="coupang"`
   - return: `LogoutResult`
 
-There is currently no MCP `order_list` tool. Order snapshot collection is available only through
-the CLI command `k-commerce order list coupang`.
+- `order_list`: 주문 내역 스냅샷을 수집/조회합니다.
+  - example: `provider="coupang", refresh=false, failed_only=false`
+  - return: `OrderResult`
+
+- `cart_list`: 장바구니 상품 목록을 조회합니다.
+  - example: `provider="coupang"`
+  - return: `ListCartResult`
+
+- `cart_update_quantity`: 장바구니 상품 수량을 변경합니다.
+  - example: `provider="coupang", quantity=3, product_id="...", vendor_item_id="...", item_id="..."`
+  - return: `CartQuantityUpdateResult`
+
+- `cart_delete_item`: 장바구니에서 상품 1건을 삭제합니다.
+  - example: `provider="coupang", product_id="...", vendor_item_id="...", item_id="..."`
+  - return: `CartDeleteResult`
+
+- `cart_delete_items`: 장바구니에서 여러 상품을 한 번에 삭제합니다.
+  - example: `provider="coupang", items=[{"product_id": "...", "vendor_item_id": "...", "item_id": "..."}]`
+  - return: `CartDeleteResult`
+
+- `cart_clear`: 장바구니의 모든 상품을 삭제합니다.
+  - example: `provider="coupang"`
+  - return: `CartDeleteResult`
+
+## Cart CLI Mapping
+
+| CLI | MCP |
+| --- | --- |
+| `k-commerce cart coupang` / `--list` | `cart_list` |
+| `k-commerce cart coupang --quantity` | `cart_update_quantity` |
+| `k-commerce cart coupang --delete` (단일 삭제) | `cart_delete_item` |
+| `k-commerce cart coupang --delete` (선택 삭제) | `cart_delete_items` |
+| `k-commerce cart coupang --delete` (전체 삭제) | `cart_clear` |
+
+프론트에서는 `cart_list`로 받은 `items`를 화면에 표시한 뒤, 사용자가 고른 항목의
+`product_id`, `vendor_item_id`, `item_id`로 삭제/수량 변경 도구를 호출하면 됩니다.
+
+Order snapshot collection is also available through the CLI command
+`k-commerce order list coupang`.
 
 ## Supported Providers
 

@@ -708,18 +708,74 @@ class CoupangCartService(CoupangCartDelete):
                 const value = Number(digits(raw));
                 return Number.isFinite(value) && value > 0 ? value : 1;
               };
-              const readPrices = (container) => {
-                const text = normalizeText(container?.innerText || '');
-                const prices = [...text.matchAll(/[0-9,]+\\s*원/g)]
+              const readWonValues = (element) => {
+                const text = normalizeText(element?.innerText || element?.textContent || '');
+                return [...text.matchAll(/[0-9,]+\\s*원/g)]
                   .map((match) => Number(match[0].replace(/[^0-9]/g, '')))
                   .filter((value) => Number.isFinite(value) && value > 0);
+              };
+              const readSplitWonValues = (element) => {
+                const values = [];
+                for (const wonElement of Array.from(element?.querySelectorAll('span, em, strong, b') || [])) {
+                  if (normalizeText(wonElement.textContent) !== '원') continue;
+
+                  let current = wonElement.previousElementSibling;
+                  while (current) {
+                    const raw = normalizeText(current.textContent || '');
+                    const value = Number(raw.replace(/[^0-9]/g, ''));
+                    if (Number.isFinite(value) && value > 0) {
+                      values.push(value);
+                      break;
+                    }
+                    current = current.previousElementSibling;
+                  }
+                }
+                return values;
+              };
+              const uniquePrices = (prices) => {
                 const unique = [];
                 for (const price of prices) {
                   if (unique[unique.length - 1] !== price) unique.push(price);
                 }
                 return unique;
               };
+              const readPriceBySelectors = (container, selectors) => {
+                for (const selector of selectors) {
+                  const elements = Array.from(container?.querySelectorAll(selector) || []);
+                  const prices = uniquePrices(elements.flatMap((element) => [
+                    ...readWonValues(element),
+                    ...readSplitWonValues(element),
+                  ]));
+                  if (prices.length) return prices[prices.length - 1];
+                }
+                return 0;
+              };
+              const readPrices = (container) => uniquePrices([
+                ...readWonValues(container),
+                ...readSplitWonValues(container),
+              ]);
+              const readTotalPrice = (container) => {
+                const exactPrice = readPriceBySelectors(container, [
+                  '[data-component-id="price-area"] .twc-font-bold',
+                  '[data-component-id="price-area"]',
+                  '.unit-total-sale-price',
+                  '.total-price',
+                  '[class*="total" i][class*="price" i]',
+                  '[class*="sale-price" i]',
+                  '[class*="final" i][class*="price" i]',
+                  '[class*="price-value" i]',
+                ]);
+                if (exactPrice) return exactPrice;
+                const prices = readPrices(container);
+                return prices.length ? prices[prices.length - 1] : 0;
+              };
               const readUnitPrice = (container, quantity, totalPrice) => {
+                const selectedUnitPrice = readPriceBySelectors(container, [
+                  '.unit-price',
+                  '[class*="unit" i][class*="price" i]',
+                  '[class*="each" i][class*="price" i]',
+                ]);
+                if (selectedUnitPrice) return formatWon(selectedUnitPrice);
                 const unitText = normalizeText(container?.innerText || '').match(/1개당\\s*([0-9,]+)\\s*원/);
                 if (unitText) return `${unitText[1]}원`;
                 if (quantity > 1 && totalPrice) return formatWon(Math.round(totalPrice / quantity));
@@ -791,13 +847,13 @@ class CoupangCartService(CoupangCartDelete):
                 if (seen.has(dedupeKey)) continue;
                 seen.add(dedupeKey);
 
+                const priceContainer = itemRoot || container;
                 const quantity = readQuantity(container);
-                const prices = readPrices(container);
-                const totalPriceValue = prices.length ? prices[prices.length - 1] : 0;
-                const unitPrice = readUnitPrice(container, quantity, totalPriceValue);
+                const totalPriceValue = readTotalPrice(priceContainer);
+                const unitPrice = readUnitPrice(priceContainer, quantity, totalPriceValue);
                 const totalPrice = formatWon(totalPriceValue) || unitPrice;
                 const deliveryText = normalizeText(
-                  container.querySelector('[class*="delivery" i], [class*="arrival" i], [class*="shipping" i]')?.textContent || ''
+                  priceContainer.querySelector('[class*="delivery" i], [class*="arrival" i], [class*="shipping" i]')?.textContent || ''
                 );
 
                 items.push({

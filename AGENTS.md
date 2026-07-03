@@ -17,6 +17,7 @@ This workspace is a Python monorepo for K-commerce automation. Use this map firs
 - `packages/` - all installable Python packages. See `packages/AGENTS.md`.
 - `packages/cli/` - command-line application, provider services, browser automation, and CLI tests.
 - `packages/mcp/` - MCP server wrapper around the CLI provider services and MCP tests.
+- `packages/agent/` - LangChain agent backend (FastAPI) that bridges a web frontend to the MCP server over stdio.
 
 ## Generated or local-only directories
 

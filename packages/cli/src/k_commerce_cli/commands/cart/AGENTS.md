@@ -2,8 +2,7 @@
 
 This directory contains the `cart` command and interactive cart workflows.
 
-- `__init__.py` - package marker that re-exports the `cart` command from `command.py`.
-- `command.py` - thin `cart` command: exclusive `--list`/`--quantity`/`--delete` flag handling that dispatches to the per-flow runners.
+- `__init__.py` - thin `cart` command definition: exclusive `--list`/`--quantity`/`--delete` flag handling that dispatches to the per-flow runners.
 - `list.py` - `run_cart_list` flow for the default list-browse mode.
 - `quantity.py` - `run_quantity_update` flow for the `--quantity` mode.
 - `delete.py` - `run_delete` flow plus single/selected/clear delete sub-flows for the `--delete` mode.

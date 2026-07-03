@@ -16,6 +16,7 @@ uv sync
 
 - `packages/cli`: end-user CLI for commerce workflows. See [packages/cli/README.md](packages/cli/README.md).
 - `packages/mcp`: MCP server exposing commerce tools. See [packages/mcp/README.md](packages/mcp/README.md).
+- `packages/agent`: LangChain agent backend bridging a web frontend to the MCP server. See [packages/agent/README.md](packages/agent/README.md).
 
 ## Current Scope
 
