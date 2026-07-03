@@ -20,3 +20,8 @@ This workspace is a Python monorepo for K-commerce automation. Use this map firs
 ## Generated or local-only directories
 
 - `.venv/`, `.uv-cache/`, `.pytest_cache/`, `.ruff_cache/`, `.serena/`, `dist/`, and `__pycache__/` are local/generated artifacts. Do not use them as source-of-truth maps.
+
+## Workflow conventions
+
+- Use English for commit messages and issue/PR titles.
+- Use Korean for issue/PR bodies.
