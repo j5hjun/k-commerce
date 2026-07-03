@@ -1,6 +1,8 @@
-from pathlib import Path
+from __future__ import annotations
+
 from functools import cached_property
-from typing import Any, Generic, Protocol, TypeVar, TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
@@ -117,7 +119,7 @@ class Provider(Protocol):
         category: str | None = None,
         sort: str = "relevance",
         max_results: int = 10,
-    ) -> "SearchProductResult": ...
+    ) -> SearchProductResult: ...
 
 
 class AuthService(Protocol):
@@ -148,22 +150,38 @@ class ReviewService(Protocol):
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...
 
 
+class SearchService(Protocol):
+    async def search_products(
+        self,
+        keyword: str,
+        *,
+        category: str | None = None,
+        sort: str = "relevance",
+        max_results: int = 10,
+    ) -> SearchProductResult: ...
+
+
 AuthServiceT = TypeVar("AuthServiceT", bound=AuthService)
 OrderServiceT = TypeVar("OrderServiceT", bound=OrderService)
 ReviewServiceT = TypeVar("ReviewServiceT", bound=ReviewService)
+SearchServiceT = TypeVar("SearchServiceT", bound=SearchService)
 
 
-class BaseProvider(Provider, Generic[AuthServiceT, OrderServiceT, ReviewServiceT]):
+class BaseProvider(
+    Provider,
+    Generic[AuthServiceT, OrderServiceT, ReviewServiceT, SearchServiceT],
+):
     auth_service_cls: type[AuthServiceT]
     order_service_cls: type[OrderServiceT]
     review_service_cls: type[ReviewServiceT]
+    search_service_cls: type[SearchServiceT]
 
     def __init__(
         self,
         provider: ProviderName,
-        terminal: Terminal | None,
-        browser: Browser | None,
-        store: Store | None,
+        terminal: Terminal | None = None,
+        browser: Browser | None = None,
+        store: Store | None = None,
     ) -> None:
         self.provider = provider
         self.terminal = terminal
@@ -203,6 +221,17 @@ class BaseProvider(Provider, Generic[AuthServiceT, OrderServiceT, ReviewServiceT
             terminal=self.terminal,
         )
 
+    @cached_property
+    def search_service(self) -> SearchServiceT:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return self.search_service_cls(
+            provider_name=str(self.provider),
+            store=self.store,
+            browser=self.browser,
+            terminal=self.terminal,
+        )
+
     async def login(self) -> LoginResult:
         return await self.auth_service.login()
 
@@ -235,4 +264,19 @@ class BaseProvider(Provider, Generic[AuthServiceT, OrderServiceT, ReviewServiceT
         return await self.order_service.list_orders(
             refresh=refresh,
             failed_only=failed_only,
+        )
+
+    async def search_products(
+        self,
+        keyword: str,
+        *,
+        category: str | None = None,
+        sort: str = "relevance",
+        max_results: int = 10,
+    ) -> SearchProductResult:
+        return await self.search_service.search_products(
+            keyword,
+            category=category,
+            sort=sort,
+            max_results=max_results,
         )

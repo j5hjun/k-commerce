@@ -148,6 +148,35 @@ async def test_scrapes_top_ranked_items_from_rank_markers() -> None:
 
 
 @pytest.mark.anyio
+async def test_scrape_search_results_uses_json_ld_when_dom_is_empty() -> None:
+    service = _make_search_service()
+    tab = _SearchTab(
+        payloads=[
+            {
+                "foundRankMarkers": False,
+                "items": [
+                    {
+                        "product_id": "4914224511",
+                        "product_name": "켈로그 현미 푸레이크, 550g, 1개",
+                        "price": "8900",
+                        "rating": "1234",
+                        "image_url": "https://example.com/image.jpg",
+                        "product_link": "https://www.coupang.com/vp/products/4914224511",
+                    }
+                ],
+            }
+        ]
+    )
+
+    items, found_rank_markers = await service._scrape_search_results(tab, max_results=1)
+
+    assert found_rank_markers is False
+    assert len(items) == 1
+    assert items[0].product_id == "4914224511"
+    assert "application/ld+json" in tab.evaluate_calls[0]
+
+
+@pytest.mark.anyio
 async def test_scrape_search_results_fails_when_rank_markers_are_missing() -> None:
     service = _make_search_service()
     tab = _SearchTab(payloads=[{"foundRankMarkers": False, "items": []}])

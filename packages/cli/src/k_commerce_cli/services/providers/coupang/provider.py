@@ -14,7 +14,12 @@ from .search.type import SearchProductResult
 
 
 class CoupangProvider(
-    BaseProvider[CoupangAuthService, CoupangOrderService, CoupangReviewService]
+    BaseProvider[
+        CoupangAuthService,
+        CoupangOrderService,
+        CoupangReviewService,
+        CoupangSearchService,
+    ]
 ):
     auth_service_cls = CoupangAuthService
     order_service_cls = CoupangOrderService
