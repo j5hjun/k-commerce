@@ -1,0 +1,4 @@
+interface:
+  display_name: "Map AGENTS Files"
+  short_description: "Create directory-aware AGENTS.md file maps"
+  default_prompt: "Use $map-agents-files to add file maps to every AGENTS.md in this repository."

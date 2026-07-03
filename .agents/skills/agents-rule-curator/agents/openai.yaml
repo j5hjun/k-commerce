@@ -1,0 +1,4 @@
+interface:
+  display_name: "AGENTS Rule Curator"
+  short_description: "Distill selected AGENTS.md rules"
+  default_prompt: "Use $agents-rule-curator to distill our discussion into selected AGENTS.md rules."
