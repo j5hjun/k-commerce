@@ -334,14 +334,21 @@ class CoupangAuthService:
         return bool(result)
 
     def _login_tab(self, session: BrowserSession) -> BrowserTab:
-        tabs = getattr(getattr(session, "browser", None), "tabs", None)
+        runtime = getattr(session, "browser", None)
         candidates: list[BrowserTab] = []
-        if isinstance(tabs, list):
-            candidates.extend(reversed(tabs))
+        if runtime is not None:
+            tabs = getattr(runtime, "tabs", None)
+            if isinstance(tabs, list):
+                candidates.extend(reversed(tabs))
 
-        main_tab = getattr(getattr(session, "browser", None), "main_tab", None)
-        if main_tab is not None:
-            candidates.append(main_tab)
+            main_tab = None
+            try:
+                main_tab = runtime.main_tab  # type: ignore[attr-defined]
+            except (StopIteration, RuntimeError):
+                main_tab = None
+            if main_tab is not None:
+                candidates.append(main_tab)
+
         candidates.append(session.tab)
 
         for candidate in candidates:

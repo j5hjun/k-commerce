@@ -73,6 +73,26 @@ Delete a review interactively:
 uv run k-commerce review delete coupang
 ```
 
+List cart products and browse item details:
+
+```bash
+uv run k-commerce cart coupang
+```
+
+The `--list` flag runs the same interactive browse flow.
+
+Update a cart product quantity interactively:
+
+```bash
+uv run k-commerce cart coupang --quantity
+```
+
+Delete cart products interactively:
+
+```bash
+uv run k-commerce cart coupang --delete
+```
+
 Collect visible-year Coupang orders except the `최근 6개월` tab and update `orders.json` with a
 diff summary:
 
@@ -122,7 +142,7 @@ To isolate credentials and session data under a custom directory:
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status, logout, review, order list, and search commands:
+The same `--root-dir` option also applies to status, logout, review, cart, order list, and search commands:
 
 ```bash
 uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
@@ -133,6 +153,9 @@ uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
 uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --list --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --quantity --root-dir /tmp/test-k-commerce
+uv run k-commerce cart coupang --delete --root-dir /tmp/test-k-commerce
 uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
 uv run k-commerce search coupang KEYWORD --root-dir /tmp/test-k-commerce
 ```
@@ -251,6 +274,47 @@ uv run k-commerce search coupang KEYWORD --category CATEGORY_ID
 
 If no saved session exists, or the session is no longer logged in, the command fails with a clear
 message instead of opening a login flow automatically.
+
+## Coupang Cart Commands
+
+The `cart` command reuses a saved Coupang session.
+
+### Cart list browse
+
+```bash
+uv run k-commerce cart coupang --list
+```
+
+This loads the cart product list, lets you pick an item with arrow keys, then shows full item
+details. You can go back to the list or exit. Running without flags uses the same browse flow.
+
+The list includes product name, quantity, price, and available identifiers such as `vendorItemId`.
+
+### Update quantity
+
+```bash
+uv run k-commerce cart coupang --quantity
+```
+
+This loads the cart product list, lets you pick an item with arrow keys, then prompts for the new
+quantity before applying it to the Coupang cart page. You can update multiple items in one session.
+
+### Delete cart products
+
+```bash
+uv run k-commerce cart coupang --delete
+```
+
+This loads the cart product list, then lets you choose a delete mode:
+
+- **Single item**: pick one product, confirm, and delete it. You can delete more items in the same
+  session.
+- **Multiple items**: pick several products with checkboxes, confirm, and delete them together.
+- **Clear cart**: view the current list or clear the entire cart after confirmation.
+
+Each mode supports going back to the delete-mode menu or exiting without changes.
+
+`--list`, `--quantity`, and `--delete` cannot be used together.
 
 ## Login Status
 

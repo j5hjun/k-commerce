@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Generic, Protocol, TypeVar
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.models import Credentials
 from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.types import (
+    CartDeleteRequest,
+    CartDeleteResult,
+    CartQuantityUpdateRequest,
+    CartQuantityUpdateResult,
+    ListCartResult,
     ListEditableReviewsResult,
     ListReviewableResult,
     LoginResult,
@@ -96,6 +101,22 @@ class Provider(Protocol):
 
     async def logout(self) -> LogoutResult: ...
 
+    async def list_cart(self) -> ListCartResult: ...
+
+    async def update_cart_quantity(
+        self, request: CartQuantityUpdateRequest
+    ) -> CartQuantityUpdateResult: ...
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
+
+    def cart_session(self) -> AsyncContextManager["CartSession"]: ...
+
     async def list_reviewable(self) -> ListReviewableResult: ...
 
     async def list_editable(self) -> ListEditableReviewsResult: ...
@@ -161,20 +182,64 @@ class SearchService(Protocol):
     ) -> SearchProductResult: ...
 
 
+class CartService(Protocol):
+    async def list_cart(self) -> ListCartResult: ...
+
+    async def update_cart_quantity(
+        self, request: CartQuantityUpdateRequest
+    ) -> CartQuantityUpdateResult: ...
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
+
+    def cart_session(self) -> AsyncContextManager["CartSession"]: ...
+
+
+class CartSession(Protocol):
+    async def list_cart(self) -> ListCartResult: ...
+
+    async def refresh_cart(self) -> ListCartResult: ...
+
+    async def update_cart_quantity(
+        self, request: CartQuantityUpdateRequest
+    ) -> CartQuantityUpdateResult: ...
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult: ...
+
+    async def delete_cart_items(
+        self, requests: tuple[CartDeleteRequest, ...]
+    ) -> CartDeleteResult: ...
+
+    async def clear_cart(self) -> CartDeleteResult: ...
+
+
 AuthServiceT = TypeVar("AuthServiceT", bound=AuthService)
 OrderServiceT = TypeVar("OrderServiceT", bound=OrderService)
 ReviewServiceT = TypeVar("ReviewServiceT", bound=ReviewService)
 SearchServiceT = TypeVar("SearchServiceT", bound=SearchService)
+CartServiceT = TypeVar("CartServiceT", bound=CartService)
 
 
 class BaseProvider(
     Provider,
-    Generic[AuthServiceT, OrderServiceT, ReviewServiceT, SearchServiceT],
+    Generic[
+        AuthServiceT,
+        OrderServiceT,
+        ReviewServiceT,
+        SearchServiceT,
+        CartServiceT,
+    ],
 ):
     auth_service_cls: type[AuthServiceT]
     order_service_cls: type[OrderServiceT]
     review_service_cls: type[ReviewServiceT]
     search_service_cls: type[SearchServiceT]
+    cart_service_cls: type[CartServiceT]
 
     def __init__(
         self,
@@ -226,7 +291,18 @@ class BaseProvider(
         if self.store is None or self.browser is None:
             raise ValueError("Provider requires both store and browser before use")
         return self.search_service_cls(
-            provider_name=str(self.provider),
+            provider_name=self.provider.value,
+            store=self.store,
+            browser=self.browser,
+            terminal=self.terminal,
+        )
+
+    @cached_property
+    def cart_service(self) -> CartServiceT:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return self.cart_service_cls(
+            provider=self.provider,
             store=self.store,
             browser=self.browser,
             terminal=self.terminal,
@@ -240,6 +316,30 @@ class BaseProvider(
 
     async def logout(self) -> LogoutResult:
         return await self.auth_service.logout()
+
+    async def list_cart(self) -> ListCartResult:
+        return await self.cart_service.list_cart()
+
+    async def update_cart_quantity(
+        self,
+        request: CartQuantityUpdateRequest,
+    ) -> CartQuantityUpdateResult:
+        return await self.cart_service.update_cart_quantity(request)
+
+    async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        return await self.cart_service.delete_cart_item(request)
+
+    async def delete_cart_items(
+        self,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        return await self.cart_service.delete_cart_items(requests)
+
+    async def clear_cart(self) -> CartDeleteResult:
+        return await self.cart_service.clear_cart()
+
+    def cart_session(self) -> AsyncContextManager[CartSession]:
+        return self.cart_service.cart_session()
 
     async def list_reviewable(self) -> ListReviewableResult:
         return await self.review_service.list_reviewable()

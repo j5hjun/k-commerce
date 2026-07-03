@@ -1,0 +1,28 @@
+[project]
+name = "k-commerce-agent"
+version = "0.1.0"
+description = "LangChain agent backend that bridges a web frontend to the K-commerce MCP server."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "k-commerce-mcp",
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-settings",
+  "python-dotenv",
+  "langchain",
+  "langgraph",
+  "langchain-mcp-adapters",
+  "langchain-openai",
+  "langchain-ibm",
+]
+
+[project.scripts]
+k-commerce-agent = "k_commerce_agent.main:main"
+
+[tool.uv.sources]
+k-commerce-mcp = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
