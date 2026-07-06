@@ -191,12 +191,27 @@ async def test_search_orders_collects_keyword_pages_with_same_order_payload_pars
     tab.get = AsyncMock()
     browser.launch = AsyncMock(return_value=session)
     browser.close = AsyncMock()
+    first_order = _order_payload(order_id=10, title="detergent")
+    first_order["deliveryGroupList"][0]["productList"].append(
+        {
+            "vendorItemId": 102,
+            "productId": 1002,
+            "itemId": 2002,
+            "vendorItemName": "refill",
+            "productName": "refill",
+            "quantity": 2,
+            "unitPrice": 2000,
+            "discountedUnitPrice": 2000,
+            "combinedUnitPrice": 4000,
+            "imagePath": "https://example.com/refill.jpg",
+        }
+    )
     tab.evaluate = AsyncMock(
         side_effect=[
             [],
             ["최근 6개월", "2026"],
             {
-                "orderList": [_order_payload(order_id=10, title="detergent")],
+                "orderList": [first_order],
                 "orderPagination": {"hasNext": True, "nextPageIndex": 1},
             },
             {
@@ -212,10 +227,15 @@ async def test_search_orders_collects_keyword_pages_with_same_order_payload_pars
 
     assert result.success is True
     assert result.keyword == "세제"
-    assert result.count == 2
-    assert [order.order_id for order in result.orders] == ["10", "20"]
-    assert result.orders[0].item_count == 1
-    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    assert result.total_count == 2
+    assert result.payload is not None
+    assert [str(order.orderId) for order in result.payload.orders] == ["10", "20"]
+    assert len(result.payload.orders[0].deliveryGroupList[0].productList) == 2
+    assert [product.productUrl for product in result.payload.orders[0].deliveryGroupList[0].productList] == [
+        "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101",
+        "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102",
+    ]
+    assert [product.productName for product in result.payload.orders[0].deliveryGroupList[0].productList] == ["item", "refill"]
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     tab.get.assert_any_await(
         "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=0"

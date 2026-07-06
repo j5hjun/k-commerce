@@ -14,6 +14,7 @@ _TOOL_DEFINITIONS: Final[tuple[ToolDefinition, ...]] = (
     ToolDefinition("order_search", "Search provider orders from the browser-backed order page."),
     ToolDefinition("order_detail", "Show one saved provider order in detail."),
     ToolDefinition("order_failures", "List saved provider orders that need attention."),
+    ToolDefinition("product_detail", "Collect a provider product detail page."),
     ToolDefinition("cart_list", "List cart items."),
     ToolDefinition("cart_update_quantity", "Update a cart item quantity."),
     ToolDefinition("cart_delete_item", "Delete one cart item."),

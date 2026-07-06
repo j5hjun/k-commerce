@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from typing import Final
 
+from nodriver.core.connection import ProtocolException
+from websockets.exceptions import ConnectionClosed
+
 from k_commerce_cli.services.providers.coupang.cart.state import CoupangCartState
 from k_commerce_cli.services.providers.coupang.review.state import CoupangReviewState
 
@@ -22,12 +25,15 @@ LOGIN_REQUIRED_METADATA: Final = ResultMetadata(
 VALIDATION_METADATA: Final = ResultMetadata(error_code="validation_error")
 BROWSER_CLOSED_ERROR_MARKERS: Final = (
     "browser closed",
+    "connection closed",
     "session with given id not found",
     "target closed",
     "invalid target id",
     "no such target",
     "websocket connection is closed",
+    "websocket is not connected",
 )
+BROWSER_CLOSED_EXCEPTIONS: Final = (RuntimeError, ConnectionError, ProtocolException, ConnectionClosed)
 
 _CART_RETRYABLE_METADATA: Final[dict[str, ResultMetadata]] = {
     CoupangCartState.PAGE_LOAD_FAILED: ResultMetadata(error_code=CoupangCartState.PAGE_LOAD_FAILED, retryable=True),
@@ -104,6 +110,8 @@ def search_metadata(state: str) -> ResultMetadata:
     return _SEARCH_METADATA.get(state, ResultMetadata(error_code=state, retryable=True))
 
 
-def is_browser_closed_error(error: RuntimeError) -> bool:
+def is_browser_closed_error(error: Exception) -> bool:
+    if isinstance(error, ConnectionClosed):
+        return True
     message = str(error).lower()
     return any(marker in message for marker in BROWSER_CLOSED_ERROR_MARKERS)

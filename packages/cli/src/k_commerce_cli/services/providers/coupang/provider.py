@@ -7,6 +7,7 @@ from k_commerce_cli.services.types import ProviderName
 from .auth import CoupangAuthService
 from .cart.service import CoupangCartService
 from .orders import CoupangOrderService
+from .product.service import CoupangProductService
 from .review.service import CoupangReviewService
 from .search.service import CoupangSearchService
 
@@ -18,6 +19,7 @@ class CoupangProvider(
         CoupangReviewService,
         CoupangSearchService,
         CoupangCartService,
+        CoupangProductService,
     ]
 ):
     auth_service_cls = CoupangAuthService
@@ -25,6 +27,7 @@ class CoupangProvider(
     review_service_cls = CoupangReviewService
     search_service_cls = CoupangSearchService
     cart_service_cls = CoupangCartService
+    product_service_cls = CoupangProductService
 
     def __init__(
         self,

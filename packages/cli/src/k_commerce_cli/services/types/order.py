@@ -6,13 +6,10 @@ from typing import TypeAlias
 from k_commerce_cli.services.providers.coupang.types import CoupangOrderList
 
 __all__ = [
-    "OrderDetailItem",
     "OrderDetailRequest",
     "OrderDetailResult",
-    "OrderFailureItem",
     "OrderFailuresRequest",
     "OrderFailuresResult",
-    "OrderListItem",
     "OrderListRequest",
     "OrderListResult",
     "OrderResult",
@@ -61,48 +58,12 @@ class OrderFailuresRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class OrderListItem:
-    order_id: str
-    ordered_at: str
-    status: str
-    title: str
-    amount: int
-    item_count: int = 0
-    product_url: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class OrderFailureItem:
-    order_id: str
-    ordered_at: str
-    failure_type: str
-    title: str
-    amount: int = 0
-    item_count: int = 0
-    product_url: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class OrderDetailItem:
-    vendor_item_id: str
-    product_id: str
-    item_id: str
-    name: str
-    quantity: int
-    amount: int
-    product_url: str
-    image_url: str
-
-
-@dataclass(frozen=True, slots=True)
 class OrderSyncResult:
     success: bool
     provider: str
     message: str
     start_date: str | None = None
     end_date: str | None = None
-    collected_orders: int = 0
-    total_orders: int = 0
     payload: CoupangOrderList | None = None
     error_code: str = ""
     retryable: bool = False
@@ -116,11 +77,10 @@ class OrderListResult:
     message: str
     start_date: str | None
     end_date: str | None
-    count: int
     total_count: int
     has_more: bool
     next_cursor: str | None
-    orders: tuple[OrderListItem, ...]
+    payload: CoupangOrderList | None = None
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
@@ -134,9 +94,8 @@ class OrderSearchResult:
     keyword: str
     start_date: str | None
     end_date: str | None
-    count: int
     total_count: int
-    orders: tuple[OrderListItem, ...]
+    payload: CoupangOrderList | None = None
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
@@ -148,11 +107,7 @@ class OrderDetailResult:
     provider: str
     message: str
     order_id: str
-    ordered_at: str = ""
-    status: str = ""
-    title: str = ""
-    amount: int = 0
-    items: tuple[OrderDetailItem, ...] = ()
+    payload: CoupangOrderList | None = None
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
@@ -165,8 +120,7 @@ class OrderFailuresResult:
     message: str
     start_date: str | None
     end_date: str | None
-    count: int
-    orders: tuple[OrderFailureItem, ...]
+    payload: CoupangOrderList | None = None
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()

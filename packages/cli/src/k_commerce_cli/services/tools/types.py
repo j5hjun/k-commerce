@@ -16,6 +16,7 @@ from k_commerce_cli.services.types import (
     LoginResult,
     LogoutResult,
     OrderResult,
+    ProductDetailResult,
     ReviewDeleteResult,
     ReviewEditResult,
     ReviewUploadResult,
@@ -31,6 +32,7 @@ ToolInvocationResult: TypeAlias = (
     | StatusResult
     | LogoutResult
     | OrderResult
+    | ProductDetailResult
     | ListCartResult
     | CartQuantityUpdateResult
     | CartDeleteResult

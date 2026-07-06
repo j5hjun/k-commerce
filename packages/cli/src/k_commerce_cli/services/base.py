@@ -27,6 +27,8 @@ from k_commerce_cli.services.types import (
     OrderSearchResult,
     OrderSyncRequest,
     OrderSyncResult,
+    ProductDetailRequest,
+    ProductDetailResult,
     ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
@@ -155,6 +157,8 @@ class Provider(Protocol):
         max_results: int = 10,
     ) -> SearchProductResult: ...
 
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult: ...
+
 
 class AuthService(Protocol):
     async def login(self) -> LoginResult: ...
@@ -199,6 +203,10 @@ class SearchService(Protocol):
     ) -> SearchProductResult: ...
 
 
+class ProductService(Protocol):
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult: ...
+
+
 class CartService(Protocol):
     async def list_cart(self) -> ListCartResult: ...
 
@@ -240,6 +248,7 @@ OrderServiceT = TypeVar("OrderServiceT", bound=OrderService)
 ReviewServiceT = TypeVar("ReviewServiceT", bound=ReviewService)
 SearchServiceT = TypeVar("SearchServiceT", bound=SearchService)
 CartServiceT = TypeVar("CartServiceT", bound=CartService)
+ProductServiceT = TypeVar("ProductServiceT", bound=ProductService)
 
 
 class BaseProvider(
@@ -250,6 +259,7 @@ class BaseProvider(
         ReviewServiceT,
         SearchServiceT,
         CartServiceT,
+        ProductServiceT,
     ],
 ):
     auth_service_cls: type[AuthServiceT]
@@ -257,6 +267,7 @@ class BaseProvider(
     review_service_cls: type[ReviewServiceT]
     search_service_cls: type[SearchServiceT]
     cart_service_cls: type[CartServiceT]
+    product_service_cls: type[ProductServiceT]
 
     def __init__(
         self,
@@ -319,6 +330,17 @@ class BaseProvider(
         if self.store is None or self.browser is None:
             raise ValueError("Provider requires both store and browser before use")
         return self.cart_service_cls(
+            provider=self.provider,
+            store=self.store,
+            browser=self.browser,
+            terminal=self.terminal,
+        )
+
+    @cached_property
+    def product_service(self) -> ProductServiceT:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return self.product_service_cls(
             provider=self.provider,
             store=self.store,
             browser=self.browser,
@@ -402,3 +424,6 @@ class BaseProvider(
             sort=sort,
             max_results=max_results,
         )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        return await self.product_service.get_product_detail(request)

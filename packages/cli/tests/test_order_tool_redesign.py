@@ -176,12 +176,13 @@ async def test_order_list_reads_saved_snapshot_without_launching_browser_when_or
 
     # Then: only matching saved orders are returned and no collection side effect is required.
     assert result.success is True
-    assert result.count == 1
     assert result.total_count == 1
-    assert result.orders[0].order_id == "200"
-    assert result.orders[0].title == "recent"
-    assert result.orders[0].item_count == 1
-    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    assert result.payload is not None
+    assert result.payload.orders[0].orderId == 200
+    assert result.payload.orders[0].title == "recent"
+    assert result.payload.orders[0].deliveryGroupList[0].productList[0].productUrl == (
+        "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    )
     assert result.next_tools == ()
 
 
@@ -194,13 +195,16 @@ async def test_order_detail_returns_product_identifiers_and_urls(tmp_path: Path)
     # When: the detail tool reads the saved order.
     result = await service.get_order_detail(OrderDetailRequest(order_id="200"))
 
-    # Then: the item has the identifiers and URL needed for follow-up tools or direct inspection.
+    # Then: the payload has the identifiers and URL needed for follow-up tools or direct inspection.
     assert result.success is True
-    assert result.items[0].vendor_item_id == "101"
-    assert result.items[0].product_id == "1001"
-    assert result.items[0].item_id == "2001"
-    assert result.items[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
-    assert result.items[0].image_url == "https://image.example/recent.jpg"
+    assert result.payload is not None
+    assert result.payload.orders[0].orderId == 200
+    product = result.payload.orders[0].deliveryGroupList[0].productList[0]
+    assert product.vendorItemId == 101
+    assert product.productId == 1001
+    assert product.itemId == 2001
+    assert product.productUrl == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    assert product.imagePath == "https://image.example/recent.jpg"
 
 
 @pytest.mark.anyio
@@ -214,10 +218,12 @@ async def test_order_failures_return_actionable_summary_fields(tmp_path: Path) -
 
     # Then: the failed order summary keeps the order key and representative product URL.
     assert result.success is True
-    assert result.orders[0].order_id == "100"
-    assert result.orders[0].amount == 1000
-    assert result.orders[0].item_count == 1
-    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102"
+    assert result.payload is not None
+    assert result.payload.orders[0].orderId == 100
+    assert result.payload.orders[0].totalProductPrice == 1000
+    assert result.payload.orders[0].deliveryGroupList[0].productList[0].productUrl == (
+        "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102"
+    )
 
 
 @pytest.mark.anyio

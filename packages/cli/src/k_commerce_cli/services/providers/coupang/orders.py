@@ -25,13 +25,10 @@ from k_commerce_cli.services.providers.coupang.result_metadata import (
     is_browser_closed_error,
 )
 from k_commerce_cli.services.types import (
-    OrderDetailItem,
     OrderDetailRequest,
     OrderDetailResult,
-    OrderFailureItem,
     OrderFailuresRequest,
     OrderFailuresResult,
-    OrderListItem,
     OrderListRequest,
     OrderListResult,
     OrderSearchRequest,
@@ -124,11 +121,10 @@ class CoupangOrderService:
             message=f"저장된 주문 조회 완료: {len(page)}건(전체 {len(matching_orders)}건)",
             start_date=request.start_date,
             end_date=request.end_date,
-            count=len(page),
             total_count=len(matching_orders),
             has_more=has_more,
             next_cursor=str(next_offset) if has_more else None,
-            orders=tuple(self._order_list_item(order) for order in page),
+            payload=self._result_payload(payload, page),
         )
 
     async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
@@ -153,9 +149,8 @@ class CoupangOrderService:
                     keyword=request.keyword,
                     start_date=request.start_date,
                     end_date=request.end_date,
-                    count=0,
                     total_count=0,
-                    orders=(),
+                    payload=self._empty_payload(refresh=False),
                 )
 
             orders, failed_pages = await self._collect_search_years(years, request.keyword, terminal)
@@ -171,9 +166,17 @@ class CoupangOrderService:
                 keyword=request.keyword,
                 start_date=request.start_date,
                 end_date=request.end_date,
-                count=len(page),
                 total_count=len(filtered_orders),
-                orders=tuple(self._order_list_item(order) for order in page),
+                payload=self._result_payload(
+                    self._build_payload(
+                        years,
+                        failed_pages,
+                        False,
+                        filtered_orders,
+                        self._summarize_changes([], filtered_orders),
+                    ),
+                    page,
+                ),
                 error_code=metadata.error_code,
                 retryable=metadata.retryable,
                 next_tools=metadata.next_tools,
@@ -204,11 +207,7 @@ class CoupangOrderService:
                     provider=self.provider.value,
                     message="저장된 주문 상세 조회 완료",
                     order_id=str(order.orderId),
-                    ordered_at=self._ordered_at_date_text(order),
-                    status=self._order_status(order),
-                    title=order.title,
-                    amount=order.totalProductPrice,
-                    items=tuple(self._order_detail_items(order)),
+                    payload=self._result_payload(payload, [order]),
                 )
         return OrderDetailResult(
             success=False,
@@ -228,8 +227,6 @@ class CoupangOrderService:
                 message="저장된 주문 데이터가 없습니다. 먼저 주문 수집이 필요합니다.",
                 start_date=request.start_date,
                 end_date=request.end_date,
-                count=0,
-                orders=(),
                 error_code="sync_required",
                 next_tools=("order_sync",),
             )
@@ -243,8 +240,7 @@ class CoupangOrderService:
             message=f"저장된 주문 처리 필요 항목 조회 완료: {len(matching_orders)}건",
             start_date=request.start_date,
             end_date=request.end_date,
-            count=len(matching_orders),
-            orders=tuple(self._order_failure_item(order) for order in matching_orders),
+            payload=self._result_payload(payload, matching_orders),
         )
 
     def _load_previous_orders(self) -> list[CoupangOrderResult]:
@@ -625,8 +621,6 @@ class CoupangOrderService:
             message=format_coupang_order_list_message(payload),
             start_date=request.start_date,
             end_date=request.end_date,
-            collected_orders=len(payload.orders),
-            total_orders=payload.meta.summary.totalOrders,
             payload=payload,
             error_code=metadata.error_code,
             retryable=metadata.retryable,
@@ -657,6 +651,25 @@ class CoupangOrderService:
             next_tools=LOGIN_REQUIRED_METADATA.next_tools,
         )
 
+    def _result_payload(self, source: CoupangOrderList, orders: list[CoupangOrderResult]) -> CoupangOrderList:
+        order_ids = {order.orderId for order in orders}
+        return CoupangOrderList(
+            meta=CoupangOrderMeta(
+                provider=source.meta.provider,
+                collectedAt=source.meta.collectedAt,
+                years=source.meta.years,
+                failedPages=source.meta.failedPages,
+                refresh=source.meta.refresh,
+                summary=CoupangOrderSummary(
+                    totalOrders=len(order_ids),
+                    addedOrders=0,
+                    updatedOrders=0,
+                    deletedOrders=0,
+                ),
+            ),
+            orders=orders,
+        )
+
     def _sync_required_order_list_result(self, request: OrderListRequest) -> OrderListResult:
         return OrderListResult(
             success=False,
@@ -664,11 +677,9 @@ class CoupangOrderService:
             message="저장된 주문 데이터가 없습니다. 먼저 주문 수집이 필요합니다.",
             start_date=request.start_date,
             end_date=request.end_date,
-            count=0,
             total_count=0,
             has_more=False,
             next_cursor=None,
-            orders=(),
             error_code="sync_required",
             retryable=False,
             next_tools=("order_sync",),
@@ -682,9 +693,7 @@ class CoupangOrderService:
             keyword=request.keyword,
             start_date=request.start_date,
             end_date=request.end_date,
-            count=0,
             total_count=0,
-            orders=(),
             error_code=LOGIN_REQUIRED_METADATA.error_code,
             retryable=LOGIN_REQUIRED_METADATA.retryable,
             next_tools=LOGIN_REQUIRED_METADATA.next_tools,
@@ -698,9 +707,7 @@ class CoupangOrderService:
             keyword=request.keyword,
             start_date=request.start_date,
             end_date=request.end_date,
-            count=0,
             total_count=0,
-            orders=(),
             error_code=BROWSER_CLOSED_METADATA.error_code,
             retryable=BROWSER_CLOSED_METADATA.retryable,
             next_tools=BROWSER_CLOSED_METADATA.next_tools,
@@ -753,49 +760,6 @@ class CoupangOrderService:
         if status == "all":
             return True
         return self._order_status(order) == status
-
-    def _order_list_item(self, order: CoupangOrderResult) -> OrderListItem:
-        products = self._order_products(order)
-        return OrderListItem(
-            order_id=str(order.orderId),
-            ordered_at=self._ordered_at_date_text(order),
-            status=self._order_status(order),
-            title=order.title,
-            amount=order.totalProductPrice,
-            item_count=len(products),
-            product_url=products[0].productUrl if products else "",
-        )
-
-    def _order_failure_item(self, order: CoupangOrderResult) -> OrderFailureItem:
-        products = self._order_products(order)
-        return OrderFailureItem(
-            order_id=str(order.orderId),
-            ordered_at=self._ordered_at_date_text(order),
-            failure_type=self._order_status(order),
-            title=order.title,
-            amount=order.totalProductPrice,
-            item_count=len(products),
-            product_url=products[0].productUrl if products else "",
-        )
-
-    def _order_detail_items(self, order: CoupangOrderResult) -> list[OrderDetailItem]:
-        return [
-            OrderDetailItem(
-                vendor_item_id=str(product.vendorItemId),
-                product_id=str(product.productId) if product.productId else "",
-                item_id=str(product.itemId) if product.itemId else "",
-                name=product.productName or product.vendorItemName,
-                quantity=product.quantity,
-                amount=product.combinedUnitPrice,
-                product_url=product.productUrl,
-                image_url=product.imagePath,
-            )
-            for group in order.deliveryGroupList
-            for product in group.productList
-        ]
-
-    def _order_products(self, order: CoupangOrderResult) -> list[CoupangOrderProduct]:
-        return [product for group in order.deliveryGroupList for product in group.productList]
 
     def _is_failure_order(self, order: CoupangOrderResult) -> bool:
         failure_markers = ("CANCEL", "RETURN", "EXCHANGE", "FAIL", "ERROR")

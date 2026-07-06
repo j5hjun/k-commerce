@@ -621,14 +621,18 @@ name = "k-commerce-cli"
 version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
+    { name = "anyio" },
     { name = "asyncclick" },
+    { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio" },
     { name = "asyncclick" },
+    { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
 ]
