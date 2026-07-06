@@ -23,3 +23,6 @@ Canonical tool names: `get_providers`, `login`, `status`, `logout`, `order_list`
 
 Use `k-commerce <tool-name> '<json-request>'` or `k-commerce <tool-name> --request-file <path>` for
 local JSON execution through the same shared contract.
+
+Use `npx @modelcontextprotocol/inspector uv run k-commerce-mcp` for manual MCP Inspector testing
+against the local stdio server.

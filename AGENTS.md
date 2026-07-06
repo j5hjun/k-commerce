@@ -98,6 +98,7 @@ uv run pytest packages/agent/tests
 RUN_COUPANG_SMOKE=1 K_COMMERCE_BROWSER_SANDBOX=0 uv run pytest packages/cli/tests/smoke -m smoke
 uv run k-commerce --help
 uv run k-commerce-mcp
+npx @modelcontextprotocol/inspector uv run k-commerce-mcp
 uv run k-commerce-agent
 ```
 

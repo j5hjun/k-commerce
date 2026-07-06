@@ -17,6 +17,7 @@ Tests for MCP server registration, shared-registry parity, and thin wrapper dele
 - MCP tests should assert exactly the 16 canonical tools from the shared registry.
 - Wrapper tests should prove delegation through `invoke_tool()` or the shared provider contract, not reimplemented provider logic.
 - MCP schemas must keep `root_dir` out of request payloads.
+- Manual MCP checks can use `npx @modelcontextprotocol/inspector uv run k-commerce-mcp` against the local stdio server.
 
 ## ANTI-PATTERNS
 
