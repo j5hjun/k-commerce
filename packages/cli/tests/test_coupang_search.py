@@ -39,6 +39,12 @@ class _SearchTab:
         self.get_calls.append(url)
 
 
+class _ClosingSearchTab(_SearchTab):
+    async def get(self, url: str) -> None:
+        self.get_calls.append(url)
+        raise RuntimeError("Session with given id not found.")
+
+
 class _Session:
     def __init__(self, tab: _SearchTab) -> None:
         self.tab = tab
@@ -99,6 +105,26 @@ async def test_search_products_fails_when_session_is_missing(tmp_path: Path) -> 
     assert result.error_code == "not_logged_in"
     assert result.retryable is False
     assert result.next_tools == ("login",)
+
+
+@pytest.mark.anyio
+async def test_search_products_returns_browser_closed_when_tab_closes(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    tab = _ClosingSearchTab(payloads=[])
+    browser.launch.return_value = _Session(tab)
+    service = _make_search_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+
+    result = await service.search_products("후레이크", print_result=False)
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "브라우저가 닫혀 상품 검색을 완료하지 못했습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_awaited_once()
 
 
 @pytest.mark.anyio

@@ -6,7 +6,12 @@ from urllib.parse import urlencode
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
-from k_commerce_cli.services.providers.coupang.result_metadata import LOGIN_REQUIRED_METADATA, search_metadata
+from k_commerce_cli.services.providers.coupang.result_metadata import (
+    BROWSER_CLOSED_ERROR_CODE,
+    LOGIN_REQUIRED_METADATA,
+    is_browser_closed_error,
+    search_metadata,
+)
 from k_commerce_cli.services.store import ProviderStore
 from .type import SearchProductResult, SearchResultItem
 
@@ -121,6 +126,18 @@ class CoupangSearchService:
             )
             return self._emit_search_result(
                 self._to_search_result(browser_result),
+                print_result=print_result,
+            )
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._emit_search_result(
+                self._to_search_result(
+                    _SearchBrowserResult(
+                        state=BROWSER_CLOSED_ERROR_CODE,
+                        message="브라우저가 닫혀 상품 검색을 완료하지 못했습니다.",
+                    )
+                ),
                 print_result=print_result,
             )
         finally:

@@ -18,9 +18,11 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderSummary,
 )
 from k_commerce_cli.services.providers.coupang.result_metadata import (
+    BROWSER_CLOSED_METADATA,
     EMPTY_METADATA,
     LOGIN_REQUIRED_METADATA,
     ResultMetadata,
+    is_browser_closed_error,
 )
 from k_commerce_cli.services.types import ProviderName
 
@@ -83,6 +85,13 @@ class CoupangOrderService:
             self.store.write_orders(payload.to_dict())
             self._emit_order_result(terminal, payload)
             return self._order_list_result(payload)
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            payload = self._empty_payload(refresh=refresh)
+            if terminal is not None:
+                terminal.warn("브라우저가 닫혀 주문 수집을 완료하지 못했습니다.")
+            return self._browser_closed_order_result(payload)
         finally:
             await self._close_browser_session()
 
@@ -380,6 +389,15 @@ class CoupangOrderService:
             error_code=metadata.error_code,
             retryable=metadata.retryable,
             next_tools=metadata.next_tools,
+        )
+
+    def _browser_closed_order_result(self, payload: CoupangOrderList) -> CoupangOrderListResult:
+        return CoupangOrderListResult(
+            message="브라우저가 닫혀 주문 수집을 완료하지 못했습니다.",
+            payload=payload,
+            error_code=BROWSER_CLOSED_METADATA.error_code,
+            retryable=BROWSER_CLOSED_METADATA.retryable,
+            next_tools=BROWSER_CLOSED_METADATA.next_tools,
         )
 
     def _build_payload(

@@ -2,7 +2,10 @@ from urllib.parse import quote
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, Store
-from k_commerce_cli.services.providers.coupang.result_metadata import review_metadata
+from k_commerce_cli.services.providers.coupang.result_metadata import (
+    is_browser_closed_error,
+    review_metadata,
+)
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
@@ -73,6 +76,12 @@ class CoupangReviewService(
                 else:
                     browser_result = _ListReviewableBrowserResult(state=login_state)
             return self._to_list_result(browser_result)
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._to_list_result(
+                _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
+            )
         finally:
             await self._close_browser_session()
 
@@ -381,6 +390,12 @@ class CoupangReviewService(
                 else:
                     browser_result = _ListReviewableBrowserResult(state=login_state)
             return self._to_editable_list_result(browser_result)
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._to_editable_list_result(
+                _ListReviewableBrowserResult(state=CoupangReviewState.BROWSER_CLOSED)
+            )
         finally:
             await self._close_browser_session()
 
@@ -417,6 +432,15 @@ class CoupangReviewService(
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_upload_result(self._to_result(request, browser_result))
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._emit_upload_result(
+                self._to_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.BROWSER_CLOSED),
+                )
+            )
         finally:
             await self._close_browser_session()
 
@@ -459,6 +483,15 @@ class CoupangReviewService(
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_edit_result(self._to_edit_result(request, browser_result))
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._emit_edit_result(
+                self._to_edit_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.BROWSER_CLOSED),
+                )
+            )
         finally:
             await self._close_browser_session()
 
@@ -493,6 +526,15 @@ class CoupangReviewService(
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
             return self._emit_delete_result(self._to_delete_result(request, browser_result))
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._emit_delete_result(
+                self._to_delete_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.BROWSER_CLOSED),
+                )
+            )
         finally:
             await self._close_browser_session()
 
