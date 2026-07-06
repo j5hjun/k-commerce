@@ -8,7 +8,8 @@ from langchain_core.tools import BaseTool
 
 from k_commerce_agent.config import settings
 from k_commerce_agent.history import LIST_TOOLS, compact_tool_content
-from k_commerce_agent.mcp_client import load_tools
+from k_commerce_agent.mcp_client import load_tools_by_server
+from k_commerce_agent.profiles.kcommerce import attach_next_step
 from k_commerce_agent.tools.web_search import web_search
 
 
@@ -181,8 +182,41 @@ def _with_compact_tool_results(tool: BaseTool) -> BaseTool:
     return tool.model_copy(update={"coroutine": compact_coroutine})
 
 
-def _wrap_tool(tool: BaseTool) -> BaseTool:
-    return _with_compact_tool_results(_with_safe_tool_errors(tool))
+def _with_next_step_hints(tool: BaseTool, *, first_party: bool) -> BaseTool:
+    """Attach agent-loop next-step hints to tool results."""
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def hinted_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        if use_artifact and isinstance(result, tuple):
+            content, artifact = result
+            return attach_next_step(tool.name, content, first_party=first_party), artifact
+        return attach_next_step(tool.name, result, first_party=first_party)
+
+    return tool.model_copy(update={"coroutine": hinted_coroutine})
+
+
+def _wrap_tool(tool: BaseTool, *, first_party: bool) -> BaseTool:
+    """Wrap a tool with host-level and (for first-party tools) profile-level layers.
+
+    Error safety applies to every tool. Name-keyed layers — list compaction
+    and next-step hints — only apply to first-party tools, so a third-party
+    MCP tool that happens to share a name (e.g. another server's ``status``)
+    is never rewritten.
+    """
+
+    wrapped = _with_safe_tool_errors(tool)
+    if first_party:
+        wrapped = _with_compact_tool_results(wrapped)
+    return _with_next_step_hints(wrapped, first_party=first_party)
 
 
 async def build_agent():
@@ -194,5 +228,9 @@ async def build_agent():
     """
 
     model = build_model()
-    tools = [_wrap_tool(tool) for tool in [*await load_tools(), web_search]]
+    tools: list[BaseTool] = []
+    for server_name, server_tools in (await load_tools_by_server()).items():
+        first_party = server_name == settings.mcp_server_name
+        tools.extend(_wrap_tool(tool, first_party=first_party) for tool in server_tools)
+    tools.append(_wrap_tool(web_search, first_party=True))
     return create_agent(model=model, tools=tools, system_prompt=settings.system_prompt)
