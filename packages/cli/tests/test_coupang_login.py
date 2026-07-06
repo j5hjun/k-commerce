@@ -166,6 +166,81 @@ async def test_launch_can_disable_browser_sandbox(
 
 
 @pytest.mark.anyio
+async def test_launch_retries_transient_browser_connection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    browser = NodriverBrowser()
+    runtime_browser = _DummyBrowser(_DummyTab())
+    nodriver_module = sys.modules["nodriver"]
+    original_start = nodriver_module.start
+    start_mock = AsyncMock(
+        side_effect=[
+            RuntimeError("Failed to connect to browser"),
+            runtime_browser,
+        ]
+    )
+    nodriver_module.start = start_mock
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(
+        "k_commerce_cli.services.browser.nodriver.asyncio.sleep",
+        sleep_mock,
+    )
+
+    try:
+        session = await browser.launch(ProviderPaths("coupang", root_dir=tmp_path))
+    finally:
+        nodriver_module.start = original_start
+
+    assert session.browser is runtime_browser
+    assert start_mock.await_count == 2
+    sleep_mock.assert_awaited_once_with(1.0)
+
+
+@pytest.mark.anyio
+async def test_launch_does_not_retry_non_transient_browser_errors(tmp_path: Path) -> None:
+    browser = NodriverBrowser()
+    nodriver_module = sys.modules["nodriver"]
+    original_start = nodriver_module.start
+    start_mock = AsyncMock(side_effect=ValueError("invalid profile"))
+    nodriver_module.start = start_mock
+
+    try:
+        with pytest.raises(ValueError, match="invalid profile"):
+            await browser.launch(ProviderPaths("coupang", root_dir=tmp_path))
+    finally:
+        nodriver_module.start = original_start
+
+    assert start_mock.await_count == 1
+
+
+@pytest.mark.anyio
+async def test_launch_raises_after_exhausting_transient_retries(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    browser = NodriverBrowser()
+    nodriver_module = sys.modules["nodriver"]
+    original_start = nodriver_module.start
+    start_mock = AsyncMock(side_effect=RuntimeError("Failed to connect to browser"))
+    nodriver_module.start = start_mock
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(
+        "k_commerce_cli.services.browser.nodriver.asyncio.sleep",
+        sleep_mock,
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="Failed to connect to browser"):
+            await browser.launch(ProviderPaths("coupang", root_dir=tmp_path))
+    finally:
+        nodriver_module.start = original_start
+
+    assert start_mock.await_count == 2
+    sleep_mock.assert_awaited_once_with(1.0)
+
+
+@pytest.mark.anyio
 async def test_open_login_entry_opens_login_page_directly() -> None:
     provider = _make_auth_provider()
     tab = _DummyTab()
