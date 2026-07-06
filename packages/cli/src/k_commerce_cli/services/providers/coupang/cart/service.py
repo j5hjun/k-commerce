@@ -262,8 +262,6 @@ class CoupangCartService(CoupangCartDelete):
                 return _ListCartBrowserResult(state=CoupangCartState.SUCCESS, items=items)
             if page_state["has_empty_cart_message"]:
                 return _ListCartBrowserResult(state=CoupangCartState.SUCCESS, items=())
-            if page_state["has_cart_content"] and not page_state["is_blank"]:
-                return _ListCartBrowserResult(state=CoupangCartState.SUCCESS, items=())
 
             await self._sleep_ms(1000)
 
@@ -510,7 +508,11 @@ class CoupangCartService(CoupangCartDelete):
                   input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', code: 'Enter', bubbles: true }}));
                   input.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'Enter', code: 'Enter', bubbles: true }}));
                   input.blur();
-                  return {{ state: 'success' }};
+                  const productName = normalizeText(link?.innerText || link?.getAttribute('title') || '');
+                  const optionText = normalizeText(
+                    container.querySelector('.option-name, .prod-option, [class*="option"]')?.innerText || ''
+                  );
+                  return {{ state: 'success', productName, optionText }};
                 }}
               }}
 
@@ -527,10 +529,14 @@ class CoupangCartService(CoupangCartDelete):
                         active_tab,
                         request,
                     )
+                    product_name = str(result.get("productName") or "").strip()
+                    option_text = str(result.get("optionText") or "").strip()
                     return _ListCartBrowserResult(
                         state=CoupangCartState.SUCCESS,
                         message=notice,
                         applied_quantity=applied_quantity,
+                        product_name=product_name,
+                        option_text=option_text,
                     )
                 if state == CoupangCartState.ITEM_NOT_FOUND:
                     return _ListCartBrowserResult(state=CoupangCartState.ITEM_NOT_FOUND)
@@ -815,6 +821,61 @@ class CoupangCartService(CoupangCartDelete):
                 if (quantity > 1 && totalPrice) return formatWon(Math.round(totalPrice / quantity));
                 return formatWon(totalPrice);
               };
+              const readProductImage = (container, productLink) => {
+                const isProductThumbnailSrc = (src) => (
+                  /thumbnail\\d*\\.coupangcdn\\.com\\/thumbnails\\//i.test(src)
+                );
+                const isBadgeImageSrc = (src) => {
+                  if (isProductThumbnailSrc(src)) return false;
+                  const lowered = src.toLowerCase();
+                  return (
+                    /\\/image\\/cart\\/icon\\//.test(lowered) ||
+                    /\\/image\\/badges\\//.test(lowered) ||
+                    /\\/image\\/coupang\\/rds\\/logo\\//.test(lowered) ||
+                    /logo_rocket|rocket[-_]fresh|element_logo_symbol|logo_wowmembership/.test(lowered)
+                  );
+                };
+                const imageSrc = (img) => {
+                  if (!img) return '';
+                  return img.currentSrc || img.src || img.dataset?.src || img.getAttribute('data-src') || '';
+                };
+                const itemRoot = (
+                  productLink?.closest('[id^="item_"], [data-bundle-id]') ||
+                  container.closest('[id^="item_"], [data-bundle-id]') ||
+                  container
+                );
+                const preferredSelectors = [
+                  'img[src*="thumbnail.coupangcdn.com/thumbnails"]',
+                  'img[src*="thumbnail1.coupangcdn.com/thumbnails"]',
+                  'img[width="140"][height="140"]',
+                  'img[class*="twc-h-[140px]"]',
+                  'img[class*="twc-w-[140px]"]',
+                ];
+                for (const selector of preferredSelectors) {
+                  const img = itemRoot.querySelector(selector);
+                  const src = imageSrc(img);
+                  if (src && !isBadgeImageSrc(src)) return src;
+                }
+
+                const candidates = [];
+                const pushImage = (img) => {
+                  const src = imageSrc(img);
+                  if (!src || src.startsWith('data:') || isBadgeImageSrc(src)) return;
+                  const rect = img.getBoundingClientRect?.() || { width: 0, height: 0 };
+                  const w = Number(img.getAttribute('width')) || img.naturalWidth || img.width || rect.width || 0;
+                  const h = Number(img.getAttribute('height')) || img.naturalHeight || img.height || rect.height || 0;
+                  const area = (w || 80) * (h || 80);
+                  const score = (isProductThumbnailSrc(src) ? 1_000_000 : 0) + area;
+                  candidates.push({ src, score });
+                };
+
+                for (const img of itemRoot.querySelectorAll('img')) {
+                  pushImage(img);
+                }
+
+                candidates.sort((left, right) => right.score - left.score);
+                return candidates[0]?.src || '';
+              };
               const findItemContainer = (element) => {
                 let current = element;
                 for (let depth = 0; current && depth < 8; depth += 1) {
@@ -844,10 +905,25 @@ class CoupangCartService(CoupangCartDelete):
                   const text = normalizeText(element?.container?.innerText || '');
                   return element.link && text && /[0-9]/.test(text) && !text.includes('장바구니 비우기');
                 });
+              let scrapeTargets = candidates;
+              if (scrapeTargets.length === 0) {
+                scrapeTargets = Array.from(document.querySelectorAll('[id^="item_"], [data-bundle-id]'))
+                  .map((itemRoot) => ({
+                    link: (
+                      itemRoot.querySelector('a[href*="/vp/products"][href*="vendorItemId"][href*="sourceType=CART"], a[href*="/products"][href*="vendorItemId"][href*="sourceType=CART"]') ||
+                      itemRoot.querySelector('a[href*="/vp/products"][href*="vendorItemId"], a[href*="/products"][href*="vendorItemId"]')
+                    ),
+                    container: itemRoot,
+                  }))
+                  .filter((element) => {
+                    const text = normalizeText(element?.container?.innerText || '');
+                    return element.link && text && /[0-9,]+\\s*원/.test(text) && !text.includes('장바구니 비우기');
+                  });
+              }
               const seen = new Set();
               const items = [];
 
-              for (const candidate of candidates) {
+              for (const candidate of scrapeTargets) {
                 const container = candidate.container;
                 const itemRoot = container.closest('[id^="item_"], [data-bundle-id]') || container;
                 const productLink = candidate.link;
@@ -889,6 +965,7 @@ class CoupangCartService(CoupangCartDelete):
                 const deliveryText = normalizeText(
                   priceContainer.querySelector('[class*="delivery" i], [class*="arrival" i], [class*="shipping" i]')?.textContent || ''
                 );
+                const imageUrl = readProductImage(container, productLink);
 
                 items.push({
                   product_name: productName,
@@ -900,6 +977,8 @@ class CoupangCartService(CoupangCartDelete):
                   vendor_item_id: vendorItemId,
                   item_id: itemId,
                   delivery_text: deliveryText,
+                  image_url: imageUrl,
+                  product_link: productLink?.href || '',
                 });
               }
 
@@ -928,6 +1007,12 @@ class CoupangCartService(CoupangCartDelete):
                     vendor_item_id=str(entry.get("vendor_item_id") or "").strip(),
                     item_id=str(entry.get("item_id") or "").strip(),
                     delivery_text=str(entry.get("delivery_text") or "").strip(),
+                    image_url=str(entry.get("image_url") or "").strip(),
+                    product_link=str(entry.get("product_link") or "").strip()
+                    or self._cart_product_link(
+                        str(entry.get("product_id") or "").strip(),
+                        str(entry.get("vendor_item_id") or "").strip(),
+                    ),
                 )
             )
 
@@ -939,6 +1024,16 @@ class CoupangCartService(CoupangCartDelete):
         except (TypeError, ValueError):
             return 1
         return max(1, quantity)
+
+    def _cart_product_link(self, product_id: str, vendor_item_id: str) -> str:
+        if product_id and vendor_item_id:
+            return (
+                f"https://www.coupang.com/vp/products/{product_id}"
+                f"?vendorItemId={vendor_item_id}&sourceType=CART"
+            )
+        if product_id:
+            return f"https://www.coupang.com/vp/products/{product_id}"
+        return ""
 
     def _validate_quantity_update_request(
         self,
@@ -984,6 +1079,8 @@ class CoupangCartService(CoupangCartDelete):
                 vendor_item_id=item.vendor_item_id,
                 item_id=item.item_id,
                 delivery_text=item.delivery_text,
+                image_url=item.image_url,
+                product_link=item.product_link,
             )
             for index, item in enumerate(browser_result.items, start=1)
         )
@@ -1010,6 +1107,8 @@ class CoupangCartService(CoupangCartDelete):
                 product_id=request.product_id,
                 vendor_item_id=request.vendor_item_id,
                 item_id=request.item_id,
+                product_name=browser_result.product_name,
+                option_text=browser_result.option_text,
                 notice=browser_result.message or "",
             )
 

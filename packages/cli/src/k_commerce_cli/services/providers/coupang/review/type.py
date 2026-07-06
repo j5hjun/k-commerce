@@ -19,6 +19,9 @@ class ReviewUploadResult:
     message: str
     order_id: str
     product_id: str
+    product_name: str = ""
+    rating: int = 0
+    text: str = ""
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
@@ -44,6 +47,9 @@ class ReviewEditResult:
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
+    product_name: str = ""
+    rating: int = 0
+    text: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,7 @@ class ReviewDeleteResult:
     review_id: str
     product_id: str = ""
     order_id: str = ""
+    product_name: str = ""
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()
@@ -76,6 +83,7 @@ class EditableReviewItem:
     rating: int
     review_text: str
     modify_url: str
+    written_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -130,6 +138,7 @@ class _EditableReviewItemData:
     rating: int
     review_text: str
     modify_url: str
+    written_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -143,3 +152,4 @@ class _ListReviewableBrowserResult:
 class _ReviewUploadBrowserResult:
     state: str
     message: str | None = None
+    product_name: str = ""
