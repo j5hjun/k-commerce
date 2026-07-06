@@ -581,6 +581,9 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
         provider=ProviderName.COUPANG,
         logged_in=False,
         message="쿠팡 로그인 상태가 아닙니다",
+        error_code="not_logged_in",
+        retryable=False,
+        next_tools=("login",),
     )
     launch.assert_not_awaited()
     close.assert_not_awaited()

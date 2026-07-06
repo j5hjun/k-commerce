@@ -252,6 +252,7 @@ async def test_cart_delete_items_tool_surfaces_shared_validation_errors() -> Non
         "cart_delete_items",
         "items must be a non-empty list",
         field="items",
+        error_code="invalid_field",
     )
 
 
