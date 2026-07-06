@@ -24,7 +24,7 @@ class ExceptionDetails:
 
 
 class _StoreStub:
-    def __init__(self, root_dir: Path):
+    def __init__(self, root_dir: Path, *, has_session: bool = True):
         self.paths = ProviderPaths("coupang", root_dir)
         self.base_dir = self.paths.base_dir
         self.profile_dir = self.paths.profile_dir
@@ -33,12 +33,13 @@ class _StoreStub:
         self.session_meta_path = self.paths.session_meta_path
         self.orders_path = self.paths.orders_path
         self._orders = None
+        self._has_session = has_session
 
     def load_credentials(self):
         return None
 
     def has_session(self) -> bool:
-        return True
+        return self._has_session
 
     def clear_session(self) -> bool:
         return False
@@ -178,6 +179,58 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     assert store._orders == payload.to_dict()
     assert result.message == "주문 새로 생성 완료: 총 1건"
+
+
+@pytest.mark.anyio
+async def test_list_orders_returns_not_logged_in_when_session_is_missing(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path, has_session=False)
+    browser = Mock()
+    browser.launch = AsyncMock()
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.payload.orders == []
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+    browser.close.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_list_orders_returns_not_logged_in_when_order_page_redirects_to_login(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    tab.evaluate = AsyncMock(
+        return_value={
+            "url": "https://login.coupang.com/login/login.pang",
+            "body_text": "로그인이 필요합니다",
+            "has_password_input": True,
+        }
+    )
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.payload.orders == []
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
