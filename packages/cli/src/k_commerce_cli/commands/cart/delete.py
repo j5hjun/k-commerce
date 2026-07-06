@@ -12,6 +12,10 @@ from k_commerce_cli.commands.cart.common import (
     MSG_NO_CART_ITEMS,
     cart_delete_request,
     fetch_cart_list,
+    invoke_cart_clear,
+    invoke_cart_delete_item,
+    invoke_cart_delete_items,
+    invoke_cart_list,
     report_unless_list_success,
 )
 from k_commerce_cli.commands.cart.interactive import (
@@ -29,15 +33,15 @@ async def _run_delete_single(
     terminal: Terminal,
     prompts: Prompts,
 ) -> Literal["back", "exit"]:
+    provider_factory = common.cached_provider_factory(root_dir)
     try:
-        delete_provider = common.get_provider(provider, root_dir=root_dir, terminal=None)
-        list_provider = common.get_provider(provider, root_dir=root_dir, terminal=terminal)
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
+        list_result = await fetch_cart_list(terminal, provider, root_dir, provider_factory)
+        if list_result is None:
+            return "exit"
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    list_result = await fetch_cart_list(terminal, list_provider)
-    if list_result is None:
-        return "exit"
 
     while True:
         try:
@@ -58,8 +62,7 @@ async def _run_delete_single(
         if not isinstance(selected, CartItem):
             continue
 
-        selected_item = selected
-        terminal.echo(format_selected_cart_delete_list((selected_item,)))
+        terminal.echo(format_selected_cart_delete_list((selected,)))
         terminal.echo("")
         try:
             confirm = await interactive.prompt_bulk_delete_confirmation(prompts)
@@ -74,7 +77,7 @@ async def _run_delete_single(
 
         delete_result = await await_unless_cancelled(
             terminal,
-            delete_provider.delete_cart_item(cart_delete_request(selected_item)),
+            invoke_cart_delete_item(provider, root_dir, cart_delete_request(selected), provider_factory),
             message=MSG_INTERACTIVE_CANCELLED,
         )
         if not delete_result.success:
@@ -82,7 +85,7 @@ async def _run_delete_single(
             continue
 
         terminal.success(delete_result.message)
-        terminal.echo(format_deleted_cart_item(selected_item))
+        terminal.echo(format_deleted_cart_item(selected))
 
         try:
             should_continue = await interactive.prompt_cart_continue(
@@ -96,9 +99,12 @@ async def _run_delete_single(
             terminal.echo(MSG_DELETE_EXITED)
             return "exit"
 
-        list_result = await fetch_cart_list(terminal, list_provider)
-        if list_result is None:
-            return "exit"
+        try:
+            list_result = await fetch_cart_list(terminal, provider, root_dir, provider_factory)
+            if list_result is None:
+                return "exit"
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
 
 
 async def _run_delete_selected(
@@ -107,15 +113,15 @@ async def _run_delete_selected(
     terminal: Terminal,
     prompts: Prompts,
 ) -> Literal["back", "exit"]:
+    provider_factory = common.cached_provider_factory(root_dir)
     try:
-        delete_provider = common.get_provider(provider, root_dir=root_dir, terminal=None)
-        list_provider = common.get_provider(provider, root_dir=root_dir, terminal=terminal)
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
+        list_result = await fetch_cart_list(terminal, provider, root_dir, provider_factory)
+        if list_result is None:
+            return "exit"
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    list_result = await fetch_cart_list(terminal, list_provider)
-    if list_result is None:
-        return "exit"
 
     while True:
         try:
@@ -133,8 +139,7 @@ async def _run_delete_selected(
             terminal.echo(MSG_DELETE_EXITED)
             return "exit"
 
-        selected_items = selection
-        terminal.echo(format_selected_cart_delete_list(selected_items))
+        terminal.echo(format_selected_cart_delete_list(selection))
         terminal.echo("")
         try:
             confirm = await interactive.prompt_bulk_delete_confirmation(prompts)
@@ -147,10 +152,10 @@ async def _run_delete_selected(
             terminal.echo(MSG_DELETE_EXITED)
             return "exit"
 
-        requests = tuple(cart_delete_request(item) for item in selected_items)
+        requests = tuple(cart_delete_request(item) for item in selection)
         delete_result = await await_unless_cancelled(
             terminal,
-            delete_provider.delete_cart_items(requests),
+            invoke_cart_delete_items(provider, root_dir, requests, provider_factory),
             message=MSG_INTERACTIVE_CANCELLED,
         )
         if not delete_result.success:
@@ -158,7 +163,7 @@ async def _run_delete_selected(
             continue
 
         terminal.success(delete_result.message)
-        for item in selected_items:
+        for item in selection:
             terminal.echo(format_deleted_cart_item(item))
 
         try:
@@ -173,9 +178,12 @@ async def _run_delete_selected(
             terminal.echo(MSG_DELETE_EXITED)
             return "exit"
 
-        list_result = await fetch_cart_list(terminal, list_provider)
-        if list_result is None:
-            return "exit"
+        try:
+            list_result = await fetch_cart_list(terminal, provider, root_dir, provider_factory)
+            if list_result is None:
+                return "exit"
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
 
 
 async def _run_delete_all(
@@ -184,12 +192,12 @@ async def _run_delete_all(
     terminal: Terminal,
     prompts: Prompts,
 ) -> Literal["back", "exit"]:
+    provider_factory = common.cached_provider_factory(root_dir)
     try:
-        delete_provider = common.get_provider(provider, root_dir=root_dir, terminal=None)
-        list_provider = common.get_provider(provider, root_dir=root_dir, terminal=terminal)
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
     while True:
         try:
             action = await interactive.prompt_clear_cart_action(prompts)
@@ -203,11 +211,14 @@ async def _run_delete_all(
             return "exit"
         if action == "list":
             terminal.info(MSG_LIST_CART)
-            list_result = await await_unless_cancelled(
-                terminal,
-                list_provider.list_cart(),
-                message=MSG_INTERACTIVE_CANCELLED,
-            )
+            try:
+                list_result = await await_unless_cancelled(
+                    terminal,
+                    invoke_cart_list(provider, root_dir, terminal, provider_factory),
+                    message=MSG_INTERACTIVE_CANCELLED,
+                )
+            except ValueError as error:
+                raise click.BadParameter(str(error), param_hint="provider") from error
             if not report_unless_list_success(terminal, list_result):
                 return "exit"
             if not list_result.items:
@@ -216,11 +227,14 @@ async def _run_delete_all(
                 terminal.echo(list_result.message)
             continue
 
-        delete_result = await await_unless_cancelled(
-            terminal,
-            delete_provider.clear_cart(),
-            message=MSG_INTERACTIVE_CANCELLED,
-        )
+        try:
+            delete_result = await await_unless_cancelled(
+                terminal,
+                invoke_cart_clear(provider, root_dir, provider_factory),
+                message=MSG_INTERACTIVE_CANCELLED,
+            )
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
         if not delete_result.success:
             terminal.error(delete_result.message)
             continue

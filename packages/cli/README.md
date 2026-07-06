@@ -19,6 +19,48 @@ uv sync
 
 The CLI currently supports the `coupang` provider.
 
+## Canonical Tool Runner
+
+The MCP tool contract is the source of truth for tool names, request payloads, validation, and
+service invocation. The generic CLI runner executes the same canonical contract and prints JSON:
+
+```bash
+uv run k-commerce <tool-name> '<json-request>'
+uv run k-commerce <tool-name> --request-file ./request.json
+```
+
+Canonical tool names:
+
+- `get_providers`
+- `login`
+- `status`
+- `logout`
+- `order_list`
+- `cart_list`
+- `cart_update_quantity`
+- `cart_delete_item`
+- `cart_delete_items`
+- `cart_clear`
+- `search_products`
+- `review_list_reviewable`
+- `review_list_editable`
+- `review_upload`
+- `review_edit`
+- `review_delete`
+
+Example inline requests:
+
+```bash
+uv run k-commerce status '{"provider":"coupang"}'
+uv run k-commerce search_products '{"provider":"coupang","keyword":"keyboard","sort":"relevance","max_results":10}'
+```
+
+The named CLI commands below are human/debug compatibility aliases. They keep terminal-oriented
+prompts and output while routing commerce work through the shared contract.
+
+`root_dir` is not part of canonical MCP or JSON request payloads. Use `--root-dir` only on CLI
+aliases when local verification needs isolated credentials and session files.
+
 Run the CLI from the workspace root:
 
 ```bash

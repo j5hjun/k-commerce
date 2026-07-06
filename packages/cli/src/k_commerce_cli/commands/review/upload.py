@@ -11,8 +11,10 @@ from k_commerce_cli.commands.review.interactive import (
     prompt_reviewable_item,
     run_reviewable_list_browse,
 )
+from k_commerce_cli.commands.tool_invocation import CachedProviderFactory
 from k_commerce_cli.services.registry import get_provider
-from k_commerce_cli.services.types import ReviewUploadRequest
+from k_commerce_cli.services.tools.invoke import invoke_tool
+from k_commerce_cli.services.tools.types import JSONValue, ToolProviderFactory, ToolRuntimeOptions
 
 REVIEW_TEXT_MAX_LENGTH = 800
 
@@ -37,32 +39,44 @@ def _format_uploaded_review(
     return f"{product_name} / {'★' * rating}{'☆' * (5 - rating)} / {review_text}"
 
 
+def _cached_provider_factory(root_dir: Path | None) -> CachedProviderFactory:
+    return CachedProviderFactory(root_dir=root_dir, provider_factory=get_provider)
+
+
+def _runtime_options(
+    root_dir: Path | None,
+    terminal: Terminal | None,
+    provider_factory: ToolProviderFactory | None,
+) -> ToolRuntimeOptions:
+    return ToolRuntimeOptions(
+        root_dir=root_dir,
+        terminal=terminal,
+        get_provider=provider_factory or get_provider,
+    )
+
+
 async def _run_interactive_upload(
     provider: str,
-    root_dir,
+    root_dir: Path | None,
     terminal: Terminal,
     prompts: Prompts,
 ) -> None:
+    provider_factory = _cached_provider_factory(root_dir)
     try:
-        review_provider = get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=None,
-        )
-        list_provider = get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=terminal,
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        terminal.info(MSG_LIST_REVIEWABLE)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
+        list_result = await await_unless_cancelled(
+            terminal,
+            invoke_tool(
+                "review_list_reviewable",
+                {"provider": provider},
+                runtime_options=_runtime_options(root_dir, terminal, provider_factory),
+            ),
+            message=MSG_INTERACTIVE_CANCELLED,
         )
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    terminal.info(MSG_LIST_REVIEWABLE)
-    list_result = await await_unless_cancelled(
-        terminal,
-        list_provider.list_reviewable(),
-        message=MSG_INTERACTIVE_CANCELLED,
-    )
     if not list_result.success:
         terminal.abort(list_result.message)
     if not list_result.items:
@@ -85,18 +99,23 @@ async def _run_interactive_upload(
             terminal.echo(MSG_INTERACTIVE_CANCELLED)
             return
 
-        request = ReviewUploadRequest(
-            order_id=selected_item.completed_order_vendor_item_id,
-            product_id=selected_item.product_id,
-            rating=rating,
-            text=review_text,
-            review_url=selected_item.review_url,
-        )
+        payload: dict[str, JSONValue] = {
+            "provider": provider,
+            "order_id": selected_item.completed_order_vendor_item_id,
+            "product_id": selected_item.product_id,
+            "rating": rating,
+            "text": review_text,
+            "review_url": selected_item.review_url,
+        }
 
         try:
             result = await await_unless_cancelled(
                 terminal,
-                review_provider.upload_review(request),
+                invoke_tool(
+                    "review_upload",
+                    payload,
+                    runtime_options=_runtime_options(root_dir, None, provider_factory),
+                ),
                 message=MSG_INTERACTIVE_CANCELLED,
             )
         except ValueError as error:
@@ -127,11 +146,18 @@ async def _run_interactive_upload(
             return
 
         terminal.info(MSG_LIST_REVIEWABLE)
-        list_result = await await_unless_cancelled(
-            terminal,
-            list_provider.list_reviewable(),
-            message=MSG_INTERACTIVE_CANCELLED,
-        )
+        try:
+            list_result = await await_unless_cancelled(
+                terminal,
+                invoke_tool(
+                    "review_list_reviewable",
+                    {"provider": provider},
+                    runtime_options=_runtime_options(root_dir, terminal, provider_factory),
+                ),
+                message=MSG_INTERACTIVE_CANCELLED,
+            )
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
         if not list_result.success:
             terminal.abort(list_result.message)
         if not list_result.items:
@@ -153,20 +179,20 @@ async def review_upload(
     if list_only:
         terminal = ctx.obj["terminal"]
         prompts = ctx.obj["prompts"]
+        resolved_root_dir = _resolve_root_dir(root_dir)
         try:
-            review_provider = get_provider(
-                provider,
-                root_dir=_resolve_root_dir(root_dir),
-                terminal=terminal,
+            terminal.info(MSG_LIST_REVIEWABLE)
+            list_result = await await_unless_cancelled(
+                terminal,
+                invoke_tool(
+                    "review_list_reviewable",
+                    {"provider": provider},
+                    runtime_options=_runtime_options(resolved_root_dir, terminal, _cached_provider_factory(resolved_root_dir)),
+                ),
+                message=MSG_INTERACTIVE_CANCELLED,
             )
         except ValueError as error:
             raise click.BadParameter(str(error), param_hint="provider") from error
-        terminal.info(MSG_LIST_REVIEWABLE)
-        list_result = await await_unless_cancelled(
-            terminal,
-            review_provider.list_reviewable(),
-            message=MSG_INTERACTIVE_CANCELLED,
-        )
         if not list_result.success:
             terminal.abort(list_result.message)
         if not list_result.items:

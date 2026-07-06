@@ -29,28 +29,39 @@ def _search_items() -> tuple[SearchResultItem, ...]:
 
 @pytest.mark.anyio
 async def test_search_coupang_command_prints_table_result() -> None:
-    provider = Mock()
-    provider.search_products = AsyncMock(
-        return_value=SearchProductResult(
-            provider="coupang",
-            success=True,
-            message="검색 결과 (1개):\n  #  상품ID         가격          리뷰    상품명\n  1  8825977723     12300        4.8     포스트 아몬드후레이크",
-            items=_search_items(),
-        )
+    search_result = SearchProductResult(
+        provider="coupang",
+        success=True,
+        message="검색 결과 (1개):\n  #  상품ID         가격          리뷰    상품명\n  1  8825977723     12300        4.8     포스트 아몬드후레이크",
+        items=_search_items(),
     )
+    invoke_tool = AsyncMock(return_value=search_result)
 
-    with patch("k_commerce_cli.commands.search.get_provider", return_value=provider) as get_provider:
+    with (
+        patch(
+            "k_commerce_cli.commands.search.get_provider",
+            side_effect=AssertionError("command must not call get_provider directly"),
+        ),
+        patch("k_commerce_cli.commands.search.invoke_tool", invoke_tool, create=True),
+    ):
         result = await RUNNER.invoke(app, ["search", "coupang", "후레이크"])
 
     assert result.exit_code == 0
     assert "검색 결과" in result.stdout
-    get_provider.assert_called_once_with("coupang", root_dir=None, terminal=ANY)
-    provider.search_products.assert_awaited_once_with(
-        "후레이크",
-        category=None,
-        sort="relevance",
-        max_results=10,
+    invoke_tool.assert_awaited_once()
+    assert invoke_tool.await_args.args == (
+        "search_products",
+        {
+            "provider": "coupang",
+            "keyword": "후레이크",
+            "category": None,
+            "sort": "relevance",
+            "max_results": 10,
+        },
     )
+    runtime_options = invoke_tool.await_args.kwargs["runtime_options"]
+    assert runtime_options.root_dir is None
+    assert runtime_options.terminal is not None
 
 
 @pytest.mark.anyio

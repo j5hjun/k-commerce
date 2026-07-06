@@ -20,13 +20,39 @@ uv sync
 
 ## Current Scope
 
-The workspace currently includes:
+The MCP tool contract is the source of truth for commerce tool names, request payloads, validation,
+and shared service invocation. Both MCP wrappers and the generic CLI runner delegate through
+`k_commerce_cli.services.tools.invoke.invoke_tool`.
 
-- a Coupang CLI flow with `login`, `status`, `logout`, and `order list` commands
-- an MCP package that exposes `get_providers`, `login`, `login_status`, and `logout` tools on top of the shared provider registry
+The canonical tool names are:
 
-The `order list` flow is currently CLI-only and writes a local `orders.json` snapshot under the
-selected provider directory.
+- `get_providers`
+- `login`
+- `status`
+- `logout`
+- `order_list`
+- `cart_list`
+- `cart_update_quantity`
+- `cart_delete_item`
+- `cart_delete_items`
+- `cart_clear`
+- `search_products`
+- `review_list_reviewable`
+- `review_list_editable`
+- `review_upload`
+- `review_edit`
+- `review_delete`
+
+Run any canonical tool through the generic CLI runner with inline JSON or a request file:
+
+```bash
+uv run k-commerce <tool-name> '<json-request>'
+uv run k-commerce <tool-name> --request-file ./request.json
+```
+
+The existing CLI commands are human/debug compatibility aliases over the same service contract.
+Their `--root-dir` option is a CLI-only debug/runtime option and is not part of the canonical MCP or
+JSON request payload.
 
 ## Supported Providers
 
