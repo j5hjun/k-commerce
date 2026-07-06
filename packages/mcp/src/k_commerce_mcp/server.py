@@ -11,7 +11,7 @@ from k_commerce_mcp.tools.cart import (
 from k_commerce_mcp.tools.get_providers import get_providers
 from k_commerce_mcp.tools.login import login
 from k_commerce_mcp.tools.logout import logout
-from k_commerce_mcp.tools.order import order_list
+from k_commerce_mcp.tools.order import order_detail, order_failures, order_list, order_sync
 from k_commerce_mcp.tools.review import (
     review_delete,
     review_edit,
@@ -30,7 +30,10 @@ def create_mcp_server() -> FastMCP:
         ("login", login),
         ("status", status),
         ("logout", logout),
+        ("order_sync", order_sync),
         ("order_list", order_list),
+        ("order_detail", order_detail),
+        ("order_failures", order_failures),
         ("cart_list", cart_list),
         ("cart_update_quantity", cart_update_quantity),
         ("cart_delete_item", cart_delete_item),

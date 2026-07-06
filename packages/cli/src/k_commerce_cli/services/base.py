@@ -17,7 +17,14 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
-    OrderResult,
+    OrderDetailRequest,
+    OrderDetailResult,
+    OrderFailuresRequest,
+    OrderFailuresResult,
+    OrderListRequest,
+    OrderListResult,
+    OrderSyncRequest,
+    OrderSyncResult,
     ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
@@ -127,11 +134,13 @@ class Provider(Protocol):
 
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...
 
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult: ...
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult: ...
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult: ...
 
     async def search_products(
         self,
@@ -152,11 +161,13 @@ class AuthService(Protocol):
 
 
 class OrderService(Protocol):
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult: ...
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult: ...
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult: ...
 
 
 class ReviewService(Protocol):
@@ -356,15 +367,17 @@ class BaseProvider(
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult:
         return await self.review_service.delete_review(request)
 
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult:
-        return await self.order_service.list_orders(
-            refresh=refresh,
-            failed_only=failed_only,
-        )
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult:
+        return await self.order_service.sync_orders(request)
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult:
+        return await self.order_service.list_orders(request)
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult:
+        return await self.order_service.get_order_detail(request)
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult:
+        return await self.order_service.list_order_failures(request)
 
     async def search_products(
         self,

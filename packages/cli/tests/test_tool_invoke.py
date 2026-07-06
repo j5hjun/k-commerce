@@ -181,7 +181,7 @@ async def test_review_upload_builds_dataclass_request_when_payload_is_valid(
         ("status", ["coupang"], "Payload must be a JSON object"),
         ("status", {"provider": "coupang", "root_dir": "/tmp"}, "root_dir"),
         (
-            "order_list",
+            "order_sync",
             {"provider": "coupang", "refresh": True, "failed_only": True},
             "refresh and failed_only",
         ),

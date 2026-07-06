@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 
 from k_commerce_cli.services.base import Provider
 from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
@@ -10,7 +11,11 @@ from k_commerce_cli.services.types import (
     CartDeleteResult,
     CartQuantityUpdateResult,
     CartQuantityUpdateRequest,
+    OrderDetailRequest,
+    OrderFailuresRequest,
+    OrderListRequest,
     OrderResult,
+    OrderSyncRequest,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -53,8 +58,14 @@ async def invoke_tool(
             return await _get_provider(tool_name, request, options).status()
         case "logout":
             return await _get_provider(tool_name, request, options).logout()
+        case "order_sync":
+            return await _invoke_order_sync(request, options)
         case "order_list":
             return await _invoke_order_list(request, options)
+        case "order_detail":
+            return await _invoke_order_detail(request, options)
+        case "order_failures":
+            return await _invoke_order_failures(request, options)
         case "cart_list":
             return await _get_provider(tool_name, request, options).list_cart()
         case "cart_update_quantity":
@@ -112,17 +123,52 @@ def _get_provider(tool_name: str, payload: ToolPayload, options: ToolRuntimeOpti
         ) from exc
 
 
-async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
+async def _invoke_order_sync(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
     refresh = _optional_bool(payload, "refresh", default=False)
     failed_only = _optional_bool(payload, "failed_only", default=False)
     if refresh and failed_only:
         raise ToolRequestError(
-            "order_list",
+            "order_sync",
             "refresh and failed_only cannot both be true",
             error_code="conflicting_options",
         )
+    request = OrderSyncRequest(
+        start_date=_optional_date_str("order_sync", payload, "start_date"),
+        end_date=_optional_date_str("order_sync", payload, "end_date"),
+        failed_only=failed_only,
+        refresh=refresh,
+    )
+    provider = _get_provider("order_sync", payload, options)
+    return await provider.sync_orders(request)
+
+
+async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
+    _reject_fields("order_list", payload, ("refresh", "failed_only"))
+    request = OrderListRequest(
+        start_date=_optional_date_str("order_list", payload, "start_date"),
+        end_date=_optional_date_str("order_list", payload, "end_date"),
+        status=_optional_str(payload, "status", default="all"),
+        limit=_optional_limit("order_list", payload, "limit", default=50),
+        cursor=_optional_cursor("order_list", payload, "cursor"),
+    )
     provider = _get_provider("order_list", payload, options)
-    return await provider.list_orders(refresh=refresh, failed_only=failed_only)
+    return await provider.list_orders(request)
+
+
+async def _invoke_order_detail(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
+    request = OrderDetailRequest(order_id=_required_str("order_detail", payload, "order_id"))
+    provider = _get_provider("order_detail", payload, options)
+    return await provider.get_order_detail(request)
+
+
+async def _invoke_order_failures(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
+    request = OrderFailuresRequest(
+        start_date=_optional_date_str("order_failures", payload, "start_date"),
+        end_date=_optional_date_str("order_failures", payload, "end_date"),
+        limit=_optional_limit("order_failures", payload, "limit", default=50),
+    )
+    provider = _get_provider("order_failures", payload, options)
+    return await provider.list_order_failures(request)
 
 
 async def _invoke_cart_update_quantity(
@@ -305,3 +351,42 @@ def _optional_bool(payload: ToolPayload, field: str, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     raise ToolRequestError("payload", f"{field} must be a boolean", field=field, error_code="invalid_field")
+
+
+def _optional_date_str(tool_name: str, payload: ToolPayload, field: str) -> str | None:
+    value = _optional_nullable_str(payload, field)
+    if value is None:
+        return None
+    try:
+        _ = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ToolRequestError(tool_name, f"{field} must be an ISO date string", field=field, error_code="invalid_period") from exc
+    return value
+
+
+def _optional_limit(tool_name: str, payload: ToolPayload, field: str, *, default: int) -> int:
+    value = _optional_int(payload, field, default=default)
+    if 1 <= value <= 100:
+        return value
+    raise ToolRequestError(tool_name, f"{field} must be between 1 and 100", field=field, error_code="invalid_field")
+
+
+def _optional_cursor(tool_name: str, payload: ToolPayload, field: str) -> str | None:
+    value = _optional_nullable_str(payload, field)
+    if value is None:
+        return None
+    if value.isdecimal():
+        return value
+    raise ToolRequestError(tool_name, f"{field} must be a numeric string or null", field=field, error_code="invalid_field")
+
+
+def _reject_fields(tool_name: str, payload: ToolPayload, fields: tuple[str, ...]) -> None:
+    for field in fields:
+        if field in payload:
+            raise ToolRequestError(
+                tool_name,
+                f"{field} belongs to order_sync, not order_list",
+                field=field,
+                error_code="invalid_field",
+                next_tools=("order_sync",),
+            )

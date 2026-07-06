@@ -11,7 +11,7 @@ async def test_mcp_tool_names_match_shared_registry_exactly() -> None:
     names = sorted(tool.name for tool in tools)
 
     assert names == sorted(list_tool_names())
-    assert len(names) == 16
+    assert len(names) == 19
 
 
 @pytest.mark.anyio
