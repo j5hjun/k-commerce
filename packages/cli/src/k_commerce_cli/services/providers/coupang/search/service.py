@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
+from k_commerce_cli.services.providers.coupang.result_metadata import LOGIN_REQUIRED_METADATA, search_metadata
 from k_commerce_cli.services.store import ProviderStore
 from .type import SearchProductResult, SearchResultItem
 
@@ -102,6 +103,9 @@ class CoupangSearchService:
                     success=False,
                     message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
                     items=(),
+                    error_code=LOGIN_REQUIRED_METADATA.error_code,
+                    retryable=LOGIN_REQUIRED_METADATA.retryable,
+                    next_tools=LOGIN_REQUIRED_METADATA.next_tools,
                 ),
                 print_result=print_result,
             )
@@ -125,11 +129,15 @@ class CoupangSearchService:
     def _to_search_result(self, browser_result: _SearchBrowserResult) -> SearchProductResult:
         if browser_result.state != "success":
             message = browser_result.message or "상품 검색에 실패했습니다."
+            metadata = search_metadata(browser_result.state)
             return SearchProductResult(
                 provider=self.provider_name,
                 success=False,
                 message=message,
                 items=(),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
             )
 
         items = tuple(
@@ -944,4 +952,3 @@ class CoupangSearchService:
                 return candidate
 
         return session.tab
-

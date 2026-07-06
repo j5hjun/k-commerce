@@ -12,7 +12,6 @@ from k_commerce_cli.services.providers.coupang.search.service import (
     _SearchBrowserResult,
     _SearchResultItemData,
 )
-from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
 
@@ -97,6 +96,9 @@ async def test_search_products_fails_when_session_is_missing(tmp_path: Path) -> 
     assert result.success is False
     assert result.items == ()
     assert "쿠팡 로그인 상태" in result.message
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
 
 
 @pytest.mark.anyio
@@ -254,4 +256,3 @@ async def test_to_search_result_formats_table() -> None:
     assert result.success is True
     assert result.items[0].index == 1
     assert "검색 결과" in result.message
-

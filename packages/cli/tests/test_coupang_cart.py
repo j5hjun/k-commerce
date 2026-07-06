@@ -86,6 +86,9 @@ def test_cart_quantity_update_request_requires_positive_quantity() -> None:
 
     assert result.success is False
     assert result.message == "수량은 1개 이상이어야 합니다."
+    assert result.error_code == "validation_error"
+    assert result.retryable is False
+    assert result.next_tools == ()
 
 
 def test_cart_quantity_update_result_uses_applied_quantity_and_notice() -> None:
@@ -148,6 +151,9 @@ def test_list_cart_result_handles_browser_closed() -> None:
 
     assert result.success is False
     assert result.message == "브라우저가 닫혀 장바구니 작업을 취소했습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
 
 
 @pytest.mark.anyio

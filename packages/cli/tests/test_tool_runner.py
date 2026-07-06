@@ -125,9 +125,36 @@ async def test_unknown_canonical_tool_returns_json_error() -> None:
 
     # Then: root dispatch reaches the JSON runner instead of Click's unknown-command error.
     assert result.exit_code != 0
-    assert '"type": "tool_error"' in result.stderr
-    assert '"tool_name": "unknown_tool"' in result.stderr
-    assert "Unknown tool" in result.stderr
+    assert json.loads(result.stderr) == {
+        "error": {
+            "type": "tool_error",
+            "message": "Unknown tool: unknown_tool",
+            "error_code": "unknown_tool",
+            "retryable": False,
+            "tool_name": "unknown_tool",
+            "next_tools": [],
+        }
+    }
+
+
+@pytest.mark.anyio
+async def test_unsupported_provider_suggests_provider_list_tool() -> None:
+    # Given: a valid tool request with an unsupported provider.
+    # When: the generic runner invokes shared provider resolution.
+    result = await RUNNER.invoke(app, ["status", '{"provider":"unknown"}'])
+
+    # Then: the error points to provider discovery, not a generic status check.
+    assert result.exit_code != 0
+    assert json.loads(result.stderr) == {
+        "error": {
+            "type": "tool_error",
+            "message": "Unsupported provider: unknown. Supported providers: coupang",
+            "error_code": "unsupported_provider",
+            "retryable": False,
+            "tool_name": "status",
+            "next_tools": ["get_providers"],
+        }
+    }
 
 
 @pytest.mark.anyio
@@ -153,5 +180,14 @@ async def test_validation_failure_returns_json_error() -> None:
 
     # Then: it exits non-zero with a JSON validation error.
     assert result.exit_code != 0
-    assert '"type": "tool_error"' in result.stderr
-    assert '"field": "root_dir"' in result.stderr
+    assert json.loads(result.stderr) == {
+        "error": {
+            "type": "tool_error",
+            "message": "root_dir is a runtime option and is not part of the canonical request payload",
+            "error_code": "runtime_option_in_payload",
+            "retryable": False,
+            "tool_name": "status",
+            "field": "root_dir",
+            "next_tools": [],
+        }
+    }

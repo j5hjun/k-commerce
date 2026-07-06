@@ -10,6 +10,7 @@ from k_commerce_cli.services.types import (
     ProviderName,
     StatusResult,
 )
+from k_commerce_cli.services.providers.coupang.result_metadata import LOGIN_REQUIRED_METADATA
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
@@ -86,7 +87,13 @@ class CoupangAuthService:
             if not await self._wait_for_manual_login():
                 return self._emit_login_result(
                     terminal,
-                    LoginResult(provider=self.provider, success=False, message="쿠팡 로그인 실패"),
+                    LoginResult(
+                        provider=self.provider,
+                        success=False,
+                        message="쿠팡 로그인 실패",
+                        error_code="login_failed",
+                        retryable=True,
+                    ),
                 )
 
             await self._persist_session("manual")
@@ -106,6 +113,8 @@ class CoupangAuthService:
                     provider=self.provider,
                     success=False,
                     message=str(exc),
+                    error_code=self._login_error_code(str(exc)),
+                    retryable=True,
                 ),
             )
         finally:
@@ -120,6 +129,9 @@ class CoupangAuthService:
                     provider=self.provider,
                     logged_in=False,
                     message="쿠팡 로그인 상태가 아닙니다",
+                    error_code=LOGIN_REQUIRED_METADATA.error_code,
+                    retryable=LOGIN_REQUIRED_METADATA.retryable,
+                    next_tools=LOGIN_REQUIRED_METADATA.next_tools,
                 ),
             )
 
@@ -133,6 +145,9 @@ class CoupangAuthService:
                     provider=self.provider,
                     logged_in=logged_in,
                     message=("쿠팡 로그인 상태입니다" if logged_in else "쿠팡 로그인 상태가 아닙니다"),
+                    error_code="" if logged_in else LOGIN_REQUIRED_METADATA.error_code,
+                    retryable=False,
+                    next_tools=() if logged_in else LOGIN_REQUIRED_METADATA.next_tools,
                 ),
             )
         finally:
@@ -170,8 +185,14 @@ class CoupangAuthService:
         if not result.success:
             if terminal is not None:
                 terminal.abort(result.message)
-            raise RuntimeError(result.message)
         return result
+
+    def _login_error_code(self, message: str) -> str:
+        if message == COUPANG_ACCESS_BLOCKED_MESSAGE:
+            return "access_blocked"
+        if message == COUPANG_DATA_REQUEST_FAILED_MESSAGE:
+            return "data_request_failed"
+        return "login_failed"
 
     def _emit_status_result(
         self,

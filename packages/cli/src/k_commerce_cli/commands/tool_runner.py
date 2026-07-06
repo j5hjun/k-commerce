@@ -80,6 +80,8 @@ async def run_tool_command(
                 error_type="tool_error",
                 message=str(exc),
                 tool_name=tool_name,
+                error_code="timeout",
+                retryable=True,
             )
         )
         raise click.exceptions.Exit(1) from exc
@@ -102,6 +104,7 @@ async def run_tool_command(
                 error_type="tool_error",
                 message="Tool invocation failed.",
                 tool_name=tool_name,
+                retryable=True,
             )
         )
         raise click.exceptions.Exit(1) from None
@@ -143,6 +146,7 @@ def _load_payload(
             error_type="usage_conflict",
             message="Pass either inline JSON or --request-file, not both.",
             tool_name=tool_name,
+            error_code="usage_conflict",
         )
     if request_file is not None:
         try:
@@ -152,12 +156,14 @@ def _load_payload(
                 error_type="request_file",
                 message=f"Could not read request file: {exc}",
                 tool_name=tool_name,
+                error_code="request_file",
             ) from exc
     if inline_json is None:
         raise ToolRunnerError(
             error_type="missing_request",
             message="Pass inline JSON or --request-file.",
             tool_name=tool_name,
+            error_code="missing_request",
         )
     return _parse_json(tool_name, inline_json)
 
@@ -170,6 +176,7 @@ def _parse_json(tool_name: str, source: str) -> JSONValue:
             error_type="malformed_json",
             message="Malformed JSON: invalid JSON request.",
             tool_name=tool_name,
+            error_code="malformed_json",
         ) from exc
 
 

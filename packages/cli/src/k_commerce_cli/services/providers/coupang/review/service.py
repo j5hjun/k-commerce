@@ -2,6 +2,7 @@ from urllib.parse import quote
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, Store
+from k_commerce_cli.services.providers.coupang.result_metadata import review_metadata
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
@@ -19,7 +20,7 @@ from k_commerce_cli.services.types import (
 from .browser import deserialize_evaluate_result  # noqa: F401
 from .delete import CoupangReviewDelete
 from .edit import CoupangReviewEdit
-from .state import CoupangReviewState, REVIEW_STATE_MESSAGES, review_state_message
+from .state import CoupangReviewState, review_state_message
 from .type import (
     _EditableReviewItemData,
     _ListReviewableBrowserResult,
@@ -504,11 +505,15 @@ class CoupangReviewService(
                 browser_result.state,
                 fallback="리뷰 작성 가능 목록 조회에 실패했습니다.",
             )
+            metadata = review_metadata(browser_result.state)
             return ListReviewableResult(
                 provider=self.provider,
                 success=False,
                 message=message,
                 items=(),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
             )
 
         items = tuple(
@@ -539,11 +544,15 @@ class CoupangReviewService(
                 browser_result.state,
                 fallback="리뷰 수정 가능 목록 조회에 실패했습니다.",
             )
+            metadata = review_metadata(browser_result.state)
             return ListEditableReviewsResult(
                 provider=self.provider,
                 success=False,
                 message=message,
                 items=(),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
             )
 
         items = tuple(
@@ -585,19 +594,33 @@ class CoupangReviewService(
             browser_result.state,
             fallback="리뷰 업로드에 실패했습니다.",
         )
-        return self._failure_result(request, message)
-
-    def _failure_result(
-        self,
-        request: ReviewUploadRequest,
-        message: str,
-    ) -> ReviewUploadResult:
+        metadata = review_metadata(browser_result.state)
         return ReviewUploadResult(
             provider=self.provider,
             success=False,
             message=message,
             order_id=request.order_id,
             product_id=request.product_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
+
+    def _failure_result(
+        self,
+        request: ReviewUploadRequest,
+        message: str,
+    ) -> ReviewUploadResult:
+        metadata = review_metadata(CoupangReviewState.VALIDATION_ERROR)
+        return ReviewUploadResult(
+            provider=self.provider,
+            success=False,
+            message=message,
+            order_id=request.order_id,
+            product_id=request.product_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
         )
 
     def _to_edit_result(
@@ -619,13 +642,7 @@ class CoupangReviewService(
             browser_result.state,
             fallback="리뷰 수정에 실패했습니다.",
         )
-        return self._failure_edit_result(request, message)
-
-    def _failure_edit_result(
-        self,
-        request: ReviewEditRequest,
-        message: str,
-    ) -> ReviewEditResult:
+        metadata = review_metadata(browser_result.state)
         return ReviewEditResult(
             provider=self.provider,
             success=False,
@@ -633,6 +650,27 @@ class CoupangReviewService(
             order_id=request.order_id,
             product_id=request.product_id,
             review_id=request.review_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
+
+    def _failure_edit_result(
+        self,
+        request: ReviewEditRequest,
+        message: str,
+    ) -> ReviewEditResult:
+        metadata = review_metadata(CoupangReviewState.VALIDATION_ERROR)
+        return ReviewEditResult(
+            provider=self.provider,
+            success=False,
+            message=message,
+            order_id=request.order_id,
+            product_id=request.product_id,
+            review_id=request.review_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
         )
 
     def _to_delete_result(
@@ -654,13 +692,7 @@ class CoupangReviewService(
             browser_result.state,
             fallback="리뷰 삭제에 실패했습니다.",
         )
-        return self._failure_delete_result(request, message)
-
-    def _failure_delete_result(
-        self,
-        request: ReviewDeleteRequest,
-        message: str,
-    ) -> ReviewDeleteResult:
+        metadata = review_metadata(browser_result.state)
         return ReviewDeleteResult(
             provider=self.provider,
             success=False,
@@ -668,6 +700,27 @@ class CoupangReviewService(
             review_id=request.review_id,
             product_id=request.product_id,
             order_id=request.order_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
+
+    def _failure_delete_result(
+        self,
+        request: ReviewDeleteRequest,
+        message: str,
+    ) -> ReviewDeleteResult:
+        metadata = review_metadata(CoupangReviewState.VALIDATION_ERROR)
+        return ReviewDeleteResult(
+            provider=self.provider,
+            success=False,
+            message=message,
+            review_id=request.review_id,
+            product_id=request.product_id,
+            order_id=request.order_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
         )
 
     def _emit_upload_result(self, result: ReviewUploadResult) -> ReviewUploadResult:

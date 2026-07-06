@@ -755,6 +755,9 @@ async def test_list_reviewable_fails_when_session_is_missing(tmp_path: Path) -> 
     assert result.success is False
     assert result.items == ()
     assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
 
 
 @pytest.mark.anyio
@@ -872,6 +875,9 @@ async def test_upload_review_fails_when_order_not_found(tmp_path: Path) -> None:
 
     assert result.success is False
     assert result.message == "지정한 주문을 찾을 수 없습니다."
+    assert result.error_code == "order_not_found"
+    assert result.retryable is False
+    assert result.next_tools == ("review_list_reviewable", "order_list")
 
 
 @pytest.mark.anyio
@@ -1039,6 +1045,9 @@ async def test_edit_review_fails_when_identifier_mismatch(tmp_path: Path) -> Non
 
     assert result.success is False
     assert result.message == "주문/상품/리뷰 식별자가 일치하지 않습니다."
+    assert result.error_code == "identifier_mismatch"
+    assert result.retryable is False
+    assert result.next_tools == ("review_list_reviewable", "review_list_editable")
 
 
 @pytest.mark.anyio

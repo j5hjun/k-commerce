@@ -34,7 +34,11 @@ async def invoke_tool(
     try:
         _ = get_tool_definition(tool_name)
     except KeyError as exc:
-        raise ToolRequestError(tool_name, f"Unknown tool: {tool_name}") from exc
+        raise ToolRequestError(
+            tool_name,
+            f"Unknown tool: {tool_name}",
+            error_code="unknown_tool",
+        ) from exc
 
     request = _parse_payload(tool_name, payload)
     options = runtime_options or ToolRuntimeOptions()
@@ -79,12 +83,13 @@ async def invoke_tool(
 
 def _parse_payload(tool_name: str, payload: JSONValue) -> ToolPayload:
     if not isinstance(payload, Mapping):
-        raise ToolRequestError(tool_name, "Payload must be a JSON object")
+        raise ToolRequestError(tool_name, "Payload must be a JSON object", error_code="invalid_payload")
     if "root_dir" in payload:
         raise ToolRequestError(
             tool_name,
             "root_dir is a runtime option and is not part of the canonical request payload",
             field="root_dir",
+            error_code="runtime_option_in_payload",
         )
     return payload
 
@@ -92,11 +97,19 @@ def _parse_payload(tool_name: str, payload: JSONValue) -> ToolPayload:
 def _get_provider(tool_name: str, payload: ToolPayload, options: ToolRuntimeOptions) -> Provider:
     provider_name = _required_str(tool_name, payload, "provider")
     get_provider = options.get_provider or default_get_provider
-    return get_provider(
-        provider_name,
-        root_dir=options.root_dir,
-        terminal=options.terminal,
-    )
+    try:
+        return get_provider(
+            provider_name,
+            root_dir=options.root_dir,
+            terminal=options.terminal,
+        )
+    except ValueError as exc:
+        raise ToolRequestError(
+            tool_name,
+            str(exc),
+            error_code="unsupported_provider",
+            next_tools=("get_providers",),
+        ) from exc
 
 
 async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
@@ -106,6 +119,7 @@ async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) 
         raise ToolRequestError(
             "order_list",
             "refresh and failed_only cannot both be true",
+            error_code="conflicting_options",
         )
     provider = _get_provider("order_list", payload, options)
     return await provider.list_orders(refresh=refresh, failed_only=failed_only)
@@ -121,6 +135,7 @@ async def _invoke_cart_update_quantity(
             "cart_update_quantity",
             "quantity must be at least 1",
             field="quantity",
+            error_code="invalid_field",
         )
     request = CartQuantityUpdateRequest(
         quantity=quantity,
@@ -149,12 +164,14 @@ async def _invoke_cart_delete_items(
             "cart_delete_items",
             "items must be a non-empty list",
             field="items",
+            error_code="invalid_field",
         )
     if not items:
         raise ToolRequestError(
             "cart_delete_items",
             "items must be a non-empty list",
             field="items",
+            error_code="invalid_field",
         )
     requests = tuple(
         _cart_delete_request_from_value("cart_delete_items", item)
@@ -233,7 +250,7 @@ def _cart_delete_request_from_value(
     value: JSONValue,
 ) -> CartDeleteRequest:
     if not isinstance(value, Mapping):
-        raise ToolRequestError(tool_name, "items must contain JSON objects", field="items")
+        raise ToolRequestError(tool_name, "items must contain JSON objects", field="items", error_code="invalid_field")
     return _cart_delete_request(value)
 
 
@@ -246,7 +263,7 @@ def _required_str(
 ) -> str:
     value = payload.get(field)
     if not isinstance(value, str) or (not allow_empty and not value):
-        raise ToolRequestError(tool_name, f"{field} must be a non-empty string", field=field)
+        raise ToolRequestError(tool_name, f"{field} must be a non-empty string", field=field, error_code="invalid_field")
     return value
 
 
@@ -259,27 +276,27 @@ def _optional_str(
     value = payload.get(field, default)
     if isinstance(value, str):
         return value
-    raise ToolRequestError("payload", f"{field} must be a string", field=field)
+    raise ToolRequestError("payload", f"{field} must be a string", field=field, error_code="invalid_field")
 
 
 def _optional_nullable_str(payload: ToolPayload, field: str) -> str | None:
     value = payload.get(field)
     if value is None or isinstance(value, str):
         return value
-    raise ToolRequestError("payload", f"{field} must be a string or null", field=field)
+    raise ToolRequestError("payload", f"{field} must be a string or null", field=field, error_code="invalid_field")
 
 
 def _required_int(tool_name: str, payload: ToolPayload, field: str) -> int:
     value = payload.get(field)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ToolRequestError(tool_name, f"{field} must be an integer", field=field)
+        raise ToolRequestError(tool_name, f"{field} must be an integer", field=field, error_code="invalid_field")
     return value
 
 
 def _optional_int(payload: ToolPayload, field: str, *, default: int) -> int:
     value = payload.get(field, default)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ToolRequestError("payload", f"{field} must be an integer", field=field)
+        raise ToolRequestError("payload", f"{field} must be an integer", field=field, error_code="invalid_field")
     return value
 
 
@@ -287,4 +304,4 @@ def _optional_bool(payload: ToolPayload, field: str, *, default: bool) -> bool:
     value = payload.get(field, default)
     if isinstance(value, bool):
         return value
-    raise ToolRequestError("payload", f"{field} must be a boolean", field=field)
+    raise ToolRequestError("payload", f"{field} must be a boolean", field=field, error_code="invalid_field")

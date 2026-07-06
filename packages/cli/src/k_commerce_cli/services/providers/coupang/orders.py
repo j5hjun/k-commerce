@@ -17,6 +17,11 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderResult,
     CoupangOrderSummary,
 )
+from k_commerce_cli.services.providers.coupang.result_metadata import (
+    EMPTY_METADATA,
+    LOGIN_REQUIRED_METADATA,
+    ResultMetadata,
+)
 from k_commerce_cli.services.types import ProviderName
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
@@ -47,10 +52,7 @@ class CoupangOrderService:
         if not self.store.has_session():
             payload = self._empty_payload(refresh=refresh)
             self._emit_order_result(terminal, payload)
-            return CoupangOrderListResult(
-                message=format_coupang_order_list_message(payload),
-                payload=payload,
-            )
+            return self._order_list_result(payload, LOGIN_REQUIRED_METADATA)
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
@@ -59,19 +61,13 @@ class CoupangOrderService:
                 payload = await self._retry_failed_pages(terminal)
                 self.store.write_orders(payload.to_dict())
                 self._emit_order_result(terminal, payload)
-                return CoupangOrderListResult(
-                    message=format_coupang_order_list_message(payload),
-                    payload=payload,
-                )
+                return self._order_list_result(payload)
 
             years = await self._wait_for_visible_years()
             if not years:
                 payload = self._empty_payload(refresh=refresh)
                 self._emit_order_result(terminal, payload)
-                return CoupangOrderListResult(
-                    message=format_coupang_order_list_message(payload),
-                    payload=payload,
-                )
+                return self._order_list_result(payload, ResultMetadata(error_code="order_page_unavailable", retryable=True))
 
             previous = None if refresh else self._load_previous_order_list()
             if terminal is not None:
@@ -86,10 +82,7 @@ class CoupangOrderService:
             payload = self._build_payload(years, failed_pages, refresh, orders, summary)
             self.store.write_orders(payload.to_dict())
             self._emit_order_result(terminal, payload)
-            return CoupangOrderListResult(
-                message=format_coupang_order_list_message(payload),
-                payload=payload,
-            )
+            return self._order_list_result(payload)
         finally:
             await self._close_browser_session()
 
@@ -369,6 +362,25 @@ class CoupangOrderService:
             terminal.warn(message)
             return
         terminal.success(message)
+
+    def _order_list_result(
+        self,
+        payload: CoupangOrderList,
+        metadata: ResultMetadata = EMPTY_METADATA,
+    ) -> CoupangOrderListResult:
+        if payload.meta.failedPages:
+            metadata = ResultMetadata(
+                error_code="partial_order_collection_failed",
+                retryable=True,
+                next_tools=("order_list",),
+            )
+        return CoupangOrderListResult(
+            message=format_coupang_order_list_message(payload),
+            payload=payload,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
 
     def _build_payload(
         self,

@@ -7,7 +7,7 @@ import asyncclick as click
 
 from k_commerce_cli.services.registry import get_provider
 from k_commerce_cli.services.tools.invoke import invoke_tool
-from k_commerce_cli.services.tools.types import ToolRuntimeOptions
+from k_commerce_cli.services.tools.types import ToolRequestError, ToolRuntimeOptions
 
 SUPPORTED_SORTS = [
     "relevance",
@@ -83,6 +83,10 @@ async def search(
         )
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
+    except ToolRequestError as error:
+        if error.error_code == "unsupported_provider":
+            raise click.BadParameter(error.message, param_hint="provider") from error
+        raise
 
     if not result.success:
         terminal.abort(result.message)
