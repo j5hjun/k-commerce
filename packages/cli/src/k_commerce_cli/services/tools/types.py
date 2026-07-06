@@ -75,6 +75,8 @@ class ToolRequestError(Exception):
     tool_name: str
     message: str
     field: str | None = None
+    error_code: str = "tool_request_error"
+    retryable: bool = False
     next_tools: tuple[str, ...] = ()
 
     def __str__(self) -> str:
