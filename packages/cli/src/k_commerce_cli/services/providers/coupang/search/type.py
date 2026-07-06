@@ -20,4 +20,6 @@ class SearchProductResult:
     success: bool
     message: str
     items: tuple[SearchResultItem, ...]
+    error_code: str = ""
+    retryable: bool = False
     next_tools: tuple[str, ...] = ()

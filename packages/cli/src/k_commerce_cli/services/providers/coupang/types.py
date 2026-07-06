@@ -139,4 +139,6 @@ class CoupangOrderList:
 class CoupangOrderListResult:
     message: str
     payload: CoupangOrderList
+    error_code: str = ""
+    retryable: bool = False
     next_tools: tuple[str, ...] = ()

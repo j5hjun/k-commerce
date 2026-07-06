@@ -27,6 +27,8 @@ class ToolRunnerError(Exception):
     message: str
     tool_name: str | None = None
     field: str | None = None
+    error_code: str = ""
+    retryable: bool = False
     next_tools: tuple[str, ...] = ()
 
 
@@ -88,6 +90,8 @@ async def run_tool_command(
                 message=exc.message,
                 tool_name=exc.tool_name,
                 field=exc.field,
+                error_code=exc.error_code,
+                retryable=exc.retryable,
                 next_tools=exc.next_tools,
             )
         )
@@ -124,6 +128,8 @@ async def _invoke_tool_with_timeout(tool_name: str, payload: JSONValue) -> ToolI
             error_type="tool_timeout",
             message=f"Tool invocation timed out after {TOOL_INVOCATION_TIMEOUT_SECONDS:g} seconds.",
             tool_name=tool_name,
+            error_code="timeout",
+            retryable=True,
         ) from exc
 
 
@@ -171,6 +177,8 @@ def _emit_error(error: ToolRunnerError) -> None:
     body: dict[str, JSONValue] = {
         "type": error.error_type,
         "message": error.message,
+        "error_code": error.error_code or error.error_type,
+        "retryable": error.retryable,
     }
     if error.tool_name is not None:
         body["tool_name"] = error.tool_name

@@ -78,6 +78,8 @@ async def test_request_file_cart_update_quantity_returns_json_error_when_provide
         "error": {
             "type": "tool_timeout",
             "message": "Tool invocation timed out after 0.01 seconds.",
+            "error_code": "timeout",
+            "retryable": True,
             "tool_name": "cart_update_quantity",
             "next_tools": [],
         }
@@ -109,6 +111,8 @@ async def test_provider_raised_timeout_error_returns_provider_error_json(
         "error": {
             "type": "tool_error",
             "message": "provider timed out internally",
+            "error_code": "tool_error",
+            "retryable": False,
             "tool_name": "cart_update_quantity",
             "next_tools": [],
         }
@@ -140,6 +144,8 @@ async def test_unexpected_provider_exception_returns_sanitized_tool_error_json(
         "error": {
             "type": "tool_error",
             "message": "Tool invocation failed.",
+            "error_code": "tool_error",
+            "retryable": False,
             "tool_name": "cart_update_quantity",
             "next_tools": [],
         }
@@ -175,6 +181,8 @@ async def test_provider_raised_value_error_returns_sanitized_tool_error_json(
         "error": {
             "type": "tool_error",
             "message": "Tool invocation failed.",
+            "error_code": "tool_error",
+            "retryable": False,
             "tool_name": "cart_update_quantity",
             "next_tools": [],
         }
