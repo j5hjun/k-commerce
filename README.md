@@ -50,9 +50,17 @@ uv run k-commerce <tool-name> '<json-request>'
 uv run k-commerce <tool-name> --request-file ./request.json
 ```
 
-The existing CLI commands are human/debug compatibility aliases over the same service contract.
-Their `--root-dir` option is a CLI-only debug/runtime option and is not part of the canonical MCP or
-JSON request payload.
+Run the MCP stdio server directly or open it in MCP Inspector:
+
+```bash
+uv run k-commerce-mcp
+npx @modelcontextprotocol/inspector uv run k-commerce-mcp
+```
+
+Human-oriented CLI aliases such as `k-commerce login coupang`, `k-commerce order list coupang`,
+and `k-commerce search coupang KEYWORD` remain available for local debugging and interactive
+browser checks. Their `--root-dir` option is a CLI-only debug/runtime option and is not part of the
+canonical MCP or JSON request payload.
 
 ## Supported Providers
 

@@ -16,6 +16,12 @@ Run the MCP server from the repository root:
 uv run k-commerce-mcp
 ```
 
+Open the local stdio server in MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector uv run k-commerce-mcp
+```
+
 ## Tools
 
 The MCP tool contract is the source of truth for tool names, request payloads, validation, and
@@ -51,20 +57,29 @@ uv run k-commerce <tool-name> '<json-request>'
 uv run k-commerce <tool-name> --request-file ./request.json
 ```
 
-## Cart CLI Mapping
+## Compatibility CLI Aliases
 
-| CLI | MCP |
+The human-oriented CLI aliases are available for local debugging and interactive browser checks.
+Automation should prefer the canonical MCP tool names and request payloads.
+
+| Alias command | Canonical MCP tool |
 | --- | --- |
+| `k-commerce login coupang` | `login` |
+| `k-commerce status coupang` | `status` |
+| `k-commerce logout coupang` | `logout` |
+| `k-commerce order list coupang` | `order_list` |
+| `k-commerce search coupang KEYWORD` | `search_products` |
 | `k-commerce cart coupang` / `--list` | `cart_list` |
 | `k-commerce cart coupang --quantity` | `cart_update_quantity` |
 | `k-commerce cart coupang --delete` (단일 삭제) | `cart_delete_item` |
 | `k-commerce cart coupang --delete` (선택 삭제) | `cart_delete_items` |
 | `k-commerce cart coupang --delete` (전체 삭제) | `cart_clear` |
+| `k-commerce review upload coupang` | `review_upload` |
+| `k-commerce review edit coupang` | `review_edit` |
+| `k-commerce review delete coupang` | `review_delete` |
 
 프론트에서는 `cart_list`로 받은 `items`를 화면에 표시한 뒤, 사용자가 고른 항목의
 `product_id`, `vendor_item_id`, `item_id`로 삭제/수량 변경 도구를 호출하면 됩니다.
-
-Order snapshot collection is also available through the CLI command `k-commerce order list coupang`.
 
 ## Supported Providers
 

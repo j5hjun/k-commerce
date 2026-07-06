@@ -55,312 +55,63 @@ uv run k-commerce status '{"provider":"coupang"}'
 uv run k-commerce search_products '{"provider":"coupang","keyword":"keyboard","sort":"relevance","max_results":10}'
 ```
 
-The named CLI commands below are human/debug compatibility aliases. They keep terminal-oriented
-prompts and output while routing commerce work through the shared contract.
+Common request examples:
+
+```bash
+uv run k-commerce login '{"provider":"coupang"}'
+uv run k-commerce order_list '{"provider":"coupang","refresh":false,"failed_only":false}'
+uv run k-commerce cart_list '{"provider":"coupang"}'
+uv run k-commerce review_list_reviewable '{"provider":"coupang"}'
+```
+
+## Compatibility Alias Commands
+
+The named CLI commands are human/debug compatibility aliases. They keep terminal-oriented prompts
+and output while routing commerce work through the shared contract.
+
+| Alias command | Canonical tool |
+| --- | --- |
+| `uv run k-commerce login coupang` | `login` |
+| `uv run k-commerce status coupang` | `status` |
+| `uv run k-commerce logout coupang` | `logout` |
+| `uv run k-commerce order list coupang` | `order_list` |
+| `uv run k-commerce search coupang KEYWORD` | `search_products` |
+| `uv run k-commerce cart coupang --list` | `cart_list` |
+| `uv run k-commerce cart coupang --quantity` | `cart_update_quantity` |
+| `uv run k-commerce cart coupang --delete` | `cart_delete_item`, `cart_delete_items`, `cart_clear` |
+| `uv run k-commerce review upload coupang` | `review_upload` |
+| `uv run k-commerce review edit coupang` | `review_edit` |
+| `uv run k-commerce review delete coupang` | `review_delete` |
 
 `root_dir` is not part of canonical MCP or JSON request payloads. Use `--root-dir` only on CLI
-aliases when local verification needs isolated credentials and session files.
-
-Run the CLI from the workspace root:
-
-```bash
-uv run k-commerce login coupang
-```
-
-Check whether any saved local Coupang session artifacts still produce a live Coupang home session:
-
-```bash
-uv run k-commerce status coupang
-```
-
-Remove saved local Coupang session artifacts while preserving `credentials.json` for future automatic login:
-
-```bash
-uv run k-commerce logout coupang
-```
-
-List reviewable products only:
-
-```bash
-uv run k-commerce review upload coupang --list
-```
-
-Write a review interactively:
-
-```bash
-uv run k-commerce review upload coupang
-```
-
-List editable reviews only:
-
-```bash
-uv run k-commerce review edit coupang --list
-```
-
-Edit a review interactively:
-
-```bash
-uv run k-commerce review edit coupang
-```
-
-List deletable reviews only:
-
-```bash
-uv run k-commerce review delete coupang --list
-```
-
-Delete a review interactively:
-
-```bash
-uv run k-commerce review delete coupang
-```
-
-List cart products and browse item details:
-
-```bash
-uv run k-commerce cart coupang
-```
-
-The `--list` flag runs the same interactive browse flow.
-
-Update a cart product quantity interactively:
-
-```bash
-uv run k-commerce cart coupang --quantity
-```
-
-Delete cart products interactively:
-
-```bash
-uv run k-commerce cart coupang --delete
-```
-
-Collect visible-year Coupang orders except the `최근 6개월` tab and update `orders.json` with a
-diff summary:
-
-```bash
-uv run k-commerce order list coupang
-```
-
-Ignore the previous snapshot comparison and recreate `orders.json` from the latest collection:
-
-```bash
-uv run k-commerce order list coupang --refresh
-```
-
-Retry only the year/page pairs recorded in the previous `orders.json` failure metadata:
-
-```bash
-uv run k-commerce order list coupang --failed-only
-```
-
-Search Coupang products by keyword:
-
-```bash
-uv run k-commerce search coupang KEYWORD
-```
-
-Print search results as JSON:
-
-```bash
-uv run k-commerce search coupang KEYWORD --output json
-```
-
-Save search results to a JSON file:
-
-```bash
-uv run k-commerce search coupang KEYWORD --output json --save ./search.json
-```
-
-Sort search results by lowest price:
-
-```bash
-uv run k-commerce search coupang KEYWORD --sort low_price
-```
-
-To isolate credentials and session data under a custom directory:
+aliases when local verification needs isolated credentials and session files:
 
 ```bash
 uv run k-commerce login coupang --root-dir /tmp/test-k-commerce
 ```
 
-The same `--root-dir` option also applies to status, logout, review, cart, order list, and search commands:
-
-```bash
-uv run k-commerce status coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce logout coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce review upload coupang --list --root-dir /tmp/test-k-commerce
-uv run k-commerce review upload coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce review edit coupang --list --root-dir /tmp/test-k-commerce
-uv run k-commerce review edit coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce review delete coupang --list --root-dir /tmp/test-k-commerce
-uv run k-commerce review delete coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce cart coupang --list --root-dir /tmp/test-k-commerce
-uv run k-commerce cart coupang --quantity --root-dir /tmp/test-k-commerce
-uv run k-commerce cart coupang --delete --root-dir /tmp/test-k-commerce
-uv run k-commerce order list coupang --root-dir /tmp/test-k-commerce
-uv run k-commerce search coupang KEYWORD --root-dir /tmp/test-k-commerce
-```
-
-This option is intended for local verification and automated tests where credentials and session files
-must be isolated from the default `~/.k-commerce` directory.
+This option is intended for local verification and automated tests where credentials and session
+files must be isolated from the default `~/.k-commerce` directory.
 
 If you pass an unsupported provider, the CLI reports the supported provider names from the shared
 provider registry.
 
 ## Coupang Login Flow
 
-The `coupang` login command tries the following in order:
+The `login` tool tries the following in order:
 
 1. Restore a previously saved browser session.
 2. If no valid session exists, try automatic login with saved credentials.
 3. If automatic login is unavailable or fails, wait for manual login in the browser.
 
-When login succeeds, the CLI saves the session so the next run can reuse it.
+When login succeeds, the CLI saves the session so later tools can reuse it. Browser-backed tools
+such as `search_products`, cart tools, review tools, and `order_list` require a valid saved session.
 
-## Coupang Review Commands
-
-The `review` command group reuses a saved Coupang session.
-
-### Interactive upload
-
-```bash
-uv run k-commerce review upload coupang
-```
-
-This loads the reviewable product list, lets you pick an item with arrow keys, then prompts
-for rating and review text before submitting.
-
-### Upload list only
-
-```bash
-uv run k-commerce review upload coupang --list
-```
-
-### Interactive edit
-
-```bash
-uv run k-commerce review edit coupang
-```
-
-This loads the editable review list, lets you pick an existing review with arrow keys, then prompts
-for rating and review text before submitting the update.
-
-### Edit list only
-
-```bash
-uv run k-commerce review edit coupang --list
-```
-
-### Interactive delete
-
-```bash
-uv run k-commerce review delete coupang
-```
-
-This loads the written review list, lets you pick an existing review with arrow keys, then opens
-Coupang's delete confirmation flow in the browser.
-
-### Delete list only
-
-```bash
-uv run k-commerce review delete coupang --list
-```
-
-If no saved session exists, or the session is no longer logged in, the command fails with a clear
-message instead of opening a login flow automatically.
-
-Image or video attachments are not supported in this command.
-
-## Coupang Search Command
-
-The `search` command reuses a saved Coupang session.
-
-### Basic search
-
-```bash
-uv run k-commerce search coupang KEYWORD
-```
-
-This opens the saved Coupang session, searches for `KEYWORD`, and prints up to 10 products as a
-table in the terminal.
-
-### JSON output
-
-```bash
-uv run k-commerce search coupang KEYWORD --output json
-```
-
-### Save JSON output
-
-```bash
-uv run k-commerce search coupang KEYWORD --output json --save ./search.json
-```
-
-`--save` writes the same JSON payload to the given file path.
-
-### Sort
-
-Supported `--sort` values are `relevance` (default), `latest`, `low_price`, `high_price`, and
-`review`.
-
-```bash
-uv run k-commerce search coupang KEYWORD --sort low_price
-```
-
-### Category filter
-
-```bash
-uv run k-commerce search coupang KEYWORD --category CATEGORY_ID
-```
-
-If no saved session exists, or the session is no longer logged in, the command fails with a clear
-message instead of opening a login flow automatically.
-
-## Coupang Cart Commands
-
-The `cart` command reuses a saved Coupang session.
-
-### Cart list browse
-
-```bash
-uv run k-commerce cart coupang --list
-```
-
-This loads the cart product list, lets you pick an item with arrow keys, then shows full item
-details. You can go back to the list or exit. Running without flags uses the same browse flow.
-
-The list includes product name, quantity, price, and available identifiers such as `vendorItemId`.
-
-### Update quantity
-
-```bash
-uv run k-commerce cart coupang --quantity
-```
-
-This loads the cart product list, lets you pick an item with arrow keys, then prompts for the new
-quantity before applying it to the Coupang cart page. You can update multiple items in one session.
-
-### Delete cart products
-
-```bash
-uv run k-commerce cart coupang --delete
-```
-
-This loads the cart product list, then lets you choose a delete mode:
-
-- **Single item**: pick one product, confirm, and delete it. You can delete more items in the same
-  session.
-- **Multiple items**: pick several products with checkboxes, confirm, and delete them together.
-- **Clear cart**: view the current list or clear the entire cart after confirmation.
-
-Each mode supports going back to the delete-mode menu or exiting without changes.
-
-`--list`, `--quantity`, and `--delete` cannot be used together.
+Review image or video attachments are not supported.
 
 ## Login Status
 
-The `status` command first checks whether saved session artifacts exist under the selected root
+The `status` tool first checks whether saved session artifacts exist under the selected state
 directory. If no local session state is present, it does not proceed with browser-based session
 validation.
 
@@ -409,29 +160,29 @@ Files created there:
 - `credentials.json`: optional credentials for automatic login
 - `orders.json`: local order snapshot with collection metadata and nested Coupang orders
 
-The `logout` command removes saved session artifacts such as `chrome-profile/`, `cookies.dat`, and
+The `logout` tool removes saved session artifacts such as `chrome-profile/`, `cookies.dat`, and
 `session-meta.json`, but preserves `credentials.json`.
 
 These files are local machine state and should be treated as sensitive.
 
 ## Order Snapshot
 
-The `order list` command opens the saved Coupang session, discovers the year tabs visible in the
+The `order_list` tool opens the saved Coupang session, discovers the year tabs visible in the
 current account, skips `최근 6개월`, and walks each visible year page-by-page.
 
 Default mode compares the newly collected data against the previous `orders.json` and prints an
-order-count summary such as total orders plus added, changed, and deleted orders. `--refresh`
-skips that comparison and prints only the total order count for the rebuilt snapshot.
+order-count summary such as total orders plus added, changed, and deleted orders. The `refresh`
+request field skips that comparison and prints only the total order count for the rebuilt snapshot.
 
 When the previous snapshot has no failed pages, default mode also uses it as a page-tail cache:
-after a fetched page exactly matches the same year/position in `orders.json`, the command reuses
-the remaining older orders for that year and stops requesting more pages. `--refresh` always
+after a fetched page exactly matches the same year/position in `orders.json`, the tool reuses
+the remaining older orders for that year and stops requesting more pages. `refresh` always
 requests every visible page and rebuilds the snapshot.
 
 If one or more pages still fail after three retries, the CLI saves the successfully collected
 orders and includes the failed year/page pairs in both the terminal summary and `orders.json`
 metadata.
 
-`--failed-only` reads those saved failure pairs, requests only those pages, merges successful
-results into the previous snapshot by order ID, and keeps only pages that still fail in the new
-`failedPages` metadata.
+The `failed_only` request field reads those saved failure pairs, requests only those pages, merges
+successful results into the previous snapshot by order ID, and keeps only pages that still fail in
+the new `failedPages` metadata.

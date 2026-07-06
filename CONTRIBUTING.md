@@ -19,14 +19,20 @@ uv build
 uv run pytest
 uv run k-commerce --help
 uv run k-commerce-mcp
+npx @modelcontextprotocol/inspector uv run k-commerce-mcp
 ```
 
-수동 검증 중 로컬 쿠팡 주문 스냅샷을 다시 만들거나 차이를 확인할 때는 다음 명령을 사용합니다.
+Canonical CLI runner는 MCP와 같은 요청 스키마를 사용합니다.
 
 ```bash
-uv run k-commerce order list coupang
-uv run k-commerce order list coupang --refresh
+uv run k-commerce <tool-name> '<json-request>'
+uv run k-commerce <tool-name> --request-file ./request.json
 ```
+
+사람이 직접 브라우저 흐름을 확인할 때는 `uv run k-commerce login coupang`,
+`uv run k-commerce order list coupang`, `uv run k-commerce search coupang KEYWORD` 같은
+호환 alias 명령을 사용할 수 있습니다. 이 명령들은 디버깅과 수동 확인용으로만 짧게
+문서화하고, 자동화/연동 설명은 canonical tool 이름과 요청 JSON을 기준으로 작성합니다.
 
 ## Test Layout
 
@@ -128,7 +134,7 @@ Smoke 입력은 케이스별로 다음과 같습니다.
 
 ## Commit Message Convention
 
-간단한 Conventional Commits 형식을 사용합니다.
+커밋 메시지는 영어로 작성하고, 간단한 Conventional Commits 형식을 사용합니다.
 
 ```text
 <type>: <summary>
@@ -152,7 +158,12 @@ docs: add pull request template
 chore: configure uv workspace
 ```
 
+본문이 필요한 커밋을 작성할 때도 제목 줄은 영어로 유지합니다.
+
 ## Pull Request
+
+이슈와 PR 제목은 영어로 작성합니다. 본문은 한국어로 작성하되, 템플릿의 원래 heading과
+체크리스트 형태는 유지합니다.
 
 PR을 열기 전에 다음을 확인합니다.
 
@@ -160,7 +171,15 @@ PR을 열기 전에 다음을 확인합니다.
 - 브랜치 이름이 변경 유형과 맞는지 확인합니다.
 - 일반 개발 작업은 `dev`를 대상으로 합니다.
 - `main`은 `dev`에서 검토가 끝나고 승격 준비가 된 변경만 대상으로 합니다.
-- PR 템플릿에 생성한 파일, 수정한 파일, 테스트 절차를 채웁니다.
+- PR 템플릿의 `What`, `How To Test`, `Review Focus`, `Screenshots / Logs`, `Related` 섹션을 채웁니다.
 - 하나의 계획된 기능 또는 명확히 범위가 잡힌 수정에 필요한 내용만 포함합니다.
 
 권장 확인 항목이 적용되지 않는다면 PR에 이유를 적습니다.
+
+## Issues
+
+이슈 제목은 영어로 작성하고, 본문은 선택한 이슈 템플릿의 heading을 유지한 채 한국어로
+작성합니다.
+
+- Feature 이슈는 `Summary`, `Goal`, `Scope`, `Acceptance Criteria`를 채웁니다.
+- Bug 이슈는 `Summary`, `Current Behavior`, `Expected Behavior`, `Steps To Reproduce`, `Acceptance Criteria`를 채웁니다.
