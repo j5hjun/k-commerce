@@ -58,3 +58,15 @@ async def load_tools() -> list[BaseTool]:
 
     client = build_mcp_client()
     return await client.get_tools()
+
+
+async def load_tools_by_server() -> dict[str, list[BaseTool]]:
+    """Load MCP tools grouped by the registered server they came from.
+
+    The agent uses this to apply first-party wrappers (hints, compaction)
+    only to the bundled k-commerce server's tools, so a third-party tool that
+    happens to share a name passes through untouched.
+    """
+
+    client = build_mcp_client()
+    return {name: await client.get_tools(server_name=name) for name in list_registered_servers()}

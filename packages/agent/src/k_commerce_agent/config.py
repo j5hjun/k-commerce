@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from k_commerce_agent.profiles.kcommerce import SYSTEM_PROMPT
+
 # pydantic-settings only pulls .env values into fields declared below, so a
 # provider-native var like OPENAI_API_KEY (used by the generic "provider:model"
 # path's underlying client, which reads os.environ directly) would otherwise
