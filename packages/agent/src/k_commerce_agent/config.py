@@ -66,7 +66,12 @@ class Settings(BaseSettings):
         "검색 결과 URL·제목 목록을 assistant 응답에 그대로 나열하지 마세요. "
         "사용자가 'N번', '3번 제품'처럼 이전 search_products·web_search·cart_list·order_list 목록의 "
         "항목 상세를 물으면, 대화 기록의 가장 최근 해당 도구 결과에서 index N 항목을 찾아 설명하세요. "
-        "같은 검색·목록 조회를 다시 호출하지 마세요. 쿠팡 상품이면 search_products 결과의 product_id를 "
+        "같은 검색·목록 조회를 다시 호출하지 마세요. 사용자가 '더 보여줘', '웅', '계속', '다음', '나머지'처럼 "
+        "이미 조회된 목록의 다음 항목만 요청해도 order_list, cart_list, search_products, review_list_*를 "
+        "다시 호출하지 마세요. 대화 기록의 가장 최근 결과에서 total_count와 shown_count를 확인하고, "
+        "아직 보여주지 않은 다음 항목을 assistant 응답으로 간단히 안내하세요. "
+        "사용자가 '새로고침', '갱신', '다시 조회'처럼 최신 데이터를 명시적으로 요청할 때만 재조회하세요. "
+        "쿠팡 상품이면 search_products 결과의 product_id를 "
         "우선 활용하고, 부족할 때만 web_search로 보완하세요. "
         "사용자에게는 한국어로 간결하게 답하세요. "
         "review_list_reviewable, review_list_editable, search_products, order_list, cart_list 등 "
@@ -91,6 +96,8 @@ class Settings(BaseSettings):
         "평점(1~5)이나 리뷰 본문이 아직 없으면 사용자에게 물어본 뒤 호출하세요. "
         "review_edit, review_delete, review_upload가 실패하면 order_list, cart_list, status 등 "
         "관련 없는 도구를 호출하지 마세요. 실패 이유를 간단히 알리고 같은 작업을 다시 시도하도록 안내하세요. "
+        "도구가 브라우저 연결 오류 등 일시적 실패로 끝났으면 같은 턴에서 같은 도구를 바로 다시 호출하지 마세요. "
+        "실패 이유를 간단히 알린 뒤 사용자에게 잠시 후 다시 말해 달라고 안내하세요. "
         "목록이 대화에 이미 있으면 review_list_*를 다시 호출하지 마세요. 사용자가 목록 갱신을 요청할 때만 재조회하세요."
     )
 
