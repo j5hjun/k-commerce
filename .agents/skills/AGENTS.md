@@ -1,7 +1,21 @@
-# Shared Skills File Map
+# Shared Skills Knowledge Base
 
-This directory contains repository-shared agent skills.
+## OVERVIEW
 
-- Create new repository-specific skills in this directory rather than in `~/.codex/skills`.
-- `agents-rule-curator/` - skill for distilling conversation decisions into user-selected `AGENTS.md` rules; includes `SKILL.md` and `agents/openai.yaml`.
-- `map-agents-files/` - skill for creating or updating `AGENTS.md` file maps across a repository; includes `SKILL.md` and `agents/openai.yaml`.
+Repo-local skill packages used to preserve workflow knowledge for future agents.
+
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Conversation-rule curation | `agents-rule-curator/` | Distills selected discussion rules into `AGENTS.md`. |
+| File-map maintenance | `map-agents-files/` | Creates or updates concise directory maps. |
+
+## CONVENTIONS
+
+- Each skill should keep its `SKILL.md` and agent metadata together.
+- Prefer updating these shared skills when a workflow becomes repeatable across tasks.
+
+## ANTI-PATTERNS
+
+- Do not add one-off task notes as skills.

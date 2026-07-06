@@ -1,12 +1,25 @@
-# Cart Commands File Map
+# Cart Commands Knowledge Base
 
-This directory contains the `cart` command and interactive cart workflows.
+## OVERVIEW
 
-- `__init__.py` - thin `cart` command definition: exclusive `--list`/`--quantity`/`--delete` flag handling that dispatches to the per-flow runners.
-- `list.py` - `run_cart_list` flow for the default list-browse mode.
-- `quantity.py` - `run_quantity_update` flow for the `--quantity` mode.
-- `delete.py` - `run_delete` flow plus single/selected/clear delete sub-flows for the `--delete` mode.
-- `common.py` - shared cart message constants and helpers (`get_provider` re-export, `resolve_root_dir`, `report_unless_list_success`, `cart_delete_request`, `fetch_cart_list`).
-- `interactive.py` - shared prompt helpers and formatters for selecting cart items, choosing delete modes, confirming deletions, entering quantities, and rendering cart list/detail views.
+Interactive `cart` command workflows: list-browse, quantity update, and delete modes.
 
-Command files should stay thin: parse CLI options, collect user input, call provider services, and print terminal messages.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Mode dispatch | `__init__.py` | Exclusive `--list`/`--quantity`/`--delete` handling. |
+| List-browse | `list.py` | Default cart browse flow. |
+| Quantity update | `quantity.py` | `--quantity` workflow. |
+| Delete flows | `delete.py` | Single, selected, and clear delete flows. |
+| Shared helpers | `common.py` | Provider/root-dir helpers and message constants. |
+| Prompts/rendering | `interactive.py` | Item selection, confirmations, display helpers. |
+
+## CONVENTIONS
+
+- Keep cart identifiers together: `product_id`, `vendor_item_id`, and `item_id`.
+- Prompting belongs here; provider mutation belongs in Coupang cart services.
+
+## ANTI-PATTERNS
+
+- Do not persist cart state from command code.

@@ -1,19 +1,25 @@
-# CLI Smoke Tests File Map
+# CLI Smoke Tests Knowledge Base
 
-This directory contains opt-in smoke tests for real/local CLI flows.
+## OVERVIEW
 
-- `_helpers.py` - smoke-test gating, generic CLI invocation, provider path helpers, and artifact copy utilities.
-- `auth/` - Coupang authentication smoke tests: credentials login, existing session reuse, malformed credentials, and manual login.
-- `__init__.py` - smoke test package marker.
+Opt-in real/local browser tests for Coupang flows. These are not safe-by-default CI coverage.
 
-Smoke tests may require local credentials, browser state, or explicit environment opt-in; do not assume they are safe to run by default.
+## WHERE TO LOOK
 
-## Smoke Test Organization
+| Task | Location | Notes |
+|------|----------|-------|
+| Shared smoke helpers | `_helpers.py` | Gating, CLI invocation, provider paths, artifact copy. |
+| Auth smoke | `auth/` | Credentials, existing session, malformed credentials, manual login. |
+| Order smoke | `order/` | Snapshot, refresh, failed-page retry scenarios. |
 
-- Smoke tests must copy only the required local provider artifacts from `~/.k-commerce/coupang` into the test `tmp_path`. Tests must not modify the original local provider state directly.
-- Keep smoke tests organized by domain:
-  - `tests/smoke/auth/` for authentication smoke tests.
-  - `tests/smoke/order/` for order-list smoke tests.
-  - `tests/smoke/_helpers.py` for shared smoke utilities.
-  - `tests/smoke/<domain>/_helpers.py` for domain-specific helpers.
-- Split smoke tests by scenario. Do not combine multiple smoke scenarios in one test file. Prefer explicit filenames such as `test_coupang_order_list_without_snapshot.py`, `test_coupang_order_list_with_clean_snapshot.py`, and `test_coupang_order_failed_only.py`.
+## CONVENTIONS
+
+- Gate real smoke execution with `RUN_COUPANG_SMOKE=1`.
+- Use `K_COMMERCE_BROWSER_SANDBOX=0` only where Chrome sandboxing is blocked.
+- Copy only required artifacts from `~/.k-commerce/coupang` into `tmp_path`.
+- Never mutate the original local provider state directly.
+- Keep one real-flow scenario per test file.
+
+## ANTI-PATTERNS
+
+- Do not combine multiple smoke scenarios in one test.

@@ -1,10 +1,21 @@
-# GitHub File Map
+# GitHub Knowledge Base
 
-This directory contains repository-level GitHub collaboration files.
+## OVERVIEW
 
-- `pull_request_template.md` - default pull request checklist/body.
-- `ISSUE_TEMPLATE/` - structured issue forms. See `.github/ISSUE_TEMPLATE/AGENTS.md`.
+Repository collaboration metadata: PR template plus issue forms.
 
-## Pull Request Rules
+## WHERE TO LOOK
 
-- Keep pull request bodies aligned with `.github/pull_request_template.md`; preserve the template headings even when writing the content in Korean.
+| Task | Location | Notes |
+|------|----------|-------|
+| PR body | `pull_request_template.md` | Preserve headings and checklist shape. |
+| Issue forms | `ISSUE_TEMPLATE/` | Bug/feature forms and chooser config. |
+
+## CONVENTIONS
+
+- Keep PR bodies aligned with `pull_request_template.md`, even when writing the content in Korean.
+- Required PR sections are `What`, `How To Test`, `Review Focus`, `Screenshots / Logs`, and `Related`.
+
+## ANTI-PATTERNS
+
+- Do not remove template headings just because a section is short; mark non-applicable sections explicitly.

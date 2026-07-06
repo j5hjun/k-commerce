@@ -1,15 +1,25 @@
-# Agent Package File Map
+# Agent Package Knowledge Base
 
-This package is a LangChain agent backend that bridges a web frontend to the
-K-commerce MCP server. The frontend talks HTTP/WebSocket to this backend, and
-this backend talks MCP (stdio) to `k-commerce-mcp`.
+## OVERVIEW
 
-## Package files
+`packages/agent` owns web-facing orchestration and LLM integration. It consumes MCP tools and leaves provider execution to MCP/CLI.
 
-- `pyproject.toml` - agent package metadata, dependencies, and `k-commerce-agent` console script.
-- `README.md` - agent-specific setup, LLM configuration, and endpoint documentation.
+## WHERE TO LOOK
 
-## Source and tests
+| Task | Location | Notes |
+|------|----------|-------|
+| Package metadata | `pyproject.toml` | `k-commerce-agent` console script and MCP dependency. |
+| Public docs | `README.md` | LLM setup, endpoints, WebSocket protocol. |
+| Agent source | `src/k_commerce_agent/` | FastAPI, MCP client, model/agent build; see local map. |
+| Tests | `tests/` | Settings defaults, no-model failure path, and `/api/tools`; see local map. |
 
-- `src/` - importable agent source tree. See `src/AGENTS.md`.
-- `tests/` - agent backend tests.
+## CONVENTIONS
+
+- The server must boot without an LLM configured; `/health` and `/api/tools` still work.
+- Chat over `/ws/chat` requires configured model settings.
+- Model config is `AGENT_*` plus provider-specific keys such as `HF_TOKEN` or `WATSONX_*`.
+- Manual login tools need a real GUI/display because provider login can launch Chrome.
+
+## ANTI-PATTERNS
+
+- Do not call CLI provider logic directly from the agent; use MCP tools.
