@@ -58,6 +58,14 @@ async def test_order_help_lists_list_subcommand() -> None:
 
 
 @pytest.mark.anyio
+async def test_app_help_lists_product_command() -> None:
+    result = await RUNNER.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "product" in result.output
+
+
+@pytest.mark.anyio
 async def test_login_coupang_command_prints_login_message_once() -> None:
     provider = Mock()
     provider.login = AsyncMock(
@@ -781,11 +789,9 @@ async def test_order_list_command_prints_summary_once() -> None:
             message="저장된 주문 조회 완료: 0건(전체 0건)",
             start_date=None,
             end_date=None,
-            count=0,
             total_count=0,
             has_more=False,
             next_cursor=None,
-            orders=(),
         )
     )
 
@@ -806,8 +812,6 @@ async def test_order_sync_refresh_passes_refresh_flag(tmp_path: Path) -> None:
             success=True,
             provider="coupang",
             message="주문 새로 생성 완료: 총 1건",
-            collected_orders=1,
-            total_orders=1,
         )
     )
 
@@ -831,8 +835,6 @@ async def test_order_sync_failed_only_passes_failed_only_flag(tmp_path: Path) ->
             success=True,
             provider="coupang",
             message="주문 수집 완료: 총 1건, 추가 1건, 변경 0건, 삭제 0건",
-            collected_orders=1,
-            total_orders=1,
         )
     )
 

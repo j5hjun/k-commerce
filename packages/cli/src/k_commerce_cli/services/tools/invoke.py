@@ -17,6 +17,7 @@ from k_commerce_cli.services.types import (
     OrderSearchRequest,
     OrderResult,
     OrderSyncRequest,
+    ProductDetailRequest,
     ReviewDeleteRequest,
     ReviewDeleteResult,
     ReviewEditRequest,
@@ -69,6 +70,8 @@ async def invoke_tool(
             return await _invoke_order_detail(request, options)
         case "order_failures":
             return await _invoke_order_failures(request, options)
+        case "product_detail":
+            return await _invoke_product_detail(request, options)
         case "cart_list":
             return await _get_provider(tool_name, request, options).list_cart()
         case "cart_update_quantity":
@@ -183,6 +186,14 @@ async def _invoke_order_failures(payload: ToolPayload, options: ToolRuntimeOptio
     )
     provider = _get_provider("order_failures", payload, options)
     return await provider.list_order_failures(request)
+
+
+async def _invoke_product_detail(payload: ToolPayload, options: ToolRuntimeOptions) -> ToolInvocationResult:
+    request = ProductDetailRequest(
+        url=_required_str("product_detail", payload, "url"),
+    )
+    provider = _get_provider("product_detail", payload, options)
+    return await provider.get_product_detail(request)
 
 
 async def _invoke_cart_update_quantity(

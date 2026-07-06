@@ -10,7 +10,14 @@ from asyncclick.testing import CliRunner
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
 from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRuntimeOptions
-from k_commerce_cli.services.types import ListCartResult, ListReviewableResult, OrderListResult, ProviderName
+from k_commerce_cli.services.types import (
+    ListCartResult,
+    ListReviewableResult,
+    OrderListResult,
+    ProductDetailResult,
+    ProductOcrResult,
+    ProviderName,
+)
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 
 RUNNER = CliRunner()
@@ -160,11 +167,9 @@ async def test_order_list_alias_uses_shared_invocation() -> None:
             message="저장된 주문 조회 완료: 0건(전체 0건)",
             start_date=None,
             end_date=None,
-            count=0,
             total_count=0,
             has_more=False,
             next_cursor=None,
-            orders=(),
         )
     )
 
@@ -227,6 +232,44 @@ async def test_search_alias_uses_shared_invocation_and_prints_result() -> None:
                 "category": None,
                 "sort": "relevance",
                 "max_results": 10,
+            },
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_product_detail_alias_uses_shared_invocation_and_prints_json() -> None:
+    invoke_tool = ToolInvoker(
+        ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="상품 상세 수집 완료",
+            url="https://www.coupang.com/vp/products/1",
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
+            ocr=ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="OCR 상세 본문"),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.product.invoke_tool", invoke_tool, create=True):
+        result = await RUNNER.invoke(
+            app,
+            ["product", "detail", "coupang", "https://www.coupang.com/vp/products/1"],
+        )
+
+    assert result.exit_code == 0
+    assert '"detail_text"' not in result.output
+    assert '"text": "OCR 상세 본문"' in result.output
+    assert_invoked_once(
+        invoke_tool,
+        ExpectedInvocation(
+            "product_detail",
+            {
+                "provider": "coupang",
+                "url": "https://www.coupang.com/vp/products/1",
             },
         ),
     )

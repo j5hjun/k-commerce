@@ -20,6 +20,7 @@ CANONICAL_TOOL_NAMES = [
     "order_search",
     "order_detail",
     "order_failures",
+    "product_detail",
     "cart_list",
     "cart_update_quantity",
     "cart_delete_item",

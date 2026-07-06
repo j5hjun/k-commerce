@@ -7,7 +7,7 @@ import pytest
 from asyncclick.testing import CliRunner
 
 from k_commerce_cli.cli import app
-from k_commerce_cli.services.types import CartQuantityUpdateRequest
+from k_commerce_cli.services.types import CartQuantityUpdateRequest, OrderSearchRequest, ProductDetailRequest
 
 from .tool_runner_support import FakeProvider, ProviderCall, patched_tool_provider, write_cart_update_request
 
@@ -74,6 +74,41 @@ async def test_request_file_invokes_generic_runner_when_tool_name_is_registered(
             CartQuantityUpdateRequest(quantity=3, product_id="p", vendor_item_id="v", item_id="i"),
         )
     ]
+
+
+@pytest.mark.anyio
+async def test_order_search_json_output_includes_product_urls(fake_provider: FakeProvider) -> None:
+    # Given: an order search result with product-level links.
+    with patched_tool_provider(fake_provider):
+        # When: the root CLI receives the generic order_search runner form.
+        result = await RUNNER.invoke(app, ["order_search", '{"provider":"coupang","keyword":"가방걸이"}'])
+
+    # Then: stdout exposes product URLs on the canonical payload for detail lookup.
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "orders" not in payload
+    assert "count" not in payload
+    assert payload["payload"]["orders"][0]["deliveryGroupList"][0]["productList"][0]["productUrl"] == (
+        "https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3"
+    )
+    assert fake_provider.calls == [ProviderCall("search_orders", OrderSearchRequest(keyword="가방걸이"))]
+
+
+@pytest.mark.anyio
+async def test_product_detail_json_output_includes_ocr_text_once(fake_provider: FakeProvider) -> None:
+    # Given: a product detail canonical request.
+    url = "https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3"
+    with patched_tool_provider(fake_provider):
+        # When: the root CLI receives the generic product_detail runner form.
+        result = await RUNNER.invoke(app, ["product_detail", f'{{"provider":"coupang","url":"{url}"}}'])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["url"] == url
+    assert "detail_text" not in payload
+    assert payload["ocr"]["text"] == "OCR 상세 본문"
+    assert all("ocr_text" not in image for image in payload["detail_images"])
+    assert fake_provider.calls == [ProviderCall("get_product_detail", ProductDetailRequest(url=url))]
 
 
 @pytest.mark.anyio

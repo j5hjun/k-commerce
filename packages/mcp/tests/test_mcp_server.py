@@ -16,6 +16,8 @@ from k_commerce_cli.services.types import (
     OrderListResult,
     OrderSearchRequest,
     OrderSearchResult,
+    ProductDetailRequest,
+    ProductDetailResult,
     ProviderName,
     ReviewUploadRequest,
     ReviewUploadResult,
@@ -24,6 +26,7 @@ from k_commerce_cli.services.types import (
 from k_commerce_mcp import server
 from k_commerce_mcp.tools.cart import cart_delete_items, cart_update_quantity
 from k_commerce_mcp.tools.order import order_list, order_search
+from k_commerce_mcp.tools.product import product_detail
 from k_commerce_mcp.tools.review import review_upload
 from k_commerce_mcp.tools.search import search_products
 from k_commerce_mcp.tools.status import status
@@ -37,6 +40,7 @@ class RecordingProvider:
     status_calls: int = 0
     order_list_request: OrderListRequest | None = None
     order_search_request: OrderSearchRequest | None = None
+    product_detail_request: ProductDetailRequest | None = None
     search_call: tuple[str, str | None, str, int] | None = None
     cart_quantity_request: CartQuantityUpdateRequest | None = None
     cart_delete_requests: tuple[CartDeleteRequest, ...] | None = None
@@ -65,11 +69,9 @@ class RecordingProvider:
             message="saved orders",
             start_date=request.start_date,
             end_date=request.end_date,
-            count=0,
             total_count=0,
             has_more=False,
             next_cursor=None,
-            orders=(),
         )
 
     async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
@@ -81,9 +83,21 @@ class RecordingProvider:
             keyword=request.keyword,
             start_date=request.start_date,
             end_date=request.end_date,
-            count=0,
             total_count=0,
-            orders=(),
+        )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        self.product_detail_request = request
+        return ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="product detail",
+            url=request.url,
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
         )
 
     async def update_cart_quantity(
@@ -156,6 +170,7 @@ async def test_create_mcp_server_registers_canonical_tools_only() -> None:
         "order_search",
         "order_detail",
         "order_failures",
+        "product_detail",
         "cart_list",
         "cart_update_quantity",
         "cart_delete_item",
@@ -202,11 +217,9 @@ async def test_order_list_tool_delegates_canonical_fields_to_provider() -> None:
         message="saved orders",
         start_date="2026-06-01",
         end_date="2026-06-30",
-        count=0,
         total_count=0,
         has_more=False,
         next_cursor=None,
-        orders=(),
     )
     assert provider.factory_calls == [("coupang", None, False)]
     assert provider.order_list_request == OrderListRequest(
@@ -238,9 +251,7 @@ async def test_order_search_tool_delegates_canonical_fields_to_provider() -> Non
         keyword="coffee",
         start_date="2026-06-01",
         end_date="2026-06-30",
-        count=0,
         total_count=0,
-        orders=(),
     )
     assert provider.factory_calls == [("coupang", None, False)]
     assert provider.order_search_request == OrderSearchRequest(
@@ -267,6 +278,31 @@ async def test_search_tool_delegates_canonical_fields_to_provider() -> None:
     assert result == SearchProductResult(provider="coupang", success=True, message="found", items=())
     assert provider.factory_calls == [("coupang", None, False)]
     assert provider.search_call == ("coffee", "food", "low_price", 5)
+
+
+@pytest.mark.anyio
+async def test_product_detail_tool_delegates_canonical_fields_to_provider() -> None:
+    provider = RecordingProvider()
+
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await product_detail(
+            provider="coupang",
+            url="https://www.coupang.com/vp/products/8825977723",
+        )
+
+    assert result == ProductDetailResult(
+        success=True,
+        provider="coupang",
+        message="product detail",
+        url="https://www.coupang.com/vp/products/8825977723",
+        product=None,
+        required_info=(),
+        detail_images=(),
+        sections=(),
+        tables=(),
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.product_detail_request == ProductDetailRequest(url="https://www.coupang.com/vp/products/8825977723")
 
 
 @pytest.mark.anyio
