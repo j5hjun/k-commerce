@@ -148,6 +148,8 @@ class CoupangSearchService:
         message = self._format_search_results(items)
         if not items:
             message = "검색 결과가 없습니다."
+        if browser_result.message:
+            message = f"{browser_result.message}\n{message}"
 
         return SearchProductResult(
             provider=self.provider_name,
@@ -210,7 +212,7 @@ class CoupangSearchService:
             )
 
         await self._wait_for_search_page_ready(active_tab)
-        items, _found_rank_markers = await self._scrape_search_results(
+        items, found_all_rank_markers = await self._scrape_search_results_with_scroll(
             active_tab,
             max_results=max_results,
         )
@@ -220,8 +222,10 @@ class CoupangSearchService:
                 message="검색 결과를 찾지 못했습니다. 로그인 상태와 검색 페이지 로딩을 확인해주세요.",
             )
 
-        items = await self._apply_product_detail_prices(session, items)
-        return _SearchBrowserResult(state="success", items=items)
+        message = None
+        if not found_all_rank_markers:
+            message = "10개 모두 불러오지 못했습니다"
+        return _SearchBrowserResult(state="success", items=items, message=message)
 
     def _build_search_url(self, keyword: str, category: str | None, sort: str) -> str:
         params = {"q": keyword, "page": 1}
@@ -492,6 +496,44 @@ class CoupangSearchService:
         )
         return str(result or "").strip()
 
+    async def _scrape_search_results_with_scroll(
+        self,
+        tab: BrowserTab,
+        *,
+        max_results: int,
+        max_scroll_attempts: int = 10,
+    ) -> tuple[tuple[_SearchResultItemData, ...], bool]:
+        best_items: tuple[_SearchResultItemData, ...] = ()
+        for attempt in range(max_scroll_attempts + 1):
+            items, found_all_rank_markers = await self._scrape_search_results(
+                tab,
+                max_results=max_results,
+            )
+            if len(items) > len(best_items):
+                best_items = items
+            if found_all_rank_markers and len(items) >= max_results:
+                return items[:max_results], True
+            if attempt >= max_scroll_attempts:
+                break
+            await self._scroll_search_page(tab)
+            await self._sleep_ms(800)
+        return best_items[:max_results], False
+
+    async def _scroll_search_page(self, tab: BrowserTab) -> None:
+        await self._evaluate_json(
+            tab,
+            """
+            (() => {
+              window.scrollBy(0, Math.max(window.innerHeight, 800));
+              const productList = document.querySelector('#product-list');
+              if (productList && productList.scrollHeight > productList.clientHeight + 20) {
+                productList.scrollTop = productList.scrollHeight;
+              }
+              return true;
+            })()
+            """,
+        )
+
     async def _scrape_search_results(
         self,
         tab: BrowserTab,
@@ -504,128 +546,94 @@ class CoupangSearchService:
             (() => {{
               const normalizeText = (text) => (text || '').replace(/\s+/g, ' ').trim();
               const truncateText = (text, maxLength) => Array.from(text || '').slice(0, maxLength).join('');
+              const compactText = (text) => normalizeText(text).replace(/\s+/g, '');
+              const parsePrices = (text) => {{
+                const matches = Array.from(normalizeText(text).matchAll(/([\d,]+)\s*\uC6D0/g));
+                return matches
+                  .map((match) => Number(match[1].replace(/[^0-9]/g, '')))
+                  .filter((value) => Number.isFinite(value) && value >= 1000);
+              }};
+              const uniqueNumbers = (values) => Array.from(new Set(values));
               const readPrice = (element) => {{
-                const parsePrices = (text) => {{
-                  const matches = Array.from(normalizeText(text).matchAll(/([\d,]+)\s*\uC6D0/g));
-                  return matches
-                    .map((match) => Number(match[1].replace(/[^0-9]/g, '')))
-                    .filter((value) => Number.isFinite(value) && value > 0);
-                }};
-                const parseDiscountRates = (text) => {{
-                  const matches = Array.from(normalizeText(text).matchAll(/(\d+)\s*%/g));
-                  return matches
-                    .map((match) => Number(match[1]))
-                    .filter((value) => Number.isFinite(value) && value > 0 && value < 100);
-                }};
-                const hasMemberOnlyKeyword = (node) => {{
-                  const context = normalizeText([
-                    node?.textContent || '',
-                    node?.parentElement?.textContent || '',
-                  ].join(' '));
-                  return (
-                    context.includes('\uC640\uC6B0') ||
-                    context.includes('\uD68C\uC6D0') ||
-                    context.includes('\uCFE0\uD3F0') ||
-                    context.includes('\uCD94\uAC00') ||
-                    context.includes('\uD560\uC778\uBC1B\uAE30') ||
-                    context.includes('\uC801\uC6A9')
-                  );
-                }};
-                const productPriceCandidates = (prices) => prices.filter((price) => price >= 1000);
-                const uniqueNumbers = (values) => Array.from(new Set(values));
-                const lowestPrice = (nodes, options = {{}}) => {{
-                  const excludeMemberOnly = Boolean(options.excludeMemberOnly);
-                  const prices = nodes.flatMap((node) => {{
-                    if (excludeMemberOnly && hasMemberOnlyKeyword(node)) {{
-                      return [];
-                    }}
-                    return productPriceCandidates(parsePrices(node?.textContent || ''));
-                  }});
-                  if (!prices.length) {{
-                    return '';
-                  }}
-                  return String(Math.min(...prices));
-                }};
-                const calculatedDiscountCandidates = (basePrice, discountRate) => {{
-                  const raw = basePrice * (100 - discountRate) / 100;
-                  return uniqueNumbers([
-                    Math.round(raw),
-                    Math.floor(raw),
-                    Math.floor(raw / 10) * 10,
-                    Math.round(raw / 10) * 10,
-                    Math.floor(raw / 100) * 100,
-                    Math.round(raw / 100) * 100,
-                  ]).filter((value) => Number.isFinite(value) && value > 0);
-                }};
-                const customOos = Array.from(
+                const customOosRoots = Array.from(
                   element.querySelectorAll('div.custom-oos, div[class*="custom-oos"]')
-                ).find((node) => {{
-                  const className = String(node.className || '');
-                  return (
-                    className.includes('custom-oos') &&
-                    className.includes('fw-flex') &&
-                    className.includes('fw-flex-wrap') &&
-                    className.includes('fw-items-center') &&
-                    className.includes('fw-gap-y-')
-                  );
-                }});
-                if (customOos) {{
-                  const boldPriceDivs = Array.from(customOos.querySelectorAll('div[class*="fw-font-bold"]'));
-                  const boldPrices = uniqueNumbers(
-                    boldPriceDivs.flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
-                  );
-                  const regularBoldPrices = uniqueNumbers(
-                    boldPriceDivs
-                      .filter((node) => !hasMemberOnlyKeyword(node))
-                      .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
-                  );
-                  const couponBoldPrices = uniqueNumbers(
-                    boldPriceDivs
-                      .filter((node) => hasMemberOnlyKeyword(node))
-                      .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')))
-                  );
-                  const basePrices = parsePrices(
-                    Array.from(customOos.querySelectorAll('del, [class*="basePrice"], [class*="BasePrice"]'))
-                      .map((node) => node.textContent || '')
-                      .join(' ')
-                  );
-                  const allCustomPrices = parsePrices(customOos.textContent || '');
-                  const originalPrice = basePrices.length
-                    ? Math.max(...basePrices)
-                    : Math.max(...allCustomPrices, 0);
-                  const discountRate = Math.max(...parseDiscountRates(customOos.textContent || ''), 0);
-
-                  if (originalPrice && discountRate) {{
-                    const expectedPrices = calculatedDiscountCandidates(originalPrice, discountRate);
-                    const matchedRegularPrice = regularBoldPrices.find((price) => expectedPrices.includes(price));
-                    if (matchedRegularPrice) {{
-                      return String(matchedRegularPrice);
-                    }}
-                    const matchedAnyPrice = boldPrices.find((price) => expectedPrices.includes(price));
-                    if (matchedAnyPrice && !couponBoldPrices.includes(matchedAnyPrice)) {{
-                      return String(matchedAnyPrice);
-                    }}
-                  }}
-
-                  const regularPrice = lowestPrice(boldPriceDivs, {{excludeMemberOnly: true}});
-                  if (regularPrice) {{
-                    return regularPrice;
-                  }}
-
-                  if (couponBoldPrices.length) {{
-                    return `\uCFE0\uD3F0 \uD560\uC778\uAC00: ${{Math.min(...couponBoldPrices)}}`;
-                  }}
-                }}
-
-                const priceElement = element.querySelector(
-                  '[class*="Price_priceValue"], strong.price-value, .price-value, [class*="Price_price__"], [class*="PriceArea_priceArea__"], .price, .product-price'
                 );
-                const directPrice = lowestPrice(priceElement ? [priceElement] : []);
-                if (directPrice) {{
-                  return directPrice;
+                const collectPriceEntries = (roots) => {{
+                  const orderedNodes = roots.flatMap((root) => Array.from(root.querySelectorAll('div, span, strong, a, del')));
+                  const wonNodes = orderedNodes.filter((node) =>
+                    normalizeText(node.textContent || '').includes('\uC6D0')
+                  );
+                  const leafWonNodes = wonNodes.filter((node) =>
+                    !wonNodes.some((otherNode) => otherNode !== node && node.contains(otherNode))
+                  );
+                  const priceEntries = leafWonNodes
+                    .filter((node) => !compactText(node.textContent || '').includes('\uC801\uB9BD'))
+                    .flatMap((node) =>
+                      uniqueNumbers(parsePrices(node.textContent || '')).map((price) => ({{
+                          node,
+                          price,
+                          index: orderedNodes.indexOf(node),
+                        }})
+                      )
+                    );
+                  return {{orderedNodes, priceEntries}};
+                }};
+                let priceRoots = customOosRoots.length ? customOosRoots : [element];
+                let {{orderedNodes, priceEntries}} = collectPriceEntries(priceRoots);
+                if (!priceEntries.length && customOosRoots.length) {{
+                  priceRoots = [element];
+                  const fallback = collectPriceEntries(priceRoots);
+                  orderedNodes = fallback.orderedNodes;
+                  priceEntries = fallback.priceEntries;
                 }}
-
-                return lowestPrice(Array.from(element.querySelectorAll('span, strong, div')));
+                if (!priceEntries.length) {{
+                  return '-';
+                }}
+                const couponNodes = priceRoots.flatMap((root) => Array.from(root.querySelectorAll('div, span, strong, a')))
+                  .filter((node) => {{
+                    const text = compactText(node.textContent || '');
+                    return text.includes('\uCFE0\uD3F0');
+                  }});
+                const uniquePriceValues = uniqueNumbers(priceEntries.map((entry) => entry.price));
+                if (uniquePriceValues.length === 1) {{
+                  return String(uniquePriceValues[0]);
+                }}
+                let remainingEntries = [...priceEntries];
+                if (remainingEntries.length === 1) {{
+                  return String(remainingEntries[0].price);
+                }}
+                if (remainingEntries.length > 1) {{
+                  const highestPrice = Math.max(...remainingEntries.map((entry) => entry.price));
+                  const highestIndex = remainingEntries.findIndex((entry) => entry.price === highestPrice);
+                  if (highestIndex >= 0) {{
+                    remainingEntries.splice(highestIndex, 1);
+                  }}
+                }}
+                if (remainingEntries.length > 1 && couponNodes.length) {{
+                  const labelIndexes = couponNodes
+                    .map((node) => orderedNodes.indexOf(node))
+                    .filter((index) => index >= 0);
+                  const nearestIndex = remainingEntries
+                    .map((entry, index) => {{
+                      const distance = labelIndexes.length
+                        ? Math.min(...labelIndexes.map((labelIndex) => Math.abs(labelIndex - entry.index)))
+                        : Number.POSITIVE_INFINITY;
+                      return {{distance, index}};
+                    }})
+                    .sort((left, right) => left.distance - right.distance || left.index - right.index)[0]?.index;
+                  if (nearestIndex !== undefined) {{
+                    remainingEntries.splice(nearestIndex, 1);
+                  }}
+                }}
+                while (remainingEntries.length > 1) {{
+                  const highestPrice = Math.max(...remainingEntries.map((entry) => entry.price));
+                  const highestIndex = remainingEntries.findIndex((entry) => entry.price === highestPrice);
+                  if (highestIndex < 0) {{
+                    break;
+                  }}
+                  remainingEntries.splice(highestIndex, 1);
+                }}
+                return String(remainingEntries[0].price);
               }};
               const readReviewStat = (element) => {{
                 const ratingRoot = element.querySelector('[class*="ProductRating_productRating"]');
@@ -670,25 +678,42 @@ class CoupangSearchService:
               const items = [];
               const productList = document.querySelector('#product-list');
               const productRoot = productList || document;
-              const rankMarkers = Array.from(productRoot.querySelectorAll('[class*="RankMark_rank"]'))
+              const expectedRanks = Array.from({{length: {max_results}}}, (_, index) => index + 1);
+              const rankMarkerEntries = Array.from(
+                productRoot.querySelectorAll('div[class*="RankMark_rank"], span[class*="RankMark_rank"], [class*="RankMark_rank"]')
+              )
                 .map((marker) => {{
-                  const rankClass = Array.from(marker.classList).find((cls) => /^RankMark_rank(\d+)__/.test(cls));
-                  const rank = rankClass ? Number(rankClass.replace(/^RankMark_rank(\d+)__.*/, '$1')) : Number.NaN;
+                  const className = marker.getAttribute('class') || String(marker.className || '');
+                  const rankMatch = className.match(/RankMark_rank(\d+)(?:__|\b|_)?/);
+                  const rank = rankMatch ? Number(rankMatch[1]) : Number.NaN;
                   return {{rank, marker}};
                 }})
                 .filter((entry) => Number.isFinite(entry.rank) && entry.rank >= 1 && entry.rank <= {max_results})
-                .sort((a, b) => a.rank - b.rank)
-                .map((entry) => entry.marker);
+                .sort((a, b) => a.rank - b.rank);
+              const rankMarkerByRank = new Map();
+              for (const entry of rankMarkerEntries) {{
+                if (!rankMarkerByRank.has(entry.rank)) {{
+                  rankMarkerByRank.set(entry.rank, entry.marker);
+                }}
+              }}
+              const foundAllRankMarkers = expectedRanks.every((rank) => rankMarkerByRank.has(rank));
 
               const candidates = [];
               const seenElements = new Set();
 
-              for (const rankMarker of rankMarkers) {{
+              for (const rank of expectedRanks) {{
                 if (candidates.length >= {max_results}) {{
                   break;
                 }}
+                const rankMarker = rankMarkerByRank.get(rank);
+                if (!rankMarker) {{
+                  continue;
+                }}
 
-                const element = rankMarker.closest('li[class*="ProductUnit_productUnit"], li');
+                const element =
+                  rankMarker.closest('li[class*="ProductUnit_productUnit"], li') ||
+                  rankMarker.closest('[class*="ProductUnit_productUnit"]') ||
+                  rankMarker.closest('[class*="ProductUnit"]');
                 if (!element || seenElements.has(element)) {{
                   continue;
                 }}
@@ -697,88 +722,6 @@ class CoupangSearchService:
                 candidates.push(element);
               }}
 
-              if (!candidates.length) {{
-                const productUnits = Array.from(
-                  productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"]')
-                );
-                for (const element of productUnits) {{
-                  if (candidates.length >= {max_results}) {{
-                    break;
-                  }}
-                  if (seenElements.has(element)) {{
-                    continue;
-                  }}
-                  seenElements.add(element);
-                  candidates.push(element);
-                }}
-              }}
-
-              if (!candidates.length) {{
-                const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
-                for (const productLink of productLinks) {{
-                  if (candidates.length >= {max_results}) {{
-                    break;
-                  }}
-                  const element =
-                    productLink.closest('li') ||
-                    productLink.closest('[class*="ProductUnit"]') ||
-                    productLink.closest('article') ||
-                    productLink.closest('div[class*="product"]') ||
-                    productLink.parentElement;
-                  if (!element || seenElements.has(element)) {{
-                    continue;
-                  }}
-                  seenElements.add(element);
-                  candidates.push(element);
-                }}
-              }}
-
-              if (!candidates.length) {{
-                const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
-                const seenProductIds = new Set();
-                for (const linkElement of productLinks) {{
-                  if (items.length >= {max_results}) {{
-                    break;
-                  }}
-                  const productLink = linkElement.href || '';
-                  const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
-                  const productId = productIdMatch ? productIdMatch[1] : '';
-                  if (!productId || seenProductIds.has(productId)) {{
-                    continue;
-                  }}
-                  const container =
-                    linkElement.closest('[class*="ProductUnit"]') ||
-                    linkElement.closest('li') ||
-                    linkElement.parentElement;
-                  const titleElement =
-                    container?.querySelector(
-                      '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name'
-                    ) || linkElement;
-                  const productName = truncateText(
-                    normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
-                    30
-                  );
-                  if (!productName) {{
-                    continue;
-                  }}
-                  seenProductIds.add(productId);
-                  const price = container ? readPrice(container) : '';
-                  const rating = container ? readReviewStat(container) : '-';
-                  const imageElement = container?.querySelector('img');
-                  const imageUrl = imageElement?.src || imageElement?.dataset?.src || '';
-                  items.push({{
-                    product_id: productId,
-                    product_name: productName,
-                    price: price || '-',
-                    rating: rating || '-',
-                    image_url: imageUrl,
-                    product_link: productLink,
-                  }});
-                }}
-                if (items.length) {{
-                  return {{foundRankMarkers: false, items}};
-                }}
-              }} else {{
               for (const element of candidates) {{
                 const item = buildItemFromElement(element);
                 if (!item) {{
@@ -791,47 +734,7 @@ class CoupangSearchService:
                   break;
                 }}
               }}
-              }}
-              if (!items.length) {{
-                for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {{
-                  try {{
-                    const data = JSON.parse(script.textContent || '');
-                    const list = data?.mainEntity?.itemListElement || data?.itemListElement;
-                    if (!Array.isArray(list)) {{
-                      continue;
-                    }}
-                    const ranked = list
-                      .filter((entry) => entry?.item)
-                      .sort((left, right) => Number(left.position) - Number(right.position))
-                      .slice(0, {max_results});
-                    for (const entry of ranked) {{
-                      const item = entry.item || {{}};
-                      const productLink = String(item.url || '');
-                      const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
-                      const productId = productIdMatch ? productIdMatch[1] : '';
-                      const productName = truncateText(normalizeText(item.name || ''), 30);
-                      if (!productId || !productName) {{
-                        continue;
-                      }}
-                      const offerPrice = item?.offers?.price;
-                      const reviewCount = item?.aggregateRating?.reviewCount;
-                      items.push({{
-                        product_id: productId,
-                        product_name: productName,
-                        price: offerPrice !== undefined && offerPrice !== null ? String(offerPrice) : '-',
-                        rating: reviewCount !== undefined && reviewCount !== null ? String(reviewCount) : '-',
-                        image_url: String(item.image || ''),
-                        product_link: productLink,
-                      }});
-                    }}
-                    if (items.length) {{
-                      break;
-                    }}
-                  }} catch (error) {{
-                  }}
-                }}
-              }}
-              return {{foundRankMarkers: rankMarkers.length > 0, items}};
+              return {{foundRankMarkers: foundAllRankMarkers, items}};
             }})()
             """,
         )
