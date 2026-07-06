@@ -12,16 +12,16 @@ from k_commerce_cli.services.types import (
 )
 
 
-async def review_list_reviewable(provider: str) -> ListReviewableResult:
-    return await get_provider(provider).list_reviewable()
+async def review_list_reviewable(provider: str, refresh: bool = False) -> ListReviewableResult:
+    return await get_provider(provider).list_reviewable(refresh=refresh)
 
 
-async def review_list_editable(provider: str) -> ListEditableReviewsResult:
-    return await get_provider(provider).list_editable()
+async def review_list_editable(provider: str, refresh: bool = False) -> ListEditableReviewsResult:
+    return await get_provider(provider).list_editable(refresh=refresh)
 
 
-async def review_list(provider: str) -> ListReviewsResult:
-    return await get_provider(provider).list_reviews()
+async def review_list(provider: str, refresh: bool = False) -> ListReviewsResult:
+    return await get_provider(provider).list_reviews(refresh=refresh)
 
 
 async def review_upload(

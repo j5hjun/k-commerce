@@ -38,7 +38,7 @@ uv run k-commerce-mcp
   - return: `OrderResult`
 
 - `cart_list`: 장바구니 상품 목록을 조회합니다.
-  - example: `provider="coupang"`
+  - example: `provider="coupang", refresh=false`
   - return: `ListCartResult`
 
 - `cart_update_quantity`: 장바구니 상품 수량을 변경합니다.

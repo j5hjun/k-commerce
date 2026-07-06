@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useApp } from "@/context/app-context";
 import {
   clearCart,
   deleteCartItem,
   deleteCartItems,
   fetchCart,
+  loadCartSnapshot,
   updateCartQuantity,
   type CartItemSummary,
 } from "@/lib/agent";
@@ -23,6 +24,7 @@ export function CartPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [collectedAt, setCollectedAt] = useState<string | null>(null);
 
   function itemKey(item: CartItemSummary) {
     return `${item.product_id}:${item.vendor_item_id}:${item.item_id}`;
@@ -36,8 +38,44 @@ export function CartPage() {
     };
   }
 
+  const applyCart = useCallback((response: Awaited<ReturnType<typeof fetchCart>>) => {
+    setItems(response.items);
+    setSelectedKeys([]);
+    setQuantities(
+      Object.fromEntries(
+        response.items.map((item) => [itemKey(item), item.quantity]),
+      ),
+    );
+    setMessage(response.message);
+    setCollectedAt(response.collected_at ?? null);
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCachedCart() {
+      if (connStatus !== "connected" || loaded || loading) {
+        return;
+      }
+      try {
+        const response = await loadCartSnapshot(mcpCfg, PROVIDER);
+        if (cancelled || !response.success) {
+          return;
+        }
+        applyCart(response);
+      } catch {
+        // 저장된 장바구니가 없거나 읽지 못하면 기존 버튼 안내를 유지합니다.
+      }
+    }
+    void loadCachedCart();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyCart, connStatus, loaded, loading, mcpCfg]);
+
   const loadCart = useCallback(async (refresh = false, silent = false) => {
     if (connStatus !== "connected") {
+      setError("MCP 연결 후 장바구니 목록을 불러올 수 있습니다. 먼저 MCP를 연결해주세요.");
       setItems([]);
       setLoaded(false);
       return;
@@ -53,6 +91,7 @@ export function CartPage() {
           setItems([]);
           setSelectedKeys([]);
           setQuantities({});
+          setCollectedAt(null);
         }
         setMessage(null);
         setLoaded(false);
@@ -64,20 +103,13 @@ export function CartPage() {
         );
         return;
       }
-      setItems(response.items);
-      setSelectedKeys([]);
-      setQuantities(
-        Object.fromEntries(
-          response.items.map((item) => [itemKey(item), item.quantity]),
-        ),
-      );
-      setMessage(response.message);
-      setLoaded(true);
+      applyCart(response);
     } catch {
       if (refresh) {
         setItems([]);
         setSelectedKeys([]);
         setQuantities({});
+        setCollectedAt(null);
       }
       setMessage(null);
       setLoaded(false);
@@ -91,7 +123,7 @@ export function CartPage() {
         setLoading(false);
       }
     }
-  }, [connStatus, mcpCfg]);
+  }, [applyCart, connStatus, mcpCfg]);
 
   const reloadAfterMutation = useCallback(async (fallbackMessage: string) => {
     try {
@@ -211,7 +243,7 @@ export function CartPage() {
           </h2>
           <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
             {loaded
-              ? `상품 ${items.length}종 · 총 ${totalQuantity}개`
+              ? `상품 ${items.length}종 · 총 ${totalQuantity}개${collectedAt ? ` · ${collectedAt}` : ""}`
               : loading
                 ? "장바구니 목록을 불러오는 중입니다."
                 : "장바구니 목록을 준비하는 중입니다."}
@@ -219,7 +251,7 @@ export function CartPage() {
         </div>
         {connStatus === "connected" && (
           <button
-            onClick={() => void loadCart(loaded)}
+            onClick={() => void loadCart(true)}
             disabled={loading || connStatus !== "connected"}
             className="mt-4 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-blue-600 disabled:opacity-40"
           >

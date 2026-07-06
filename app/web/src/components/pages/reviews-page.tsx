@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Pencil, Send, Star, Trash2 } from "lucide-react";
 import { useApp } from "@/context/app-context";
 import {
   createReview,
   deleteReview,
+  fetchCachedReviews,
   fetchReviews,
   updateReview,
   type EditableReviewItemSummary,
@@ -49,52 +50,94 @@ export function ReviewsPage() {
     setContent(item?.review_text || "");
   }, []);
 
-  const loadReviewData = useCallback(async () => {
+  const applyReviews = useCallback(
+    (response: Awaited<ReturnType<typeof fetchCachedReviews>>) => {
+      const reviewableItems = response.reviewable.items;
+      const editableItems = response.editable.items;
+
+      setReviewable(reviewableItems);
+      setEditable(editableItems);
+      const nextReviewable =
+        reviewableItems.find((item) => item.product_id === selectedReviewableId)
+        ?? reviewableItems[0]
+        ?? null;
+      const nextEditable =
+        editableItems.find((item) => item.review_id === selectedEditableId)
+        ?? editableItems[0]
+        ?? null;
+      activateReviewable(nextReviewable);
+      activateEditable(nextEditable);
+      setLoaded(true);
+      setNeedsRefresh(false);
+    },
+    [activateEditable, activateReviewable, selectedEditableId, selectedReviewableId],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCachedReviews() {
+      if (connStatus !== "connected" || loaded || loading) {
+        return;
+      }
+      try {
+        const response = await fetchCachedReviews(mcpCfg, PROVIDER);
+        if (
+          cancelled ||
+          (response.reviewable.items.length === 0 &&
+            response.editable.items.length === 0)
+        ) {
+          return;
+        }
+        applyReviews(response);
+      } catch {
+        // 저장된 리뷰 목록이 없거나 읽지 못하면 기존 버튼 안내를 유지합니다.
+      }
+    }
+    void loadCachedReviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyReviews, connStatus, loaded, loading, mcpCfg]);
+
+  const loadReviewData = useCallback(async (refresh = false) => {
     if (connStatus !== "connected") {
-      setReviewable([]);
-      setEditable([]);
-      setLoaded(false);
+      setError("MCP 연결 후 리뷰 목록을 불러올 수 있습니다. 먼저 MCP를 연결해주세요.");
+      return;
+    }
+    if (!refresh && loaded) {
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchReviews(mcpCfg, PROVIDER);
+      const response = await fetchReviews(mcpCfg, PROVIDER, refresh);
       if (!response.success) {
-        setReviewable([]);
-        setEditable([]);
-        setLoaded(false);
+        if (refresh) {
+          setReviewable([]);
+          setEditable([]);
+          setLoaded(false);
+        }
         setError(response.message || "리뷰 목록을 불러오지 못했습니다. 다시 시도해주세요.");
         return;
       }
-      const reviewableResponse = response.reviewable;
-      const editableResponse = response.editable;
-
-      setReviewable(reviewableResponse.items);
-      setEditable(editableResponse.items);
-      const nextReviewable =
-        reviewableResponse.items.find((item) => item.product_id === selectedReviewableId)
-        ?? reviewableResponse.items[0]
-        ?? null;
-      const nextEditable =
-        editableResponse.items.find((item) => item.review_id === selectedEditableId)
-        ?? editableResponse.items[0]
-        ?? null;
-      activateReviewable(nextReviewable);
-      activateEditable(nextEditable);
-      setLoaded(true);
-      setNeedsRefresh(false);
+      applyReviews(response);
     } catch (fetchError) {
       void fetchError;
-      setReviewable([]);
-      setEditable([]);
-      setLoaded(false);
-      setError("리뷰 목록을 불러오지 못했습니다. 다시 시도해주세요.");
+      if (refresh) {
+        setReviewable([]);
+        setEditable([]);
+        setLoaded(false);
+      }
+      setError(
+        refresh
+          ? "리뷰 목록을 다시 불러오지 못했습니다. 다시 시도해주세요."
+          : "리뷰 목록을 불러오지 못했습니다. 다시 시도해주세요.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [activateEditable, activateReviewable, connStatus, mcpCfg, selectedEditableId, selectedReviewableId]);
+  }, [applyReviews, connStatus, loaded, mcpCfg]);
 
   const handleCreate = useCallback(async () => {
     if (!selectedReviewable || !content.trim()) {
@@ -205,7 +248,7 @@ export function ReviewsPage() {
           </div>
           {connStatus === "connected" && (
             <button
-              onClick={() => void loadReviewData()}
+              onClick={() => void loadReviewData(loaded)}
               disabled={loading || connStatus !== "connected"}
               className="mt-4 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-blue-600 disabled:opacity-40"
             >
@@ -216,7 +259,7 @@ export function ReviewsPage() {
 
         {connStatus !== "connected" && (
           <div className="border border-border bg-secondary px-4 py-3 font-mono text-[11px] text-muted-foreground">
-            MCP 연결 후 리뷰 목록을 불러올 수 있습니다. 먼저 MCP를 연결해주세요.
+            MCP 연결 후 저장된 리뷰 목록을 불러올 수 있습니다. 먼저 MCP를 연결해주세요.
           </div>
         )}
 
@@ -231,7 +274,7 @@ export function ReviewsPage() {
             <span>{message}</span>
             {needsRefresh && (
               <button
-                onClick={() => void loadReviewData()}
+                onClick={() => void loadReviewData(loaded)}
                 disabled={loading || connStatus !== "connected"}
                 className="bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-blue-600 disabled:opacity-40"
               >

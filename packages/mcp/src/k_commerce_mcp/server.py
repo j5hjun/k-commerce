@@ -95,7 +95,10 @@ def create_mcp_server() -> FastMCP:
     mcp_server.add_tool(
         cart_list,
         name="cart_list",
-        description="List items in the shopping cart for a commerce provider such as Coupang.",
+        description=(
+            "List items in the shopping cart for a commerce provider such as Coupang. "
+            "Use refresh=true to rebuild the local cart snapshot."
+        ),
     )
     mcp_server.add_tool(
         cart_update_quantity,

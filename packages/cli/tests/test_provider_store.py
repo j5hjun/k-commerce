@@ -20,6 +20,7 @@ def test_exposes_provider_paths(tmp_path: Path) -> None:
     assert store.credentials_path == tmp_path / "coupang" / "credentials.json"
     assert store.session_meta_path == tmp_path / "coupang" / "session-meta.json"
     assert store.orders_path == tmp_path / "coupang" / "orders.json"
+    assert store.reviews_path == tmp_path / "coupang" / "reviews.json"
 
 
 def test_load_credentials_returns_dataclass_when_file_exists(tmp_path: Path) -> None:
@@ -116,6 +117,40 @@ def test_load_orders_returns_none_when_missing(tmp_path: Path) -> None:
     assert store.load_orders() is None
 
 
+def test_write_cart_persists_json(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    payload = {
+        "meta": {
+            "provider": "coupang",
+            "collectedAt": "2026-07-06T12:00:00+09:00",
+            "refresh": False,
+        },
+        "provider": "coupang",
+        "success": True,
+        "message": "장바구니 1개",
+        "items": [
+            {
+                "index": 1,
+                "product_name": "sample",
+                "option_text": "",
+                "quantity": 1,
+                "unit_price": "1,000원",
+                "total_price": "1,000원",
+                "product_id": "p1",
+                "vendor_item_id": "v1",
+                "item_id": "i1",
+                "delivery_text": "",
+            }
+        ],
+    }
+
+    store.write_cart(payload)
+
+    assert store.cart_path.exists()
+    assert json.loads(store.cart_path.read_text(encoding="utf-8")) == payload
+    assert store.load_cart() == payload
+
+
 def test_write_orders_persists_json(tmp_path: Path) -> None:
     store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
     payload = {
@@ -142,6 +177,43 @@ def test_write_orders_persists_json(tmp_path: Path) -> None:
     assert store.orders_path.exists()
     assert json.loads(store.orders_path.read_text(encoding="utf-8")) == payload
     assert store.load_orders() == payload
+
+
+def test_write_reviews_persists_json(tmp_path: Path) -> None:
+    store = ProviderStore(ProviderPaths("coupang", root_dir=tmp_path))
+    payload = {
+        "provider": "coupang",
+        "success": True,
+        "message": "리뷰 목록을 불러왔습니다.",
+        "reviewable": {
+            "provider": "coupang",
+            "success": True,
+            "message": "ok",
+            "items": [
+                {
+                    "index": 1,
+                    "product_id": "p1",
+                    "product_name": "상품 A",
+                    "delivery_date": "2026-07-01",
+                    "completed_order_vendor_item_id": "o1",
+                    "vendor_item_id": "v1",
+                    "review_url": "https://example.com/review",
+                }
+            ],
+        },
+        "editable": {
+            "provider": "coupang",
+            "success": True,
+            "message": "ok",
+            "items": [],
+        },
+    }
+
+    store.write_reviews(payload)
+
+    assert store.reviews_path.exists()
+    assert json.loads(store.reviews_path.read_text(encoding="utf-8")) == payload
+    assert store.load_reviews() == payload
 
 
 def test_has_profile_is_false_when_missing(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
@@ -100,7 +101,7 @@ class CoupangCartService(CoupangCartDelete):
         async with self.cart_session() as cart_session:
             result = await cart_session.list_cart()
             if result.success:
-                self._write_cached_cart(result)
+                self._write_cached_cart(result, refresh=refresh)
             return result
 
     async def update_cart_quantity(
@@ -995,9 +996,14 @@ class CoupangCartService(CoupangCartDelete):
         except (TypeError, ValueError):
             return None
 
-    def _write_cached_cart(self, result: ListCartResult) -> None:
+    def _write_cached_cart(self, result: ListCartResult, *, refresh: bool = False) -> None:
         self.store.write_cart(
             {
+                "meta": {
+                    "provider": result.provider,
+                    "collectedAt": datetime.now().astimezone().replace(microsecond=0).isoformat(),
+                    "refresh": refresh,
+                },
                 "provider": result.provider,
                 "success": result.success,
                 "message": result.message,

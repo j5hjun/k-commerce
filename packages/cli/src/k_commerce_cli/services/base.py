@@ -83,6 +83,7 @@ class Store(Protocol):
     session_meta_path: Path
     orders_path: Path
     cart_path: Path
+    reviews_path: Path
 
     def load_credentials(self) -> Credentials | None: ...
 
@@ -99,6 +100,10 @@ class Store(Protocol):
     def load_cart(self) -> dict[str, Any] | None: ...
 
     def write_cart(self, payload: dict[str, Any]) -> None: ...
+
+    def load_reviews(self) -> dict[str, Any] | None: ...
+
+    def write_reviews(self, payload: dict[str, Any]) -> None: ...
 
 
 class Provider(Protocol):
@@ -124,11 +129,11 @@ class Provider(Protocol):
 
     def cart_session(self) -> AsyncContextManager["CartSession"]: ...
 
-    async def list_reviewable(self) -> ListReviewableResult: ...
+    async def list_reviewable(self, refresh: bool = False) -> ListReviewableResult: ...
 
-    async def list_editable(self) -> ListEditableReviewsResult: ...
+    async def list_editable(self, refresh: bool = False) -> ListEditableReviewsResult: ...
 
-    async def list_reviews(self) -> ListReviewsResult: ...
+    async def list_reviews(self, refresh: bool = False) -> ListReviewsResult: ...
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
 
@@ -181,11 +186,11 @@ class OrderService(Protocol):
 
 
 class ReviewService(Protocol):
-    async def list_reviewable(self) -> ListReviewableResult: ...
+    async def list_reviewable(self, refresh: bool = False) -> ListReviewableResult: ...
 
-    async def list_editable(self) -> ListEditableReviewsResult: ...
+    async def list_editable(self, refresh: bool = False) -> ListEditableReviewsResult: ...
 
-    async def list_reviews(self) -> ListReviewsResult: ...
+    async def list_reviews(self, refresh: bool = False) -> ListReviewsResult: ...
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
 
@@ -364,14 +369,14 @@ class BaseProvider(
     def cart_session(self) -> AsyncContextManager[CartSession]:
         return self.cart_service.cart_session()
 
-    async def list_reviewable(self) -> ListReviewableResult:
-        return await self.review_service.list_reviewable()
+    async def list_reviewable(self, refresh: bool = False) -> ListReviewableResult:
+        return await self.review_service.list_reviewable(refresh=refresh)
 
-    async def list_editable(self) -> ListEditableReviewsResult:
-        return await self.review_service.list_editable()
+    async def list_editable(self, refresh: bool = False) -> ListEditableReviewsResult:
+        return await self.review_service.list_editable(refresh=refresh)
 
-    async def list_reviews(self) -> ListReviewsResult:
-        return await self.review_service.list_reviews()
+    async def list_reviews(self, refresh: bool = False) -> ListReviewsResult:
+        return await self.review_service.list_reviews(refresh=refresh)
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
         return await self.review_service.upload_review(request)

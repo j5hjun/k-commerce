@@ -366,6 +366,7 @@ Files created there:
 - `session-meta.json`: metadata about the last successful login method
 - `credentials.json`: optional credentials for automatic login
 - `orders.json`: local order snapshot with collection metadata and nested Coupang orders
+- `cart.json`: local cart snapshot with collection metadata and cart items
 
 The `logout` command removes saved session artifacts such as `chrome-profile/`, `cookies.dat`, and
 `session-meta.json`, but preserves `credentials.json`.

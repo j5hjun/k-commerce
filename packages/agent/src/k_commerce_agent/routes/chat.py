@@ -576,26 +576,21 @@ async def login_provider(provider: str) -> ProviderLoginResponse:
     )
 
 
-@router.get("/api/cart", response_model=CartListResponse)
-async def get_cart(provider: str = "coupang", refresh: bool = False) -> CartListResponse:
-    tools = await load_tools()
-    tool_map = {tool.name: tool for tool in tools}
-    tool = tool_map.get("cart_list")
-    if tool is None:
-        return CartListResponse(
-            provider=provider,
-            success=False,
-            message="cart_list 도구를 찾을 수 없습니다.",
-        )
-
-    payload = _parse_tool_result(
-        await tool.ainvoke({"provider": provider, "refresh": refresh})
-    )
+def _cart_list_response_from_payload(
+    payload: dict[str, object],
+    provider: str,
+) -> CartListResponse:
     items = payload.get("items") if isinstance(payload, dict) else []
+    meta = payload.get("meta") if isinstance(payload, dict) else {}
+    collected_at = None
+    if isinstance(meta, dict):
+        raw_collected_at = str(meta.get("collectedAt") or "").strip()
+        collected_at = raw_collected_at or None
     return CartListResponse(
         provider=str(payload.get("provider") or provider),
         success=bool(payload.get("success", False)),
         message=str(payload.get("message") or ""),
+        collected_at=collected_at,
         items=[
             CartItemResponse(
                 index=int(item.get("index") or 0),
@@ -613,6 +608,46 @@ async def get_cart(provider: str = "coupang", refresh: bool = False) -> CartList
             if isinstance(item, dict)
         ],
     )
+
+
+@router.get("/api/cart", response_model=CartListResponse)
+async def get_cart(provider: str = "coupang", refresh: bool = False) -> CartListResponse:
+    tools = await load_tools()
+    tool_map = {tool.name: tool for tool in tools}
+    tool = tool_map.get("cart_list")
+    if tool is None:
+        return CartListResponse(
+            provider=provider,
+            success=False,
+            message="cart_list 도구를 찾을 수 없습니다.",
+        )
+
+    payload = _parse_tool_result(
+        await tool.ainvoke({"provider": provider, "refresh": refresh})
+    )
+    return _cart_list_response_from_payload(payload, provider)
+
+
+@router.get("/api/cart/cache", response_model=CartListResponse)
+async def get_cached_cart(provider: str = "coupang") -> CartListResponse:
+    cart_path = Path.home() / ".k-commerce" / provider / "cart.json"
+    if not cart_path.is_file():
+        return CartListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 장바구니 목록이 없습니다.",
+        )
+    try:
+        payload = json.loads(cart_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return CartListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 장바구니 목록을 읽지 못했습니다.",
+        )
+    if not isinstance(payload, dict):
+        payload = {}
+    return _cart_list_response_from_payload(payload, provider)
 
 
 def _cart_mutation_response(
@@ -839,8 +874,28 @@ def _editable_reviews_response(
     )
 
 
+def _reviews_response_from_payload(payload: dict[str, object], provider: str) -> ReviewListResponse:
+    reviewable_payload = payload.get("reviewable") if isinstance(payload, dict) else {}
+    editable_payload = payload.get("editable") if isinstance(payload, dict) else {}
+    reviewable = _reviewable_response(
+        reviewable_payload if isinstance(reviewable_payload, dict) else {},
+        provider,
+    )
+    editable = _editable_reviews_response(
+        editable_payload if isinstance(editable_payload, dict) else {},
+        provider,
+    )
+    return ReviewListResponse(
+        provider=str(payload.get("provider") or provider),
+        success=bool(payload.get("success", reviewable.success and editable.success)),
+        message=str(payload.get("message") or ""),
+        reviewable=reviewable,
+        editable=editable,
+    )
+
+
 @router.get("/api/reviews", response_model=ReviewListResponse)
-async def get_reviews(provider: str = "coupang") -> ReviewListResponse:
+async def get_reviews(provider: str = "coupang", refresh: bool = False) -> ReviewListResponse:
     tools = await load_tools()
     tool_map = {tool.name: tool for tool in tools}
     tool = tool_map.get("review_list")
@@ -863,24 +918,56 @@ async def get_reviews(provider: str = "coupang") -> ReviewListResponse:
             editable=empty_editable,
         )
 
-    payload = _parse_tool_result(await tool.ainvoke({"provider": provider}))
-    reviewable_payload = payload.get("reviewable") if isinstance(payload, dict) else {}
-    editable_payload = payload.get("editable") if isinstance(payload, dict) else {}
-    reviewable = _reviewable_response(
-        reviewable_payload if isinstance(reviewable_payload, dict) else {},
-        provider,
+    payload = _parse_tool_result(
+        await tool.ainvoke({"provider": provider, "refresh": refresh})
     )
-    editable = _editable_reviews_response(
-        editable_payload if isinstance(editable_payload, dict) else {},
-        provider,
-    )
-    return ReviewListResponse(
-        provider=str(payload.get("provider") or provider),
-        success=bool(payload.get("success", reviewable.success and editable.success)),
-        message=str(payload.get("message") or ""),
-        reviewable=reviewable,
-        editable=editable,
-    )
+    return _reviews_response_from_payload(payload, provider)
+
+
+@router.get("/api/reviews/cache", response_model=ReviewListResponse)
+async def get_cached_reviews(provider: str = "coupang") -> ReviewListResponse:
+    reviews_path = Path.home() / ".k-commerce" / provider / "reviews.json"
+    if not reviews_path.is_file():
+        empty_reviewable = ReviewableListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록이 없습니다.",
+        )
+        empty_editable = EditableReviewListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록이 없습니다.",
+        )
+        return ReviewListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록이 없습니다.",
+            reviewable=empty_reviewable,
+            editable=empty_editable,
+        )
+    try:
+        payload = json.loads(reviews_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        empty_reviewable = ReviewableListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록을 읽지 못했습니다.",
+        )
+        empty_editable = EditableReviewListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록을 읽지 못했습니다.",
+        )
+        return ReviewListResponse(
+            provider=provider,
+            success=False,
+            message="저장된 리뷰 목록을 읽지 못했습니다.",
+            reviewable=empty_reviewable,
+            editable=empty_editable,
+        )
+    if not isinstance(payload, dict):
+        payload = {}
+    return _reviews_response_from_payload(payload, provider)
 
 
 @router.get("/api/reviews/reviewable", response_model=ReviewableListResponse)

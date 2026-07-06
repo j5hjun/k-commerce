@@ -63,6 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [memoryRevision, setMemoryRevision] = useState(0);
 
   const connection = CONN_CFG[connStatus];
+
   const resetSession = () => {
     const nextSessionId = createSessionId();
     if (typeof window !== "undefined") {

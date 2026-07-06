@@ -11,13 +11,18 @@ import {
 } from "@/data/messages.mock";
 import type { TaskLog } from "@/data/taskHistory.mock";
 import {
+  loadCartSnapshot,
   fetchCachedOrders,
+  fetchCachedReviews,
+  fetchOrders,
   fetchProviderLoginStatus,
+  fetchReviews,
   searchProducts,
   streamChat,
   triggerProviderLogin,
   type OrderGroupSummary,
   type ProductSearchItemSummary,
+  type ReviewableItemSummary,
   type AgentChatMessage,
 } from "@/lib/agent";
 import { cn } from "@/lib/utils";
@@ -29,6 +34,11 @@ const CHAT_HINTS = [
   "지원 쇼핑몰 알려줘",
 ];
 const OPEN_MCP_MODAL_COMMAND = "__open_mcp_modal__";
+const OPEN_ORDERS_PAGE_COMMAND = "__open_orders_page__";
+const OPEN_REVIEWS_PAGE_COMMAND = "__open_reviews_page__";
+const ORDERS_MORE_PREFIX = "__orders_more__:";
+const REVIEWS_MORE_PREFIX = "__reviews_more__:";
+const ORDER_LIST_PAGE_SIZE = 5;
 const CHAT_STORAGE_PREFIX = "k-commerce-chat";
 const PROVIDER = "coupang";
 const LOGIN_ACTIONS: MessageAction[] = [
@@ -53,6 +63,29 @@ type ConnectionMessageStatus = Exclude<ConnStatus, "connecting">;
 
 function toConnectionMessageStatus(status: ConnStatus): ConnectionMessageStatus {
   return status === "connecting" ? "disconnected" : status;
+}
+
+function isConnectionStatusMessage(content: string) {
+  return (
+    content.includes("MCP 연결이 완료됐어요") ||
+    content.includes("아직 MCP 연결이 되어 있지 않아요") ||
+    content.includes("지금 MCP 연결에 문제가 있어요") ||
+    content.includes("안녕하세요. 쿠팡 자동화 도우미입니다")
+  );
+}
+
+function resolveInitialMessages(
+  sessionId: string,
+  status: ConnectionMessageStatus,
+): ChatMessage[] {
+  if (typeof window === "undefined" || !sessionId) {
+    return buildMessagesForStatus(status);
+  }
+  const stored = parseStoredMessages(window.localStorage.getItem(storageKey(sessionId)));
+  if (stored) {
+    return ensureStatusPrompt(stored, status);
+  }
+  return buildMessagesForStatus(status);
 }
 
 const LOGIN_PROMPT_MARKERS = [
@@ -108,9 +141,205 @@ function isLoginCommand(command: string) {
   );
 }
 
+function isOrdersMoreCommand(command: string) {
+  return command.startsWith(ORDERS_MORE_PREFIX);
+}
+
+function parseOrdersMoreOffset(command: string) {
+  const offset = Number(command.slice(ORDERS_MORE_PREFIX.length));
+  return Number.isFinite(offset) && offset >= 0 ? offset : 0;
+}
+
+function userMessageForCommand(command: string) {
+  if (isOrdersMoreCommand(command) || isReviewsMoreCommand(command)) {
+    return "더보기";
+  }
+  return command;
+}
+
 function isOrdersCommand(command: string) {
+  if (isOrdersMoreCommand(command) || command === OPEN_ORDERS_PAGE_COMMAND) {
+    return false;
+  }
   const normalized = normalizeCommand(command);
   return normalized.includes("주문목록") || normalized.includes("주문내역");
+}
+
+function formatOrderGroupLine(group: OrderGroupSummary, index: number) {
+  const firstItem = group.items[0];
+  const productLabel = firstItem
+    ? group.items.length > 1
+      ? `${firstItem.product} 외 ${group.items.length - 1}건`
+      : firstItem.product
+    : "상품 정보 없음";
+  return `${index + 1}. ${group.date} · ${group.status} · ${productLabel}`;
+}
+
+function formatOrderListSummaryAnswer(groups: OrderGroupSummary[], total: number) {
+  const lines = groups
+    .slice(0, ORDER_LIST_PAGE_SIZE)
+    .map((group, index) => formatOrderGroupLine(group, index));
+  const listBlock = lines.length > 0 ? `\n\n${lines.join("\n")}` : "";
+  const ellipsis = total > ORDER_LIST_PAGE_SIZE ? "\n..." : "";
+  return `주문목록에 총 ${total}개가 있습니다.${listBlock}${ellipsis}`;
+}
+
+function formatOrderListMoreAnswer(
+  groups: OrderGroupSummary[],
+  offset: number,
+  pageSize: number,
+) {
+  const slice = groups.slice(offset, offset + pageSize);
+  if (slice.length === 0) {
+    return "더 보여줄 주문이 없습니다.";
+  }
+  const lines = slice.map((group, index) =>
+    formatOrderGroupLine(group, offset + index),
+  );
+  return lines.join("\n");
+}
+
+function buildOrderListSummaryActions(total: number): MessageAction[] {
+  if (total <= 0) {
+    return [];
+  }
+  const actions: MessageAction[] = [];
+  if (total > ORDER_LIST_PAGE_SIZE) {
+    actions.push({
+      label: "더보기",
+      command: `${ORDERS_MORE_PREFIX}${ORDER_LIST_PAGE_SIZE}`,
+    });
+  }
+  actions.push({
+    label: "주문목록 페이지 이동",
+    command: OPEN_ORDERS_PAGE_COMMAND,
+  });
+  return actions;
+}
+
+function buildOrderListMoreActions(
+  groups: OrderGroupSummary[],
+  offset: number,
+  pageSize: number,
+): MessageAction[] {
+  const actions: MessageAction[] = [];
+  if (offset + pageSize < groups.length) {
+    actions.push({
+      label: "더보기",
+      command: `${ORDERS_MORE_PREFIX}${offset + pageSize}`,
+    });
+  }
+  actions.push({
+    label: "주문목록 페이지 이동",
+    command: OPEN_ORDERS_PAGE_COMMAND,
+  });
+  return actions;
+}
+
+function isReviewsMoreCommand(command: string) {
+  return command.startsWith(REVIEWS_MORE_PREFIX);
+}
+
+function parseReviewsMoreOffset(command: string) {
+  const offset = Number(command.slice(REVIEWS_MORE_PREFIX.length));
+  return Number.isFinite(offset) && offset >= 0 ? offset : 0;
+}
+
+function isReviewUploadCommand(command: string) {
+  const normalized = command.replace(/\s+/g, " ");
+  return /(\d+)번.*리뷰/.test(normalized) && /(달|작성|남|올)/.test(normalized);
+}
+
+function isReviewListCommand(command: string) {
+  if (
+    isReviewsMoreCommand(command) ||
+    command === OPEN_REVIEWS_PAGE_COMMAND ||
+    isReviewUploadCommand(command)
+  ) {
+    return false;
+  }
+  const normalized = normalizeCommand(command);
+  return (
+    normalized === "리뷰작성해줘" ||
+    normalized.includes("리뷰작성할상품") ||
+    normalized.includes("리뷰가능") ||
+    normalized.includes("리뷰목록") ||
+    (normalized.includes("리뷰") &&
+      (normalized.includes("목록") ||
+        normalized.includes("보여줘") ||
+        normalized.includes("가져와") ||
+        normalized.includes("조회")))
+  );
+}
+
+function formatReviewableLine(item: ReviewableItemSummary, index: number) {
+  const delivery = item.delivery_date
+    ? ` · 배송일 ${item.delivery_date}`
+    : "";
+  return `${index + 1}. ${item.product_name}${delivery}`;
+}
+
+function formatReviewListSummaryAnswer(items: ReviewableItemSummary[]) {
+  const total = items.length;
+  const lines = items
+    .slice(0, ORDER_LIST_PAGE_SIZE)
+    .map((item, index) => formatReviewableLine(item, index));
+  const listBlock = lines.length > 0 ? `\n\n${lines.join("\n")}` : "";
+  const ellipsis = total > ORDER_LIST_PAGE_SIZE ? "\n..." : "";
+  return `리뷰 작성 가능한 상품이 총 ${total}개입니다.${listBlock}${ellipsis}`;
+}
+
+function formatReviewListMoreAnswer(
+  items: ReviewableItemSummary[],
+  offset: number,
+  pageSize: number,
+) {
+  const slice = items.slice(offset, offset + pageSize);
+  if (slice.length === 0) {
+    return "더 보여줄 리뷰 대상 상품이 없습니다.";
+  }
+  const lines = slice.map((item, index) =>
+    formatReviewableLine(item, offset + index),
+  );
+  const ellipsis = offset + slice.length < items.length ? "\n..." : "";
+  return `${lines.join("\n")}${ellipsis}`;
+}
+
+function buildReviewListSummaryActions(total: number): MessageAction[] {
+  if (total <= 0) {
+    return [{ label: "리뷰 작성 페이지 이동", command: OPEN_REVIEWS_PAGE_COMMAND }];
+  }
+  const actions: MessageAction[] = [];
+  if (total > ORDER_LIST_PAGE_SIZE) {
+    actions.push({
+      label: "더보기",
+      command: `${REVIEWS_MORE_PREFIX}${ORDER_LIST_PAGE_SIZE}`,
+    });
+  }
+  actions.push({
+    label: "리뷰 작성 페이지 이동",
+    command: OPEN_REVIEWS_PAGE_COMMAND,
+  });
+  return actions;
+}
+
+function buildReviewListMoreActions(
+  items: ReviewableItemSummary[],
+  offset: number,
+  pageSize: number,
+): MessageAction[] {
+  const actions: MessageAction[] = [];
+  if (offset + pageSize < items.length) {
+    actions.push({
+      label: "더보기",
+      command: `${REVIEWS_MORE_PREFIX}${offset + pageSize}`,
+    });
+  }
+  actions.push({
+    label: "리뷰 작성 페이지 이동",
+    command: OPEN_REVIEWS_PAGE_COMMAND,
+  });
+  return actions;
 }
 
 function parseOrderDateQuestion(command: string) {
@@ -145,7 +374,7 @@ function parseProductSearchRequest(command: string) {
     normalized,
   );
   if (!isSearchIntent) return null;
-  if (isOrdersCommand(command) || isCartCommand(command) || isReviewCommand(command)) {
+  if (isOrdersCommand(command) || isCartCommand(command) || isReviewListCommand(command)) {
     return null;
   }
   if (/또띠/.test(normalized)) {
@@ -184,20 +413,17 @@ function isCartCommand(command: string) {
   return normalized.includes("장바구니") && normalized.includes("목록");
 }
 
-function isReviewCommand(command: string) {
-  const normalized = normalizeCommand(command);
-  return normalized.includes("리뷰작성") || normalized.includes("리뷰작성할상품");
-}
-
 function isDirectCommerceCommand(command: string) {
   return (
     isLoginStatusCommand(command) ||
     isLoginCommand(command) ||
     parseProductSearchRequest(command) !== null ||
     parseOrderDateQuestion(command) !== null ||
+    isOrdersMoreCommand(command) ||
+    isReviewsMoreCommand(command) ||
     isOrdersCommand(command) ||
     isCartCommand(command) ||
-    isReviewCommand(command)
+    isReviewListCommand(command)
   );
 }
 
@@ -304,19 +530,15 @@ export function DashboardPage() {
     setShowMcp,
     resetSession,
   } = useApp();
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (typeof window === "undefined" || !sessionId) {
-      return buildInitialMessages();
-    }
-    const stored =
-      parseStoredMessages(window.localStorage.getItem(storageKey(sessionId))) ??
-      buildInitialMessages();
-    return ensureStatusPrompt(stored, toConnectionMessageStatus(connStatus));
-  });
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    resolveInitialMessages(sessionId, toConnectionMessageStatus(connStatus)),
+  );
   const [input, setInput] = useState("");
   const [running, setLocalRunning] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const previousConnStatusRef = useRef(connStatus);
+  const orderListCacheRef = useRef<OrderGroupSummary[]>([]);
+  const reviewListCacheRef = useRef<ReviewableItemSummary[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -339,10 +561,23 @@ export function DashboardPage() {
       if (connStatus === "connecting") {
         return;
       }
-      setMessages((prev) => [
-        ...prev,
-        buildConnectionMessage(toConnectionMessageStatus(connStatus)),
-      ]);
+      const status = toConnectionMessageStatus(connStatus);
+      const nextPrompt = buildConnectionMessage(status);
+      setMessages((prev) => {
+        const withoutStatus = prev.filter(
+          (message) =>
+            message.role !== "assistant" ||
+            !isConnectionStatusMessage(message.content),
+        );
+        const lastMessage = withoutStatus[withoutStatus.length - 1];
+        if (
+          lastMessage?.role === "assistant" &&
+          lastMessage.content === nextPrompt.content
+        ) {
+          return prev;
+        }
+        return [...withoutStatus, nextPrompt];
+      });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [connStatus]);
@@ -372,7 +607,7 @@ export function DashboardPage() {
   const runDirectCommerceCommand = useCallback(async (text: string) => {
     setMessages((prev) => [
       ...prev,
-      { id: uid(), role: "user", content: text, timestamp: new Date() },
+      { id: uid(), role: "user", content: userMessageForCommand(text), timestamp: new Date() },
     ]);
     setInput("");
     setLocalRunning(true);
@@ -428,27 +663,112 @@ export function DashboardPage() {
           content = formatOrderDateAnswer(orderDate, response.groups);
           actions = [{ label: "주문 목록 보기", command: "주문목록 가져와줘" }];
         }
-      } else if (isOrdersCommand(text)) {
-        taskName = "주문 목록 화면 열기";
-        setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+      } else if (isOrdersMoreCommand(text)) {
+        taskName = "주문 목록 보기";
         setConn("connected");
-        router.push("/orders");
-        content = "주문 목록 화면을 열었습니다.\n\n주문 목록 불러오기 버튼을 누르면 저장된 주문부터 확인합니다.";
-        actions = LOGGED_IN_ACTIONS;
+        setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+        let groups = orderListCacheRef.current;
+        if (groups.length === 0) {
+          const cached = await fetchCachedOrders(mcpCfg);
+          groups = cached.groups;
+          orderListCacheRef.current = groups;
+        }
+        const offset = parseOrdersMoreOffset(text);
+        content = formatOrderListMoreAnswer(groups, offset, ORDER_LIST_PAGE_SIZE);
+        actions = buildOrderListMoreActions(groups, offset, ORDER_LIST_PAGE_SIZE);
+      } else if (isOrdersCommand(text)) {
+        taskName = "주문 목록 조회";
+        setConn("connected");
+        const cached = await fetchCachedOrders(mcpCfg);
+        if (cached.groups.length > 0) {
+          orderListCacheRef.current = cached.groups;
+          setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+          content = formatOrderListSummaryAnswer(cached.groups, cached.total);
+          actions = buildOrderListSummaryActions(cached.total);
+        } else {
+          setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: "주문 목록을 조회하겠습니다.",
+              timestamp: new Date(),
+            },
+          ]);
+          const response = await fetchOrders(mcpCfg, false);
+          orderListCacheRef.current = response.groups;
+          content = formatOrderListSummaryAnswer(response.groups, response.total);
+          actions = buildOrderListSummaryActions(response.total);
+        }
       } else if (isCartCommand(text)) {
         taskName = "장바구니 목록 화면 열기";
         setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
         setConn("connected");
         router.push("/cart");
-        content = "장바구니 목록 화면을 열었습니다.\n\n장바구니 목록 불러오기 버튼을 누르면 현재 장바구니를 조회합니다.";
+        const cached = await loadCartSnapshot(mcpCfg, PROVIDER);
+        if (cached.success) {
+          content =
+            cached.items.length > 0
+              ? `장바구니 목록 화면을 열었습니다.\n\n저장된 장바구니 ${cached.items.length}종을 바로 불러왔습니다.`
+              : "장바구니 목록 화면을 열었습니다.\n\n저장된 장바구니가 비어 있습니다.";
+        } else {
+          content =
+            "장바구니 목록 화면을 열었습니다.\n\n장바구니 목록 불러오기 버튼을 누르면 현재 장바구니를 조회합니다.";
+        }
         actions = LOGGED_IN_ACTIONS;
-      } else if (isReviewCommand(text)) {
-        taskName = "리뷰 작성 화면 열기";
-        setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+      } else if (isReviewsMoreCommand(text)) {
+        taskName = "리뷰 목록 보기";
         setConn("connected");
-        router.push("/reviews");
-        content = "리뷰 작성 화면을 열었습니다.\n\n새로고침 버튼을 누르면 리뷰 목록을 조회합니다.";
-        actions = LOGGED_IN_ACTIONS;
+        setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+        let items = reviewListCacheRef.current;
+        if (items.length === 0) {
+          const cached = await fetchCachedReviews(mcpCfg, PROVIDER);
+          items = cached.reviewable.items;
+          reviewListCacheRef.current = items;
+        }
+        const offset = parseReviewsMoreOffset(text);
+        content = formatReviewListMoreAnswer(items, offset, ORDER_LIST_PAGE_SIZE);
+        actions = buildReviewListMoreActions(items, offset, ORDER_LIST_PAGE_SIZE);
+      } else if (isReviewListCommand(text)) {
+        taskName = "리뷰 목록 조회";
+        setConn("connected");
+        const cached = await fetchCachedReviews(mcpCfg, PROVIDER);
+        if (cached.reviewable.items.length > 0) {
+          reviewListCacheRef.current = cached.reviewable.items;
+          setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+          content = formatReviewListSummaryAnswer(cached.reviewable.items);
+          actions = buildReviewListSummaryActions(cached.reviewable.items.length);
+        } else if (cached.success) {
+          reviewListCacheRef.current = [];
+          setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+          content = "리뷰 작성 가능한 상품이 없습니다.";
+          actions = buildReviewListSummaryActions(0);
+        } else {
+          setTasks([{ id: uid(), name: taskName, status: "running", time: "live" }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: "리뷰 목록을 조회하겠습니다.",
+              timestamp: new Date(),
+            },
+          ]);
+          const response = await fetchReviews(mcpCfg, PROVIDER, false);
+          const items = response.reviewable.items;
+          reviewListCacheRef.current = items;
+          if (!response.success) {
+            content = response.message || "리뷰 목록을 불러오지 못했습니다. 다시 시도해주세요.";
+            actions = LOGGED_IN_ACTIONS;
+          } else if (items.length === 0) {
+            content = "리뷰 작성 가능한 상품이 없습니다.";
+            actions = buildReviewListSummaryActions(0);
+          } else {
+            content = formatReviewListSummaryAnswer(items);
+            actions = buildReviewListSummaryActions(items.length);
+          }
+        }
       }
 
       setTasks([
@@ -523,6 +843,44 @@ export function DashboardPage() {
         },
       ]);
       setShowMcp(true);
+      return;
+    }
+    if (text === OPEN_ORDERS_PAGE_COMMAND) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "user",
+          content: "주문목록 페이지 이동",
+          timestamp: new Date(),
+        },
+        {
+          id: uid(),
+          role: "assistant",
+          content: "주문 목록 페이지로 이동합니다.",
+          timestamp: new Date(),
+        },
+      ]);
+      router.push("/orders");
+      return;
+    }
+    if (text === OPEN_REVIEWS_PAGE_COMMAND) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "user",
+          content: "리뷰 작성 페이지 이동",
+          timestamp: new Date(),
+        },
+        {
+          id: uid(),
+          role: "assistant",
+          content: "리뷰 작성 페이지로 이동합니다.",
+          timestamp: new Date(),
+        },
+      ]);
+      router.push("/reviews");
       return;
     }
     if (isDirectCommerceCommand(text)) {
@@ -624,6 +982,7 @@ export function DashboardPage() {
     input,
     mcpCfg,
     messages,
+    router,
     running,
     runDirectCommerceCommand,
     sessionId,

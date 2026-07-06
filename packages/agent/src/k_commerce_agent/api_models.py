@@ -76,6 +76,7 @@ class CartListResponse(BaseModel):
     provider: str
     success: bool
     message: str
+    collected_at: str | None = None
     items: list[CartItemResponse] = []
 
 

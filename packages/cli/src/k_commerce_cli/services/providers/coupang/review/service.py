@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from urllib.parse import quote
 
 from k_commerce_cli.base import Terminal
@@ -7,6 +8,7 @@ from k_commerce_cli.services.types import (
     ListEditableReviewsResult,
     ListReviewsResult,
     ListReviewableResult,
+    ProviderName,
     ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
@@ -58,67 +60,29 @@ class CoupangReviewService(
         self.browser = browser
         self._browser_session: BrowserSession | None = None
 
-    async def list_reviewable(self) -> ListReviewableResult:
+    async def list_reviewable(self, refresh: bool = False) -> ListReviewableResult:
         """저장된 세션으로 쿠팡 리뷰 작성 가능 상품 목록을 조회합니다."""
-        try:
-            self._browser_session = await self.browser.launch(self.store.paths)
-            browser_result = await self._list_reviewable_items(self._browser_session)
-            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
-                login_state = await self._open_login_and_wait_for_review(
-                    self._browser_session,
-                    COUPANG_REVIEWABLE_URL,
-                )
-                if login_state == CoupangReviewState.SUCCESS:
-                    browser_result = await self._list_reviewable_items(self._browser_session)
-                else:
-                    browser_result = _ListReviewableBrowserResult(state=login_state)
-            return self._to_list_result(browser_result)
-        finally:
-            await self._close_browser_session()
+        if not refresh:
+            cached = self._load_cached_reviews()
+            if cached is not None:
+                return cached.reviewable
 
-    async def list_reviews(self) -> ListReviewsResult:
+        result = await self.list_reviews(refresh=True)
+        return result.reviewable
+
+    async def list_reviews(self, refresh: bool = False) -> ListReviewsResult:
         """한 브라우저 세션으로 작성 가능 리뷰와 작성한 리뷰 목록을 순차 조회합니다."""
-        try:
-            self._browser_session = await self.browser.launch(self.store.paths)
-            reviewable_result = await self._list_reviewable_items(self._browser_session)
-            if reviewable_result.state == CoupangReviewState.NOT_LOGGED_IN:
-                login_state = await self._open_login_and_wait_for_review(
-                    self._browser_session,
-                    COUPANG_REVIEWABLE_URL,
-                )
-                if login_state == CoupangReviewState.SUCCESS:
-                    reviewable_result = await self._list_reviewable_items(self._browser_session)
-                else:
-                    reviewable_result = _ListReviewableBrowserResult(state=login_state)
+        if not refresh:
+            cached = self._load_cached_reviews()
+            if cached is not None:
+                if self.terminal is not None:
+                    self.terminal.cache("저장된 리뷰 목록을 바로 불러옵니다.")
+                return cached
 
-            editable_result = await self._list_editable_review_items(self._browser_session)
-            if editable_result.state == CoupangReviewState.NOT_LOGGED_IN:
-                login_state = await self._open_login_and_wait_for_review(
-                    self._browser_session,
-                    COUPANG_WROTE_REVIEWS_URL,
-                )
-                if login_state == CoupangReviewState.SUCCESS:
-                    editable_result = await self._list_editable_review_items(self._browser_session)
-                else:
-                    editable_result = _ListReviewableBrowserResult(state=login_state)
-
-            reviewable = self._to_list_result(reviewable_result)
-            editable = self._to_editable_list_result(editable_result)
-            success = reviewable.success and editable.success
-            message = (
-                "리뷰 목록을 불러왔습니다."
-                if success
-                else reviewable.message or editable.message or "리뷰 목록을 불러오지 못했습니다."
-            )
-            return ListReviewsResult(
-                provider=self.provider,
-                success=success,
-                message=message,
-                reviewable=reviewable,
-                editable=editable,
-            )
-        finally:
-            await self._close_browser_session()
+        result = await self._collect_reviews_from_browser()
+        if result.success:
+            self._write_cached_reviews(result)
+        return result
 
     async def _open_wrote_reviews(self, session: BrowserSession) -> None:
         await session.tab.get(COUPANG_WROTE_REVIEWS_URL)
@@ -410,23 +374,15 @@ class CoupangReviewService(
 
         return tuple(items)
 
-    async def list_editable(self) -> ListEditableReviewsResult:
+    async def list_editable(self, refresh: bool = False) -> ListEditableReviewsResult:
         """저장된 세션으로 쿠팡 작성 리뷰 목록을 조회합니다."""
-        try:
-            self._browser_session = await self.browser.launch(self.store.paths)
-            browser_result = await self._list_editable_review_items(self._browser_session)
-            if browser_result.state == CoupangReviewState.NOT_LOGGED_IN:
-                login_state = await self._open_login_and_wait_for_review(
-                    self._browser_session,
-                    COUPANG_WROTE_REVIEWS_URL,
-                )
-                if login_state == CoupangReviewState.SUCCESS:
-                    browser_result = await self._list_editable_review_items(self._browser_session)
-                else:
-                    browser_result = _ListReviewableBrowserResult(state=login_state)
-            return self._to_editable_list_result(browser_result)
-        finally:
-            await self._close_browser_session()
+        if not refresh:
+            cached = self._load_cached_reviews()
+            if cached is not None:
+                return cached.editable
+
+        result = await self.list_reviews(refresh=True)
+        return result.editable
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
         """선택한 주문 상품에 별점과 리뷰 본문을 업로드합니다."""
@@ -460,7 +416,10 @@ class CoupangReviewService(
                     )
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
-            return self._emit_upload_result(self._to_result(request, browser_result))
+            result = self._emit_upload_result(self._to_result(request, browser_result))
+            if result.success:
+                await self._refresh_reviews_cache()
+            return result
         finally:
             await self._close_browser_session()
 
@@ -502,7 +461,10 @@ class CoupangReviewService(
                     )
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
-            return self._emit_edit_result(self._to_edit_result(request, browser_result))
+            result = self._emit_edit_result(self._to_edit_result(request, browser_result))
+            if result.success:
+                await self._refresh_reviews_cache()
+            return result
         finally:
             await self._close_browser_session()
 
@@ -536,9 +498,144 @@ class CoupangReviewService(
                     )
                 else:
                     browser_result = _ReviewUploadBrowserResult(state=login_state)
-            return self._emit_delete_result(self._to_delete_result(request, browser_result))
+            result = self._emit_delete_result(self._to_delete_result(request, browser_result))
+            if result.success:
+                await self._refresh_reviews_cache()
+            return result
         finally:
             await self._close_browser_session()
+
+    async def _collect_reviews_from_browser(self) -> ListReviewsResult:
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            reviewable_result = await self._list_reviewable_items(self._browser_session)
+            if reviewable_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_REVIEWABLE_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    reviewable_result = await self._list_reviewable_items(self._browser_session)
+                else:
+                    reviewable_result = _ListReviewableBrowserResult(state=login_state)
+
+            editable_result = await self._list_editable_review_items(self._browser_session)
+            if editable_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_WROTE_REVIEWS_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    editable_result = await self._list_editable_review_items(self._browser_session)
+                else:
+                    editable_result = _ListReviewableBrowserResult(state=login_state)
+
+            reviewable = self._to_list_result(reviewable_result)
+            editable = self._to_editable_list_result(editable_result)
+            success = reviewable.success and editable.success
+            message = (
+                "리뷰 목록을 불러왔습니다."
+                if success
+                else reviewable.message or editable.message or "리뷰 목록을 불러오지 못했습니다."
+            )
+            return ListReviewsResult(
+                provider=self.provider,
+                success=success,
+                message=message,
+                reviewable=reviewable,
+                editable=editable,
+            )
+        finally:
+            await self._close_browser_session()
+
+    async def _refresh_reviews_cache(self) -> None:
+        result = await self._collect_reviews_from_browser()
+        if result.success:
+            self._write_cached_reviews(result)
+
+    def _load_cached_reviews(self) -> ListReviewsResult | None:
+        payload = self.store.load_reviews()
+        if payload is None:
+            return None
+        try:
+            reviewable_payload = payload.get("reviewable")
+            editable_payload = payload.get("editable")
+            if not isinstance(reviewable_payload, dict) or not isinstance(editable_payload, dict):
+                return None
+
+            reviewable_items = tuple(
+                ReviewableItem(
+                    index=int(item.get("index") or 0),
+                    product_id=str(item.get("product_id") or ""),
+                    product_name=str(item.get("product_name") or ""),
+                    delivery_date=str(item.get("delivery_date") or ""),
+                    completed_order_vendor_item_id=str(
+                        item.get("completed_order_vendor_item_id") or ""
+                    ),
+                    vendor_item_id=str(item.get("vendor_item_id") or ""),
+                    review_url=str(item.get("review_url") or ""),
+                )
+                for item in reviewable_payload.get("items", [])
+                if isinstance(item, dict)
+            )
+            editable_items = tuple(
+                EditableReviewItem(
+                    index=int(item.get("index") or 0),
+                    review_id=str(item.get("review_id") or ""),
+                    product_id=str(item.get("product_id") or ""),
+                    order_id=str(item.get("order_id") or ""),
+                    product_name=str(item.get("product_name") or ""),
+                    rating=int(item.get("rating") or 0),
+                    review_text=str(item.get("review_text") or ""),
+                    modify_url=str(item.get("modify_url") or ""),
+                )
+                for item in editable_payload.get("items", [])
+                if isinstance(item, dict)
+            )
+            reviewable = ListReviewableResult(
+                provider=ProviderName(str(reviewable_payload.get("provider") or self.provider)),
+                success=bool(reviewable_payload.get("success", True)),
+                message=str(reviewable_payload.get("message") or format_reviewable_list(reviewable_items)),
+                items=reviewable_items,
+            )
+            editable = ListEditableReviewsResult(
+                provider=ProviderName(str(editable_payload.get("provider") or self.provider)),
+                success=bool(editable_payload.get("success", True)),
+                message=str(
+                    editable_payload.get("message") or format_editable_review_list(editable_items)
+                ),
+                items=editable_items,
+            )
+            return ListReviewsResult(
+                provider=ProviderName(str(payload.get("provider") or self.provider)),
+                success=bool(payload.get("success", reviewable.success and editable.success)),
+                message=str(payload.get("message") or "리뷰 목록을 불러왔습니다."),
+                reviewable=reviewable,
+                editable=editable,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    def _write_cached_reviews(self, result: ListReviewsResult) -> None:
+        self.store.write_reviews(
+            {
+                "provider": str(result.provider),
+                "success": result.success,
+                "message": result.message,
+                "reviewable": {
+                    "provider": str(result.reviewable.provider),
+                    "success": result.reviewable.success,
+                    "message": result.reviewable.message,
+                    "items": [asdict(item) for item in result.reviewable.items],
+                },
+                "editable": {
+                    "provider": str(result.editable.provider),
+                    "success": result.editable.success,
+                    "message": result.editable.message,
+                    "items": [asdict(item) for item in result.editable.items],
+                },
+            }
+        )
 
     def _to_list_result(
         self,

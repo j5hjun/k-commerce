@@ -160,6 +160,51 @@ def test_provider_login_api_returns_tool_payload(monkeypatch) -> None:
     }
 
 
+def test_cart_cache_api_reads_local_json(tmp_path: Path, monkeypatch) -> None:
+    provider_root = tmp_path / ".k-commerce" / "coupang"
+    provider_root.mkdir(parents=True)
+    (provider_root / "cart.json").write_text(
+        """
+        {
+          "meta": {
+            "provider": "coupang",
+            "collectedAt": "2026-07-06T12:00:00+09:00",
+            "refresh": false
+          },
+          "provider": "coupang",
+          "success": true,
+          "message": "장바구니 1개",
+          "items": [
+            {
+              "index": 1,
+              "product_name": "Qiaokao 철제 서랍형 수납박스",
+              "option_text": "화이트",
+              "quantity": 2,
+              "unit_price": "12,990원",
+              "total_price": "25,980원",
+              "product_id": "p1",
+              "vendor_item_id": "v1",
+              "item_id": "i1",
+              "delivery_text": "내일(화) 도착"
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    client = TestClient(create_app())
+    response = client.get("/api/cart/cache")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["collected_at"] == "2026-07-06T12:00:00+09:00"
+    assert payload["items"][0]["product_name"] == "Qiaokao 철제 서랍형 수납박스"
+    assert payload["items"][0]["quantity"] == 2
+
+
 def test_cart_quantity_update_api_delegates_to_tool(monkeypatch) -> None:
     from k_commerce_agent.routes import chat as chat_route
 

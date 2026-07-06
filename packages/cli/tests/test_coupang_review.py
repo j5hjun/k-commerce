@@ -553,6 +553,7 @@ async def test_delete_review_succeeds_with_saved_session(tmp_path: Path) -> None
     service._delete_review_browser = AsyncMock(
         return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
     )
+    service._refresh_reviews_cache = AsyncMock()
 
     result = await service.delete_review(_delete_request())
 
@@ -563,6 +564,7 @@ async def test_delete_review_succeeds_with_saved_session(tmp_path: Path) -> None
         session,
         review_id="934113278",
     )
+    service._refresh_reviews_cache.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -792,6 +794,7 @@ async def test_upload_review_succeeds_with_saved_session(tmp_path: Path) -> None
     service._upload_review_browser = AsyncMock(
         return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
     )
+    service._refresh_reviews_cache = AsyncMock()
 
     result = await service.upload_review(_request())
 
@@ -808,6 +811,7 @@ async def test_upload_review_succeeds_with_saved_session(tmp_path: Path) -> None
         rating=5,
         text="좋아요",
     )
+    service._refresh_reviews_cache.assert_awaited_once()
     browser.close.assert_awaited_once()
 
 
@@ -945,6 +949,7 @@ async def test_edit_review_succeeds_with_saved_session(tmp_path: Path) -> None:
     service._edit_review_browser = AsyncMock(
         return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
     )
+    service._refresh_reviews_cache = AsyncMock()
 
     result = await service.edit_review(_edit_request())
 
@@ -959,6 +964,7 @@ async def test_edit_review_succeeds_with_saved_session(tmp_path: Path) -> None:
         rating=4,
         text="수정된 리뷰",
     )
+    service._refresh_reviews_cache.assert_awaited_once()
 
 
 @pytest.mark.anyio

@@ -34,3 +34,7 @@ class ProviderPaths:
     @property
     def cart_path(self) -> Path:
         return self.base_dir / "cart.json"
+
+    @property
+    def reviews_path(self) -> Path:
+        return self.base_dir / "reviews.json"
