@@ -234,6 +234,25 @@ class CoupangReviewService(
                 }
                 return '';
               };
+              const parseUrlIds = (href) => {
+                if (!href) return { product_id: '', order_id: '' };
+                try {
+                  const url = new URL(href, window.location.origin);
+                  return {
+                    product_id:
+                      url.searchParams.get('productId') ||
+                      url.searchParams.get('product_id') ||
+                      '',
+                    order_id:
+                      url.searchParams.get('completedOrderVendorItemId') ||
+                      url.searchParams.get('orderId') ||
+                      url.searchParams.get('order_id') ||
+                      '',
+                  };
+                } catch (error) {
+                  return { product_id: '', order_id: '' };
+                }
+              };
               const buildItem = (container, element, href, reviewId) => {
                 const titleElement = (
                   container?.querySelector('.js_reviewWroteListProductTitle') ||
@@ -253,17 +272,31 @@ class CoupangReviewService(
                   ''
                 );
                 const rating = container?.querySelectorAll('.wrote-list-rating-active').length || 0;
-                const productId = findDataValue(container, element, [
-                  'data-product-id',
-                  'data-productid',
-                  'product-id',
-                ]);
-                const orderId = findDataValue(container, element, [
-                  'data-order-id',
-                  'data-orderid',
-                  'data-completed-order-vendor-item-id',
-                  'completed-order-vendor-item-id',
-                ]);
+                const dateElement = container?.querySelector(
+                  '.my-review__wrote__date, .my-review__wrote__purchase, [class*="date"], time'
+                );
+                const dateText = normalizeText(dateElement?.textContent || '');
+                const dateMatch = (
+                  dateText ||
+                  containerText
+                ).match(/(20\\d{2})[.\\-/년\\s]*(\\d{1,2})[.\\-/월\\s]*(\\d{1,2})/);
+                const writtenAt = dateMatch
+                  ? `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`
+                  : dateText;
+                const fromUrl = parseUrlIds(href);
+                const productId =
+                  findDataValue(container, element, [
+                    'data-product-id',
+                    'data-productid',
+                    'product-id',
+                  ]) || fromUrl.product_id;
+                const orderId =
+                  findDataValue(container, element, [
+                    'data-order-id',
+                    'data-orderid',
+                    'data-completed-order-vendor-item-id',
+                    'completed-order-vendor-item-id',
+                  ]) || fromUrl.order_id;
                 return {
                   review_id: reviewId,
                   product_id: productId.trim(),
@@ -271,6 +304,7 @@ class CoupangReviewService(
                   product_name: productName || containerText,
                   rating,
                   review_text: reviewText,
+                  written_at: writtenAt,
                   modify_url: href || modifyUrlFromReviewId(reviewId),
                 };
               };
@@ -360,6 +394,7 @@ class CoupangReviewService(
                     rating=int(entry.get("rating") or 0),
                     review_text=str(entry.get("review_text") or "").strip(),
                     modify_url=modify_url or build_review_modify_url(review_id=review_id),
+                    written_at=str(entry.get("written_at") or "").strip(),
                 )
             )
 
@@ -556,6 +591,7 @@ class CoupangReviewService(
                 rating=item.rating,
                 review_text=item.review_text,
                 modify_url=item.modify_url,
+                written_at=item.written_at,
             )
             for index, item in enumerate(browser_result.items, start=1)
             if isinstance(item, _EditableReviewItemData)
@@ -579,6 +615,9 @@ class CoupangReviewService(
                 message="쿠팡 리뷰 업로드 성공",
                 order_id=request.order_id,
                 product_id=request.product_id,
+                product_name=browser_result.product_name,
+                rating=request.rating,
+                text=request.text,
             )
 
         message = browser_result.message or review_state_message(
@@ -613,6 +652,9 @@ class CoupangReviewService(
                 order_id=request.order_id,
                 product_id=request.product_id,
                 review_id=request.review_id,
+                product_name=browser_result.product_name,
+                rating=request.rating,
+                text=request.text,
             )
 
         message = browser_result.message or review_state_message(
@@ -633,6 +675,8 @@ class CoupangReviewService(
             order_id=request.order_id,
             product_id=request.product_id,
             review_id=request.review_id,
+            rating=request.rating,
+            text=request.text,
         )
 
     def _to_delete_result(

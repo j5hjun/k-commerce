@@ -13,6 +13,8 @@ class CartItem:
     vendor_item_id: str = ""
     item_id: str = ""
     delivery_text: str = ""
+    image_url: str = ""
+    product_link: str = ""
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,8 @@ class CartQuantityUpdateResult:
     product_id: str = ""
     vendor_item_id: str = ""
     item_id: str = ""
+    product_name: str = ""
+    option_text: str = ""
     notice: str = ""
 
 
@@ -69,6 +73,8 @@ class _CartItemData:
     vendor_item_id: str = ""
     item_id: str = ""
     delivery_text: str = ""
+    image_url: str = ""
+    product_link: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,3 +83,5 @@ class _ListCartBrowserResult:
     items: tuple[_CartItemData, ...] = ()
     message: str | None = None
     applied_quantity: int | None = None
+    product_name: str = ""
+    option_text: str = ""

@@ -10,13 +10,15 @@ from k_commerce_cli.services.types import (
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
     ProviderName,
+    ReviewEditRequest,
+    ReviewEditResult,
     ReviewUploadRequest,
     ReviewUploadResult,
     StatusResult,
 )
 from k_commerce_cli.services.registry import list_providers
 
-ProviderRequest = CartQuantityUpdateRequest | ReviewUploadRequest | None
+ProviderRequest = CartQuantityUpdateRequest | ReviewEditRequest | ReviewUploadRequest | None
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,17 @@ class FakeProvider:
             message="쿠팡 리뷰 작성 성공",
             order_id=request.order_id,
             product_id=request.product_id,
+        )
+
+    async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult:
+        self.calls.append(ProviderCall("edit_review", request))
+        return ReviewEditResult(
+            provider=ProviderName.COUPANG,
+            success=True,
+            message="쿠팡 리뷰 수정 성공",
+            order_id=request.order_id,
+            product_id=request.product_id,
+            review_id=request.review_id,
         )
 
 
@@ -168,6 +181,34 @@ async def test_review_upload_builds_dataclass_request_when_payload_is_valid(
                 rating=5,
                 text="좋아요",
                 review_url="https://example.test/review",
+            ),
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_review_edit_allows_missing_order_and_product_ids(
+    fake_provider: FakeProvider,
+    runtime_options: ToolRuntimeOptions,
+) -> None:
+    payload = {
+        "provider": "coupang",
+        "review_id": "934113278",
+        "rating": 5,
+        "text": "좋아요",
+    }
+
+    await invoke_tool("review_edit", payload, runtime_options=runtime_options)
+
+    assert fake_provider.calls == [
+        ProviderCall(
+            "edit_review",
+            ReviewEditRequest(
+                order_id="",
+                product_id="",
+                review_id="934113278",
+                rating=5,
+                text="좋아요",
             ),
         )
     ]

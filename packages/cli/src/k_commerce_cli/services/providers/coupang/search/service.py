@@ -68,6 +68,24 @@ def deserialize_evaluate_result(value: object) -> object:
     return value
 
 
+SEARCH_NAME_MAX_LENGTH = 80
+
+
+def _format_price_display(price: str) -> str:
+    text = price.strip()
+    if not text or text == "-":
+        return "-"
+    if "원" in text or "쿠폰" in text:
+        return text
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        return text
+    value = int(digits)
+    if value <= 0:
+        return text
+    return f"{value:,}원"
+
+
 class CoupangSearchService:
     def __init__(
         self,
@@ -137,7 +155,7 @@ class CoupangSearchService:
                 index=index,
                 product_id=item.product_id,
                 product_name=item.product_name,
-                price=item.price,
+                price=_format_price_display(item.price),
                 rating=item.rating,
                 image_url=item.image_url,
                 product_link=item.product_link,
@@ -652,7 +670,7 @@ class CoupangSearchService:
                 );
                 const productName = truncateText(
                   normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
-                  30
+                  {SEARCH_NAME_MAX_LENGTH}
                 );
                 if (!productId || !productName) {{
                   return null;
@@ -756,7 +774,7 @@ class CoupangSearchService:
                     ) || linkElement;
                   const productName = truncateText(
                     normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
-                    30
+                    {SEARCH_NAME_MAX_LENGTH}
                   );
                   if (!productName) {{
                     continue;
@@ -809,7 +827,7 @@ class CoupangSearchService:
                       const productLink = String(item.url || '');
                       const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
                       const productId = productIdMatch ? productIdMatch[1] : '';
-                      const productName = truncateText(normalizeText(item.name || ''), 30);
+                      const productName = truncateText(normalizeText(item.name || ''), {SEARCH_NAME_MAX_LENGTH});
                       if (!productId || !productName) {{
                         continue;
                       }}
