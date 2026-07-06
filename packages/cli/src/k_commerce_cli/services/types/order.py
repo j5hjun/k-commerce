@@ -16,6 +16,8 @@ __all__ = [
     "OrderListRequest",
     "OrderListResult",
     "OrderResult",
+    "OrderSearchRequest",
+    "OrderSearchResult",
     "OrderSyncRequest",
     "OrderSyncResult",
 ]
@@ -41,6 +43,14 @@ class OrderListRequest:
 @dataclass(frozen=True, slots=True)
 class OrderDetailRequest:
     order_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class OrderSearchRequest:
+    keyword: str
+    start_date: str | None = None
+    end_date: str | None = None
+    limit: int = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +118,22 @@ class OrderListResult:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderSearchResult:
+    success: bool
+    provider: str
+    message: str
+    keyword: str
+    start_date: str | None
+    end_date: str | None
+    count: int
+    total_count: int
+    orders: tuple[OrderListItem, ...]
+    error_code: str = ""
+    retryable: bool = False
+    next_tools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class OrderDetailResult:
     success: bool
     provider: str
@@ -137,4 +163,4 @@ class OrderFailuresResult:
     next_tools: tuple[str, ...] = ()
 
 
-OrderResult: TypeAlias = OrderSyncResult | OrderListResult | OrderDetailResult | OrderFailuresResult
+OrderResult: TypeAlias = OrderSyncResult | OrderListResult | OrderSearchResult | OrderDetailResult | OrderFailuresResult

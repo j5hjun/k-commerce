@@ -105,6 +105,38 @@ async def order_sync(
         raise click.BadParameter(str(exc), param_hint="provider") from exc
 
 
+@order.command("search")
+@click.argument("provider")
+@click.argument("keyword")
+@click.option("--start-date", default=None, help="Search orders from YYYY-MM-DD.")
+@click.option("--end-date", default=None, help="Search orders through YYYY-MM-DD.")
+@click.option("--limit", default=50, type=int, help="Maximum matched orders to return.")
+@click.option("--root-dir", "--root_dir", default=None, help="Override the provider root directory.")
+@click.pass_context
+async def order_search(
+    ctx: click.Context,
+    provider: str,
+    keyword: str,
+    start_date: str | None,
+    end_date: str | None,
+    limit: int,
+    root_dir: str | None,
+) -> None:
+    terminal = ctx.obj["terminal"]
+    try:
+        await invoke_tool(
+            "order_search",
+            {"provider": provider, "keyword": keyword, "start_date": start_date, "end_date": end_date, "limit": limit},
+            runtime_options=ToolRuntimeOptions(
+                root_dir=_resolve_root_dir(root_dir),
+                terminal=terminal,
+                get_provider=get_provider,
+            ),
+        )
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="provider") from exc
+
+
 @order.command("detail")
 @click.argument("provider")
 @click.argument("order_id")

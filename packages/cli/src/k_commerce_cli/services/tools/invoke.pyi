@@ -14,6 +14,7 @@ from k_commerce_cli.services.types import (
     OrderDetailResult,
     OrderFailuresResult,
     OrderListResult,
+    OrderSearchResult,
     OrderSyncResult,
     ReviewDeleteResult,
     ReviewEditResult,
@@ -46,6 +47,10 @@ async def invoke_tool(tool_name: Literal["order_sync"], payload: JSONValue, *, r
 
 @overload
 async def invoke_tool(tool_name: Literal["order_list"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderListResult: ...
+
+
+@overload
+async def invoke_tool(tool_name: Literal["order_search"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderSearchResult: ...
 
 
 @overload

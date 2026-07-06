@@ -32,6 +32,7 @@ The canonical tool names are:
 - `logout`
 - `order_sync`
 - `order_list`
+- `order_search`
 - `order_detail`
 - `order_failures`
 - `cart_list`

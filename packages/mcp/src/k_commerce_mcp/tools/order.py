@@ -3,6 +3,7 @@ from k_commerce_cli.services.types import (
     OrderDetailResult,
     OrderFailuresResult,
     OrderListResult,
+    OrderSearchResult,
     OrderSyncResult,
 )
 from k_commerce_mcp.tools._result import expect_tool_result
@@ -64,6 +65,23 @@ async def order_detail(provider: str, order_id: str) -> OrderDetailResult:
             {"provider": provider, "order_id": order_id},
         ),
         OrderDetailResult,
+    )
+
+
+async def order_search(
+    provider: str,
+    keyword: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 50,
+) -> OrderSearchResult:
+    return expect_tool_result(
+        "order_search",
+        await invoke_tool(
+            "order_search",
+            {"provider": provider, "keyword": keyword, "start_date": start_date, "end_date": end_date, "limit": limit},
+        ),
+        OrderSearchResult,
     )
 
 

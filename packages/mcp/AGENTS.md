@@ -17,7 +17,7 @@ wrappers delegate through `k_commerce_cli.services.tools.invoke.invoke_tool`.
 
 ## Tool surface
 
-Canonical tool names: `get_providers`, `login`, `status`, `logout`, `order_sync`, `order_list`, `order_detail`, `order_failures`, `cart_list`,
+Canonical tool names: `get_providers`, `login`, `status`, `logout`, `order_sync`, `order_list`, `order_search`, `order_detail`, `order_failures`, `cart_list`,
 `cart_update_quantity`, `cart_delete_item`, `cart_delete_items`, `cart_clear`, `search_products`,
 `review_list_reviewable`, `review_list_editable`, `review_upload`, `review_edit`, `review_delete`.
 

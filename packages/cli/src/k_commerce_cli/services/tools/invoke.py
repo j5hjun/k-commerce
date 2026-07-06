@@ -14,6 +14,7 @@ from k_commerce_cli.services.types import (
     OrderDetailRequest,
     OrderFailuresRequest,
     OrderListRequest,
+    OrderSearchRequest,
     OrderResult,
     OrderSyncRequest,
     ReviewDeleteRequest,
@@ -62,6 +63,8 @@ async def invoke_tool(
             return await _invoke_order_sync(request, options)
         case "order_list":
             return await _invoke_order_list(request, options)
+        case "order_search":
+            return await _invoke_order_search(request, options)
         case "order_detail":
             return await _invoke_order_detail(request, options)
         case "order_failures":
@@ -153,6 +156,17 @@ async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) 
     )
     provider = _get_provider("order_list", payload, options)
     return await provider.list_orders(request)
+
+
+async def _invoke_order_search(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
+    request = OrderSearchRequest(
+        keyword=_required_str("order_search", payload, "keyword"),
+        start_date=_optional_date_str("order_search", payload, "start_date"),
+        end_date=_optional_date_str("order_search", payload, "end_date"),
+        limit=_optional_limit("order_search", payload, "limit", default=50),
+    )
+    provider = _get_provider("order_search", payload, options)
+    return await provider.search_orders(request)
 
 
 async def _invoke_order_detail(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
