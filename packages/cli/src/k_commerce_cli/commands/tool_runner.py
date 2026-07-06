@@ -27,6 +27,7 @@ class ToolRunnerError(Exception):
     message: str
     tool_name: str | None = None
     field: str | None = None
+    next_tools: tuple[str, ...] = ()
 
 
 def should_use_generic_runner(inline_json: str | None, request_file: Path | None) -> bool:
@@ -87,6 +88,7 @@ async def run_tool_command(
                 message=exc.message,
                 tool_name=exc.tool_name,
                 field=exc.field,
+                next_tools=exc.next_tools,
             )
         )
         raise click.exceptions.Exit(1) from exc
@@ -174,4 +176,5 @@ def _emit_error(error: ToolRunnerError) -> None:
         body["tool_name"] = error.tool_name
     if error.field is not None:
         body["field"] = error.field
+    body["next_tools"] = list(error.next_tools)
     click.echo(json.dumps({"error": body}, ensure_ascii=False, indent=2), err=True)

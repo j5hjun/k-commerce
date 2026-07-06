@@ -21,6 +21,7 @@ class ListCartResult:
     success: bool
     message: str
     items: tuple[CartItem, ...]
+    next_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class CartDeleteResult:
     success: bool
     message: str
     deleted_count: int = 0
+    next_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,7 @@ class CartQuantityUpdateResult:
     vendor_item_id: str = ""
     item_id: str = ""
     notice: str = ""
+    next_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

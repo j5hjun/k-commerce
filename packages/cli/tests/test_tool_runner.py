@@ -34,6 +34,7 @@ async def test_inline_json_invokes_generic_runner_when_tool_name_is_registered(f
         "provider": "coupang",
         "logged_in": True,
         "message": "쿠팡 로그인 상태입니다",
+        "next_tools": [],
     }
     assert fake_provider.calls == [ProviderCall("status")]
 
@@ -61,6 +62,7 @@ async def test_request_file_invokes_generic_runner_when_tool_name_is_registered(
         "vendor_item_id": "v",
         "item_id": "i",
         "notice": "",
+        "next_tools": [],
     }
     assert fake_provider.calls == [
         ProviderCall(
