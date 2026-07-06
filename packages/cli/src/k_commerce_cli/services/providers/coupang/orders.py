@@ -53,12 +53,14 @@ class CoupangOrderService:
             terminal.info("쿠팡 주문 수집을 시작합니다...")
         if not self.store.has_session():
             payload = self._empty_payload(refresh=refresh)
-            self._emit_order_result(terminal, payload)
-            return self._order_list_result(payload, LOGIN_REQUIRED_METADATA)
+            return self._not_logged_in_order_result(payload)
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             await self._open_order_list(self._browser_session)
+            if await self._is_order_login_page():
+                payload = self._empty_payload(refresh=refresh)
+                return self._not_logged_in_order_result(payload)
             if failed_only:
                 payload = await self._retry_failed_pages(terminal)
                 self.store.write_orders(payload.to_dict())
@@ -120,6 +122,35 @@ class CoupangOrderService:
 
     async def _open_order_list(self, session: BrowserSession) -> None:
         await session.tab.get(COUPANG_ORDER_LIST_URL)
+
+    async def _is_order_login_page(self) -> bool:
+        try:
+            state = await self._evaluate(
+                """
+                (() => ({
+                  url: window.location.href,
+                  body_text: document.body?.innerText || '',
+                  has_password_input:
+                    document.querySelector('input[type="password"], input[name="password"], #login-password-input') !== null
+                }))()
+                """
+            )
+        except RuntimeError as exc:
+            if is_browser_closed_error(exc):
+                raise
+            return False
+        if not isinstance(state, dict):
+            return False
+
+        page_url = str(state.get("url", ""))
+        body_text = str(state.get("body_text", ""))
+        has_password_input = bool(state.get("has_password_input"))
+        return (
+            "login.coupang.com" in page_url
+            or "login/login.pang" in page_url
+            or "로그인이 필요" in body_text
+            or (has_password_input and "coupang.com" in page_url)
+        )
 
     async def _wait_for_visible_years(self, poll_count: int = 5) -> list[str]:
         for attempt in range(poll_count):
@@ -398,6 +429,15 @@ class CoupangOrderService:
             error_code=BROWSER_CLOSED_METADATA.error_code,
             retryable=BROWSER_CLOSED_METADATA.retryable,
             next_tools=BROWSER_CLOSED_METADATA.next_tools,
+        )
+
+    def _not_logged_in_order_result(self, payload: CoupangOrderList) -> CoupangOrderListResult:
+        return CoupangOrderListResult(
+            message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+            payload=payload,
+            error_code=LOGIN_REQUIRED_METADATA.error_code,
+            retryable=LOGIN_REQUIRED_METADATA.retryable,
+            next_tools=LOGIN_REQUIRED_METADATA.next_tools,
         )
 
     def _build_payload(

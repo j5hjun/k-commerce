@@ -91,6 +91,8 @@ class CoupangCartService(CoupangCartDelete):
         self._browser_session: BrowserSession | None = None
 
     async def list_cart(self) -> ListCartResult:
+        if not self.store.has_session():
+            return self._to_list_result(_ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN))
         async with self.cart_session() as cart_session:
             return await cart_session.list_cart()
 
@@ -98,10 +100,26 @@ class CoupangCartService(CoupangCartDelete):
         self,
         request: CartQuantityUpdateRequest,
     ) -> CartQuantityUpdateResult:
+        validation_error = self._validate_quantity_update_request(request)
+        if validation_error is not None:
+            return self._failure_quantity_update_result(request, validation_error)
+        if not self.store.has_session():
+            return self._to_quantity_update_result(
+                request,
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.update_cart_quantity(request)
 
     async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        validation_error = self._validate_delete_request(request)
+        if validation_error is not None:
+            return self._failure_delete_result(validation_error)
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.delete_cart_item(request)
 
@@ -109,10 +127,26 @@ class CoupangCartService(CoupangCartDelete):
         self,
         requests: tuple[CartDeleteRequest, ...],
     ) -> CartDeleteResult:
+        if not requests:
+            return self._failure_delete_result("삭제할 상품을 선택해주세요.")
+        for request in requests:
+            validation_error = self._validate_delete_request(request)
+            if validation_error is not None:
+                return self._failure_delete_result(validation_error)
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.delete_cart_items(requests)
 
     async def clear_cart(self) -> CartDeleteResult:
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.clear_cart()
 

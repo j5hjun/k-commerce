@@ -63,6 +63,10 @@ class CoupangReviewService(
 
     async def list_reviewable(self) -> ListReviewableResult:
         """저장된 세션으로 쿠팡 리뷰 작성 가능 상품 목록을 조회합니다."""
+        if not self.store.has_session():
+            return self._to_list_result(
+                _ListReviewableBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
+            )
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._list_reviewable_items(self._browser_session)
@@ -377,6 +381,10 @@ class CoupangReviewService(
 
     async def list_editable(self) -> ListEditableReviewsResult:
         """저장된 세션으로 쿠팡 작성 리뷰 목록을 조회합니다."""
+        if not self.store.has_session():
+            return self._to_editable_list_result(
+                _ListReviewableBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN)
+            )
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._list_editable_review_items(self._browser_session)
@@ -404,6 +412,14 @@ class CoupangReviewService(
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 리뷰 업로드를 시작합니다...")
+
+        if not self.store.has_session():
+            return self._emit_upload_result(
+                self._to_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN),
+                )
+            )
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
@@ -456,6 +472,14 @@ class CoupangReviewService(
         if terminal is not None:
             terminal.info("쿠팡 리뷰 수정을 시작합니다...")
 
+        if not self.store.has_session():
+            return self._emit_edit_result(
+                self._to_edit_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN),
+                )
+            )
+
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._edit_review_browser(
@@ -506,6 +530,14 @@ class CoupangReviewService(
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 리뷰 삭제를 시작합니다...")
+
+        if not self.store.has_session():
+            return self._emit_delete_result(
+                self._to_delete_result(
+                    request,
+                    _ReviewUploadBrowserResult(state=CoupangReviewState.NOT_LOGGED_IN),
+                )
+            )
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
