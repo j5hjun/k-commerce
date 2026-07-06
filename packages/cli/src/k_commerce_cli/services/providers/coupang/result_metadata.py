@@ -13,19 +13,29 @@ class ResultMetadata:
 
 
 EMPTY_METADATA: Final = ResultMetadata()
+BROWSER_CLOSED_ERROR_CODE: Final = "browser_closed"
+BROWSER_CLOSED_METADATA: Final = ResultMetadata(error_code=BROWSER_CLOSED_ERROR_CODE, retryable=True)
 LOGIN_REQUIRED_METADATA: Final = ResultMetadata(
     error_code="not_logged_in",
     next_tools=("login",),
 )
 VALIDATION_METADATA: Final = ResultMetadata(error_code="validation_error")
+BROWSER_CLOSED_ERROR_MARKERS: Final = (
+    "browser closed",
+    "session with given id not found",
+    "target closed",
+    "invalid target id",
+    "no such target",
+    "websocket connection is closed",
+)
 
 _CART_RETRYABLE_METADATA: Final[dict[str, ResultMetadata]] = {
     CoupangCartState.PAGE_LOAD_FAILED: ResultMetadata(error_code=CoupangCartState.PAGE_LOAD_FAILED, retryable=True),
-    CoupangCartState.BROWSER_CLOSED: ResultMetadata(error_code=CoupangCartState.BROWSER_CLOSED, retryable=True),
+    CoupangCartState.BROWSER_CLOSED: BROWSER_CLOSED_METADATA,
 }
 
 _REVIEW_RETRYABLE_METADATA: Final[dict[str, ResultMetadata]] = {
-    CoupangReviewState.BROWSER_CLOSED: ResultMetadata(error_code=CoupangReviewState.BROWSER_CLOSED, retryable=True),
+    CoupangReviewState.BROWSER_CLOSED: BROWSER_CLOSED_METADATA,
     CoupangReviewState.SUBMIT_FAILED: ResultMetadata(error_code=CoupangReviewState.SUBMIT_FAILED, retryable=True),
 }
 
@@ -78,6 +88,7 @@ _REVIEW_METADATA: Final[dict[str, ResultMetadata]] = {
 _SEARCH_METADATA: Final[dict[str, ResultMetadata]] = {
     "not_logged_in": LOGIN_REQUIRED_METADATA,
     "no_results": ResultMetadata(error_code="no_results"),
+    BROWSER_CLOSED_ERROR_CODE: BROWSER_CLOSED_METADATA,
 }
 
 
@@ -91,3 +102,8 @@ def review_metadata(state: str) -> ResultMetadata:
 
 def search_metadata(state: str) -> ResultMetadata:
     return _SEARCH_METADATA.get(state, ResultMetadata(error_code=state, retryable=True))
+
+
+def is_browser_closed_error(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in BROWSER_CLOSED_ERROR_MARKERS)

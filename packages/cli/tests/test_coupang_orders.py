@@ -181,6 +181,30 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
 
 
 @pytest.mark.anyio
+async def test_list_orders_returns_browser_closed_when_initial_navigation_closes(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock(side_effect=RuntimeError("Session with given id not found."))
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.list_orders(refresh=True)
+
+    assert result.message == "브라우저가 닫혀 주문 수집을 완료하지 못했습니다."
+    assert result.payload.orders == []
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
 async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> None:
     store = _StoreStub(tmp_path)
     store._orders = CoupangOrderList(

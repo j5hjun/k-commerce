@@ -10,7 +10,11 @@ from k_commerce_cli.services.types import (
     ProviderName,
     StatusResult,
 )
-from k_commerce_cli.services.providers.coupang.result_metadata import LOGIN_REQUIRED_METADATA
+from k_commerce_cli.services.providers.coupang.result_metadata import (
+    BROWSER_CLOSED_METADATA,
+    LOGIN_REQUIRED_METADATA,
+    is_browser_closed_error,
+)
 
 COUPANG_HOME_URL = "https://www.coupang.com/"
 COUPANG_LOGIN_URL = "https://login.coupang.com/login/login.pang"
@@ -102,6 +106,18 @@ class CoupangAuthService:
                 LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
             )
         except RuntimeError as exc:
+            if is_browser_closed_error(exc):
+                return self._emit_login_result(
+                    terminal,
+                    LoginResult(
+                        provider=self.provider,
+                        success=False,
+                        message="브라우저가 닫혀 로그인을 완료하지 못했습니다.",
+                        error_code=BROWSER_CLOSED_METADATA.error_code,
+                        retryable=BROWSER_CLOSED_METADATA.retryable,
+                        next_tools=BROWSER_CLOSED_METADATA.next_tools,
+                    ),
+                )
             if str(exc) not in {
                 COUPANG_ACCESS_BLOCKED_MESSAGE,
                 COUPANG_DATA_REQUEST_FAILED_MESSAGE,
@@ -148,6 +164,20 @@ class CoupangAuthService:
                     error_code="" if logged_in else LOGIN_REQUIRED_METADATA.error_code,
                     retryable=False,
                     next_tools=() if logged_in else LOGIN_REQUIRED_METADATA.next_tools,
+                ),
+            )
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._emit_status_result(
+                terminal,
+                StatusResult(
+                    provider=self.provider,
+                    logged_in=False,
+                    message="브라우저가 닫혀 로그인 상태를 확인하지 못했습니다.",
+                    error_code=BROWSER_CLOSED_METADATA.error_code,
+                    retryable=BROWSER_CLOSED_METADATA.retryable,
+                    next_tools=BROWSER_CLOSED_METADATA.next_tools,
                 ),
             )
         finally:

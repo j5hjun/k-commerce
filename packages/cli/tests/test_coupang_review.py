@@ -132,6 +132,23 @@ def _delete_request() -> ReviewDeleteRequest:
     )
 
 
+@pytest.mark.anyio
+async def test_list_reviewable_returns_browser_closed_when_browser_launch_closes() -> None:
+    browser = _BrowserSpy()
+    browser.launch.side_effect = RuntimeError("browser closed")
+    service = _make_review_service(browser=browser)
+
+    result = await service.list_reviewable()
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "브라우저가 닫혀 작업을 계속할 수 없습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_not_awaited()
+
+
 def test_build_review_register_url() -> None:
     assert build_review_register_url(
         completed_order_vendor_item_id="22404668406",
