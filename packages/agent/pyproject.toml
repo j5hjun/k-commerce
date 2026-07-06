@@ -15,6 +15,7 @@ dependencies = [
   "langchain-mcp-adapters",
   "langchain-openai",
   "langchain-ibm",
+  "ddgs>=9.14.4",
 ]
 
 [project.scripts]
