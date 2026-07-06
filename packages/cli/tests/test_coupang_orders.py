@@ -14,7 +14,7 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderResult,
     CoupangOrderSummary,
 )
-from k_commerce_cli.services.types import OrderSyncRequest, ProviderName
+from k_commerce_cli.services.types import OrderSearchRequest, OrderSyncRequest, ProviderName
 
 
 class ExceptionDetails:
@@ -179,6 +179,65 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     assert store._orders == payload.to_dict()
     assert result.message == "주문 새로 생성 완료: 총 1건"
+
+
+@pytest.mark.anyio
+async def test_search_orders_collects_keyword_pages_with_same_order_payload_parser(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            {
+                "orderList": [_order_payload(order_id=10, title="detergent")],
+                "orderPagination": {"hasNext": True, "nextPageIndex": 1},
+            },
+            {
+                "orderList": [_order_payload(order_id=20, title="detergent refill")],
+                "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.search_orders(OrderSearchRequest(keyword="세제", limit=10))
+
+    assert result.success is True
+    assert result.keyword == "세제"
+    assert result.count == 2
+    assert [order.order_id for order in result.orders] == ["10", "20"]
+    tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=0"
+    )
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=1"
+    )
+
+
+@pytest.mark.anyio
+async def test_search_orders_returns_not_logged_in_when_session_is_missing(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path, has_session=False)
+    browser = Mock()
+    browser.launch = AsyncMock()
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.search_orders(OrderSearchRequest(keyword="세제"))
+
+    assert result.success is False
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio

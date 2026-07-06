@@ -11,6 +11,7 @@ _TOOL_DEFINITIONS: Final[tuple[ToolDefinition, ...]] = (
     ToolDefinition("logout", "Log out from a commerce provider."),
     ToolDefinition("order_sync", "Collect provider orders into the local order snapshot."),
     ToolDefinition("order_list", "List saved provider orders without opening a browser."),
+    ToolDefinition("order_search", "Search provider orders from the browser-backed order page."),
     ToolDefinition("order_detail", "Show one saved provider order in detail."),
     ToolDefinition("order_failures", "List saved provider orders that need attention."),
     ToolDefinition("cart_list", "List cart items."),

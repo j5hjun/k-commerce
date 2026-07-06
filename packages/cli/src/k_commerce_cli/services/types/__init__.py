@@ -18,6 +18,8 @@ from .order import (
     OrderListRequest,
     OrderListResult,
     OrderResult,
+    OrderSearchRequest,
+    OrderSearchResult,
     OrderSyncRequest,
     OrderSyncResult,
 )
@@ -56,6 +58,8 @@ __all__ = [
     "OrderListRequest",
     "OrderListResult",
     "OrderResult",
+    "OrderSearchRequest",
+    "OrderSearchResult",
     "OrderSyncRequest",
     "OrderSyncResult",
     "EditableReviewItem",

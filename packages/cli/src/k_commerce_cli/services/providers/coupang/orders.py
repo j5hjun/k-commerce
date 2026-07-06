@@ -34,6 +34,8 @@ from k_commerce_cli.services.types import (
     OrderListItem,
     OrderListRequest,
     OrderListResult,
+    OrderSearchRequest,
+    OrderSearchResult,
     OrderSyncRequest,
     OrderSyncResult,
     ProviderName,
@@ -128,6 +130,60 @@ class CoupangOrderService:
             next_cursor=str(next_offset) if has_more else None,
             orders=tuple(self._order_list_item(order) for order in page),
         )
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        terminal = self.terminal
+        if terminal is not None:
+            terminal.info(f"쿠팡 주문 검색을 시작합니다: {request.keyword}")
+        if not self.store.has_session():
+            return self._not_logged_in_order_search_result(request)
+
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            await self._open_order_list(self._browser_session)
+            if await self._is_order_login_page():
+                return self._not_logged_in_order_search_result(request)
+
+            years = self._filter_year_scope(await self._wait_for_visible_years(), request.start_date, request.end_date)
+            if not years:
+                return OrderSearchResult(
+                    success=True,
+                    provider=self.provider.value,
+                    message="주문 검색 결과가 없습니다.",
+                    keyword=request.keyword,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    count=0,
+                    total_count=0,
+                    orders=(),
+                )
+
+            orders, failed_pages = await self._collect_search_years(years, request.keyword, terminal)
+            filtered_orders = self._filter_orders(orders, request.start_date, request.end_date, "all")
+            page = filtered_orders[: request.limit]
+            metadata = EMPTY_METADATA
+            if failed_pages:
+                metadata = ResultMetadata(error_code="partial_order_search_failed", retryable=True, next_tools=("order_search",))
+            return OrderSearchResult(
+                success=metadata.error_code == "",
+                provider=self.provider.value,
+                message=f"주문 검색 완료: {len(page)}건(전체 {len(filtered_orders)}건)",
+                keyword=request.keyword,
+                start_date=request.start_date,
+                end_date=request.end_date,
+                count=len(page),
+                total_count=len(filtered_orders),
+                orders=tuple(self._order_list_item(order) for order in page),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
+            )
+        except RuntimeError as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._browser_closed_order_search_result(request)
+        finally:
+            await self._close_browser_session()
 
     async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult:
         payload = self._load_previous_order_list()
@@ -299,6 +355,31 @@ class CoupangOrderService:
                 page_index = pagination["nextPageIndex"]
         return collected, failed_pages
 
+    async def _collect_search_years(
+        self,
+        years: list[str],
+        keyword: str,
+        terminal: Terminal | None,
+    ) -> tuple[list[CoupangOrderResult], list[list[int | str]]]:
+        collected: list[CoupangOrderResult] = []
+        failed_pages: list[list[int | str]] = []
+        for year in years:
+            page_index = 0
+            while True:
+                if terminal is not None:
+                    terminal.info(f"{year}년 검색 결과 {page_index + 1}페이지 수집 중...")
+                try:
+                    page = await self._fetch_search_page_with_retry(year, page_index, keyword)
+                except RuntimeError:
+                    failed_pages.append([year, page_index + 1])
+                    break
+                collected.extend(self._build_order(order) for order in page["orderList"])
+                pagination = page["orderPagination"]
+                if not pagination["hasNext"]:
+                    break
+                page_index = pagination["nextPageIndex"]
+        return collected, failed_pages
+
     async def _retry_failed_pages(self, terminal: Terminal | None) -> CoupangOrderList:
         previous = self._load_previous_order_list()
         if previous is None:
@@ -359,6 +440,33 @@ class CoupangOrderService:
                 await anyio.sleep(1)
         assert last_error is not None
         raise last_error
+
+    async def _fetch_search_page_with_retry(self, year: str, page_index: int, keyword: str) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for _ in range(3):
+            try:
+                maybe_navigation = self._browser_session.tab.get(
+                    self._order_search_url(year=year, page_index=page_index, keyword=keyword)
+                )
+                if inspect.isawaitable(maybe_navigation):
+                    await maybe_navigation
+                return await self._wait_for_order_page_payload()
+            except RuntimeError as exc:
+                last_error = exc
+                await anyio.sleep(1)
+        assert last_error is not None
+        raise last_error
+
+    def _order_search_url(self, *, year: str, page_index: int, keyword: str) -> str:
+        query = urlencode(
+            {
+                "isSearch": "true",
+                "keyword": keyword,
+                "requestYear": year,
+                "pageIndex": str(page_index),
+            }
+        )
+        return f"{COUPANG_ORDER_LIST_URL}?{query}"
 
     async def _wait_for_order_page_payload(self, poll_count: int = 5) -> dict[str, Any]:
         last_error: Exception | None = None
@@ -563,6 +671,51 @@ class CoupangOrderService:
             retryable=False,
             next_tools=("order_sync",),
         )
+
+    def _not_logged_in_order_search_result(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return OrderSearchResult(
+            success=False,
+            provider=self.provider.value,
+            message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            count=0,
+            total_count=0,
+            orders=(),
+            error_code=LOGIN_REQUIRED_METADATA.error_code,
+            retryable=LOGIN_REQUIRED_METADATA.retryable,
+            next_tools=LOGIN_REQUIRED_METADATA.next_tools,
+        )
+
+    def _browser_closed_order_search_result(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return OrderSearchResult(
+            success=False,
+            provider=self.provider.value,
+            message="브라우저가 닫혀 주문 검색을 완료하지 못했습니다.",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            count=0,
+            total_count=0,
+            orders=(),
+            error_code=BROWSER_CLOSED_METADATA.error_code,
+            retryable=BROWSER_CLOSED_METADATA.retryable,
+            next_tools=BROWSER_CLOSED_METADATA.next_tools,
+        )
+
+    def _filter_year_scope(self, years: list[str], start_date: str | None, end_date: str | None) -> list[str]:
+        start_year = date.fromisoformat(start_date).year if start_date is not None else None
+        end_year = date.fromisoformat(end_date).year if end_date is not None else None
+        scoped_years: list[str] = []
+        for year in years:
+            year_number = int(year)
+            if start_year is not None and year_number < start_year:
+                continue
+            if end_year is not None and year_number > end_year:
+                continue
+            scoped_years.append(year)
+        return scoped_years
 
     def _filter_orders(
         self,

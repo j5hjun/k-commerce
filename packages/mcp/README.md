@@ -36,6 +36,7 @@ Canonical tools:
 - `logout`: Removes saved provider session artifacts while preserving credentials.
 - `order_sync`: Collects provider orders into the local order snapshot.
 - `order_list`: Lists saved provider orders without opening a browser.
+- `order_search`: Searches the browser-backed provider order page and returns matched orders.
 - `order_detail`: Shows one saved provider order in detail.
 - `order_failures`: Lists saved provider orders that need attention.
 - `cart_list`: Lists cart items.
@@ -72,6 +73,7 @@ Automation should prefer the canonical MCP tool names and request payloads.
 | `k-commerce logout coupang` | `logout` |
 | `k-commerce order sync coupang` | `order_sync` |
 | `k-commerce order list coupang` | `order_list` |
+| `k-commerce order search coupang KEYWORD` | `order_search` |
 | `k-commerce order detail coupang ORDER_ID` | `order_detail` |
 | `k-commerce order failures coupang` | `order_failures` |
 | `k-commerce search coupang KEYWORD` | `search_products` |

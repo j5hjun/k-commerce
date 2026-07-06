@@ -17,6 +17,7 @@ CANONICAL_TOOL_NAMES = [
     "logout",
     "order_sync",
     "order_list",
+    "order_search",
     "order_detail",
     "order_failures",
     "cart_list",

@@ -104,6 +104,6 @@ uv run k-commerce-agent
 
 ## NOTES
 
-- Canonical tool names: `get_providers`, `login`, `status`, `logout`, `order_sync`, `order_list`, `order_detail`, `order_failures`, `cart_list`, `cart_update_quantity`, `cart_delete_item`, `cart_delete_items`, `cart_clear`, `search_products`, `review_list_reviewable`, `review_list_editable`, `review_upload`, `review_edit`, `review_delete`.
+- Canonical tool names: `get_providers`, `login`, `status`, `logout`, `order_sync`, `order_list`, `order_search`, `order_detail`, `order_failures`, `cart_list`, `cart_update_quantity`, `cart_delete_item`, `cart_delete_items`, `cart_clear`, `search_products`, `review_list_reviewable`, `review_list_editable`, `review_upload`, `review_edit`, `review_delete`.
 - Main CLI regression surfaces: `test_cli.py`, `test_cli_alias_invocation.py`, `test_tool_runner.py`, `test_tool_runner_errors.py`, `test_coupang_login.py`, `test_coupang_orders.py`, `test_coupang_review.py`, `test_coupang_review_cli.py`.
 - `packages/cli/src/k_commerce_cli/services/providers/coupang/auth.py` has a TODO for live smoke reproduction despite unit coverage.

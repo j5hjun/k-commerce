@@ -23,6 +23,8 @@ from k_commerce_cli.services.types import (
     OrderFailuresResult,
     OrderListRequest,
     OrderListResult,
+    OrderSearchRequest,
+    OrderSearchResult,
     OrderSyncRequest,
     OrderSyncResult,
     ProviderName,
@@ -138,6 +140,8 @@ class Provider(Protocol):
 
     async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
 
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult: ...
+
     async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
 
     async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult: ...
@@ -164,6 +168,8 @@ class OrderService(Protocol):
     async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult: ...
 
     async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult: ...
 
     async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
 
@@ -372,6 +378,9 @@ class BaseProvider(
 
     async def list_orders(self, request: OrderListRequest) -> OrderListResult:
         return await self.order_service.list_orders(request)
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return await self.order_service.search_orders(request)
 
     async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult:
         return await self.order_service.get_order_detail(request)

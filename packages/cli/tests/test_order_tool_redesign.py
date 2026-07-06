@@ -16,6 +16,7 @@ from k_commerce_cli.services.types import (
     OrderDetailRequest,
     OrderFailuresRequest,
     OrderListRequest,
+    OrderSearchRequest,
     OrderSyncRequest,
     ProviderName,
 )
@@ -54,6 +55,7 @@ class _StoreStub:
 class _FakeProvider:
     def __init__(self) -> None:
         self.order_list_request: OrderListRequest | None = None
+        self.order_search_request: OrderSearchRequest | None = None
         self.order_sync_request: OrderSyncRequest | None = None
 
     async def list_orders(self, request: OrderListRequest):
@@ -62,6 +64,10 @@ class _FakeProvider:
 
     async def sync_orders(self, request: OrderSyncRequest):
         self.order_sync_request = request
+        return request
+
+    async def search_orders(self, request: OrderSearchRequest):
+        self.order_search_request = request
         return request
 
 
@@ -200,6 +206,37 @@ async def test_order_dispatch_separates_list_and_sync_requests(tmp_path: Path) -
         end_date="2026-06-30",
         failed_only=False,
         refresh=True,
+    )
+
+
+@pytest.mark.anyio
+async def test_order_search_dispatch_builds_typed_search_request(tmp_path: Path) -> None:
+    # Given: a provider factory that records typed order search requests.
+    provider = _FakeProvider()
+
+    def get_provider(provider_name: str, root_dir: Path | None = None, terminal=None):
+        assert provider_name == "coupang"
+        return provider
+
+    # When: order_search is invoked through the shared dispatcher.
+    result = await invoke_tool(
+        "order_search",
+        {
+            "provider": "coupang",
+            "keyword": "세제",
+            "start_date": "2026-01-01",
+            "end_date": "2026-06-30",
+            "limit": 25,
+        },
+        runtime_options=ToolRuntimeOptions(get_provider=get_provider, root_dir=tmp_path),
+    )
+
+    # Then: the provider receives a typed search request.
+    assert result == OrderSearchRequest(
+        keyword="세제",
+        start_date="2026-01-01",
+        end_date="2026-06-30",
+        limit=25,
     )
 
 
