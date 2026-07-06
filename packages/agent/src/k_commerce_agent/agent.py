@@ -1,9 +1,15 @@
+import json
+from typing import Any
+
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
 
 from k_commerce_agent.config import settings
+from k_commerce_agent.history import LIST_TOOLS, compact_tool_content
 from k_commerce_agent.mcp_client import load_tools
+from k_commerce_agent.tools.web_search import web_search
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -16,6 +22,8 @@ def is_model_configured() -> bool:
     provider = settings.llm_provider.strip().lower()
     if provider in ("hf", "huggingface"):
         return bool(settings.llm_model and settings.hf_token)
+    if provider == "ollama":
+        return bool(settings.llm_model)
     if provider in ("watsonx", "ibm"):
         return all(
             (
@@ -59,6 +67,23 @@ def build_model() -> BaseChatModel:
             api_key=settings.hf_token,
         )
 
+    if provider == "ollama":
+        if not settings.llm_model:
+            raise ModelNotConfiguredError(
+                "Ollama 설정이 부족합니다. AGENT_LLM_MODEL에 tool calling을 지원하는 "
+                "모델 태그(예: 'qwen2.5:7b-instruct')를 지정하세요."
+            )
+
+        from langchain_openai import ChatOpenAI
+
+        # Ollama's OpenAI-compatible endpoint ignores the API key but the
+        # client requires a non-empty value.
+        return ChatOpenAI(
+            model=settings.llm_model,
+            base_url=settings.ollama_base_url,
+            api_key="ollama",
+        )
+
     if provider in ("watsonx", "ibm"):
         missing = [
             name
@@ -94,6 +119,72 @@ def build_model() -> BaseChatModel:
     return init_chat_model(settings.llm_model)
 
 
+def _tool_error_payload(tool_name: str, exc: Exception) -> str:
+    return json.dumps(
+        {
+            "error": {
+                "type": "tool_error",
+                "message": str(exc),
+                "tool_name": tool_name,
+            }
+        },
+        ensure_ascii=False,
+    )
+
+
+def _with_safe_tool_errors(tool: BaseTool) -> BaseTool:
+    """Return tool results instead of raising so the chat stream can finish."""
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def safe_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        try:
+            return await coroutine(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the frontend as structured JSON
+            payload = _tool_error_payload(tool.name, exc)
+            if use_artifact:
+                return payload, None
+            return payload
+
+    return tool.model_copy(update={"coroutine": safe_coroutine})
+
+
+def _with_compact_tool_results(tool: BaseTool) -> BaseTool:
+    """Return compact list-tool payloads so the LLM does not see huge JSON blobs."""
+
+    if tool.name not in LIST_TOOLS:
+        return tool
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def compact_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        if use_artifact and isinstance(result, tuple):
+            content, artifact = result
+            return compact_tool_content(tool.name, content), artifact
+        return compact_tool_content(tool.name, result)
+
+    return tool.model_copy(update={"coroutine": compact_coroutine})
+
+
+def _wrap_tool(tool: BaseTool) -> BaseTool:
+    return _with_compact_tool_results(_with_safe_tool_errors(tool))
+
+
 async def build_agent():
     """Build a tool-calling agent backed by the MCP tools.
 
@@ -103,5 +194,5 @@ async def build_agent():
     """
 
     model = build_model()
-    tools = await load_tools()
+    tools = [_wrap_tool(tool) for tool in [*await load_tools(), web_search]]
     return create_agent(model=model, tools=tools, system_prompt=settings.system_prompt)
