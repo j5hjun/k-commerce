@@ -6,19 +6,19 @@ from .._helpers import require_smoke_enabled
 from ._helpers import (
     assert_order_snapshot_shape,
     copy_session_artifacts,
-    invoke_order_list,
+    invoke_order_sync,
     require_written_order_snapshot,
 )
 
 pytestmark = pytest.mark.smoke
 
 
-def test_coupang_order_list_refresh_smoke(tmp_path: Path) -> None:
+def test_coupang_order_sync_refresh_smoke(tmp_path: Path) -> None:
     require_smoke_enabled()
     root_dir = tmp_path
     copy_session_artifacts(root_dir)
 
-    result = invoke_order_list(root_dir, "--refresh")
+    result = invoke_order_sync(root_dir, "--refresh")
 
     assert result.returncode == 0
     assert "쿠팡 주문 수집을 시작합니다..." in result.stdout

@@ -7,7 +7,20 @@ from .cart import (
     CartQuantityUpdateResult,
     ListCartResult,
 )
-from .order import OrderResult
+from .order import (
+    OrderDetailItem,
+    OrderDetailRequest,
+    OrderDetailResult,
+    OrderFailureItem,
+    OrderFailuresRequest,
+    OrderFailuresResult,
+    OrderListItem,
+    OrderListRequest,
+    OrderListResult,
+    OrderResult,
+    OrderSyncRequest,
+    OrderSyncResult,
+)
 from .provider import ProviderName
 from .review import (
     EditableReviewItem,
@@ -33,7 +46,18 @@ __all__ = [
     "CartDeleteResult",
     "CartQuantityUpdateRequest",
     "CartQuantityUpdateResult",
+    "OrderDetailItem",
+    "OrderDetailRequest",
+    "OrderDetailResult",
+    "OrderFailureItem",
+    "OrderFailuresRequest",
+    "OrderFailuresResult",
+    "OrderListItem",
+    "OrderListRequest",
+    "OrderListResult",
     "OrderResult",
+    "OrderSyncRequest",
+    "OrderSyncResult",
     "EditableReviewItem",
     "ListEditableReviewsResult",
     "ListReviewableResult",

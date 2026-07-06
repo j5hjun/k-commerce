@@ -10,7 +10,7 @@ LangChain 기반 에이전트 백엔드입니다. 웹 프론트엔드(Next.js �
 ## 동작 방식
 
 - `langchain-mcp-adapters`가 MCP 서버(`k-commerce-mcp`)를 stdio subprocess로 띄우고,
-  MCP 도구(`order_list`, `cart_list`, `login`, `cart_delete_item` 등)를 LangChain 도구로 변환합니다.
+  MCP 도구(`order_list`, `order_sync`, `cart_list`, `login`, `cart_delete_item` 등)를 LangChain 도구로 변환합니다.
 - `create_agent`(LangChain) + `init_chat_model`로 LLM이 도구를 호출(tool calling)합니다.
 - MCP 도구 호출은 stateless입니다. 로그인/세션 상태는 CLI가 디스크에 저장하므로
   매 호출이 새 세션이어도 상태가 유지됩니다.

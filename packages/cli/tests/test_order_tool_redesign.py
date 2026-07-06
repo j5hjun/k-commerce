@@ -1,0 +1,262 @@
+from pathlib import Path
+
+import pytest
+
+from k_commerce_cli.services.paths import ProviderPaths
+from k_commerce_cli.services.providers.coupang.orders import CoupangOrderService
+from k_commerce_cli.services.providers.coupang.types import (
+    CoupangOrderList,
+    CoupangOrderMeta,
+    CoupangOrderResult,
+    CoupangOrderSummary,
+)
+from k_commerce_cli.services.tools.invoke import invoke_tool
+from k_commerce_cli.services.tools.types import ToolRequestError, ToolRuntimeOptions
+from k_commerce_cli.services.types import (
+    OrderDetailRequest,
+    OrderFailuresRequest,
+    OrderListRequest,
+    OrderSyncRequest,
+    ProviderName,
+)
+
+
+class _StoreStub:
+    def __init__(self, root_dir: Path, *, orders: dict | None = None) -> None:
+        self.paths = ProviderPaths("coupang", root_dir)
+        self.base_dir = self.paths.base_dir
+        self.profile_dir = self.paths.profile_dir
+        self.cookies_file = self.paths.cookies_file
+        self.credentials_path = self.paths.credentials_path
+        self.session_meta_path = self.paths.session_meta_path
+        self.orders_path = self.paths.orders_path
+        self._orders = orders
+
+    def load_credentials(self):
+        return None
+
+    def has_session(self) -> bool:
+        return False
+
+    def clear_session(self) -> bool:
+        return False
+
+    def write_session_metadata(self, payload):
+        return None
+
+    def load_orders(self):
+        return self._orders
+
+    def write_orders(self, payload):
+        self._orders = payload
+
+
+class _FakeProvider:
+    def __init__(self) -> None:
+        self.order_list_request: OrderListRequest | None = None
+        self.order_sync_request: OrderSyncRequest | None = None
+
+    async def list_orders(self, request: OrderListRequest):
+        self.order_list_request = request
+        return request
+
+    async def sync_orders(self, request: OrderSyncRequest):
+        self.order_sync_request = request
+        return request
+
+
+def _snapshot() -> dict:
+    payload = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider=ProviderName.COUPANG,
+            collectedAt="2026-07-06T12:00:00+09:00",
+            years=["2026"],
+            failedPages=[],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=2,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[
+            CoupangOrderResult.from_dict(
+                {
+                    "provider": "coupang",
+                    "orderId": 100,
+                    "title": "old",
+                    "orderedAt": 1767225600000,
+                    "totalProductPrice": 1000,
+                    "deliveryGroupList": [],
+                }
+            ),
+            CoupangOrderResult.from_dict(
+                {
+                    "provider": "coupang",
+                    "orderId": 200,
+                    "title": "recent",
+                    "orderedAt": 1780272000000,
+                    "totalProductPrice": 2000,
+                    "deliveryGroupList": [],
+                }
+            ),
+        ],
+    )
+    return payload.to_dict()
+
+
+@pytest.mark.anyio
+async def test_order_list_reads_saved_snapshot_without_launching_browser_when_orders_exist(tmp_path: Path) -> None:
+    # Given: saved orders and a browser object that must not be launched.
+    store = _StoreStub(tmp_path, orders=_snapshot())
+    browser = object()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    # When: the list-only order tool reads a bounded period.
+    result = await service.list_orders(
+        OrderListRequest(
+            start_date="2026-06-01",
+            end_date="2026-06-30",
+            status="all",
+            limit=50,
+            cursor=None,
+        )
+    )
+
+    # Then: only matching saved orders are returned and no collection side effect is required.
+    assert result.success is True
+    assert result.count == 1
+    assert result.total_count == 1
+    assert result.orders[0].order_id == "200"
+    assert result.orders[0].title == "recent"
+    assert result.next_tools == ()
+
+
+@pytest.mark.anyio
+async def test_order_list_reports_sync_required_when_snapshot_is_missing(tmp_path: Path) -> None:
+    # Given: no saved order snapshot.
+    store = _StoreStub(tmp_path)
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=object())
+
+    # When: the list-only order tool is called.
+    result = await service.list_orders(OrderListRequest())
+
+    # Then: the result tells the model to collect orders first.
+    assert result.success is False
+    assert result.error_code == "sync_required"
+    assert result.retryable is False
+    assert result.next_tools == ("order_sync",)
+
+
+@pytest.mark.anyio
+async def test_order_dispatch_separates_list_and_sync_requests(tmp_path: Path) -> None:
+    # Given: a provider factory that records typed order requests.
+    provider = _FakeProvider()
+
+    def get_provider(provider_name: str, root_dir: Path | None = None, terminal=None):
+        assert provider_name == "coupang"
+        assert root_dir == tmp_path
+        assert terminal is None
+        return provider
+
+    options = ToolRuntimeOptions(get_provider=get_provider, root_dir=tmp_path)
+
+    # When: list and sync tools are invoked through the shared dispatcher.
+    list_result = await invoke_tool(
+        "order_list",
+        {
+            "provider": "coupang",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-30",
+            "status": "all",
+            "limit": 25,
+            "cursor": "50",
+        },
+        runtime_options=options,
+    )
+    sync_result = await invoke_tool(
+        "order_sync",
+        {
+            "provider": "coupang",
+            "start_date": "2026-01-01",
+            "end_date": "2026-06-30",
+            "failed_only": False,
+            "refresh": True,
+        },
+        runtime_options=options,
+    )
+
+    # Then: list never carries browser collection flags and sync owns them.
+    assert list_result == OrderListRequest(
+        start_date="2026-06-01",
+        end_date="2026-06-30",
+        status="all",
+        limit=25,
+        cursor="50",
+    )
+    assert sync_result == OrderSyncRequest(
+        start_date="2026-01-01",
+        end_date="2026-06-30",
+        failed_only=False,
+        refresh=True,
+    )
+
+
+@pytest.mark.anyio
+async def test_order_list_rejects_old_collection_flags_before_dispatch(tmp_path: Path) -> None:
+    # Given: the old mixed order_list payload shape.
+    provider = _FakeProvider()
+
+    def get_provider(provider_name: str, root_dir: Path | None = None, terminal=None):
+        return provider
+
+    # When / Then: validation fails before provider dispatch.
+    with pytest.raises(ToolRequestError, match="refresh"):
+        await invoke_tool(
+            "order_list",
+            {"provider": "coupang", "refresh": True},
+            runtime_options=ToolRuntimeOptions(get_provider=get_provider, root_dir=tmp_path),
+        )
+    assert provider.order_list_request is None
+
+
+@pytest.mark.anyio
+async def test_order_detail_and_failures_dispatch_builds_typed_requests(tmp_path: Path) -> None:
+    # Given: a provider with detail and failure request recording methods.
+    class Provider(_FakeProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.order_detail_request: OrderDetailRequest | None = None
+            self.order_failures_request: OrderFailuresRequest | None = None
+
+        async def get_order_detail(self, request: OrderDetailRequest):
+            self.order_detail_request = request
+            return request
+
+        async def list_order_failures(self, request: OrderFailuresRequest):
+            self.order_failures_request = request
+            return request
+
+    provider = Provider()
+
+    def get_provider(provider_name: str, root_dir: Path | None = None, terminal=None):
+        return provider
+
+    options = ToolRuntimeOptions(get_provider=get_provider, root_dir=tmp_path)
+
+    # When: detail and failure tools are invoked through the shared dispatcher.
+    detail_result = await invoke_tool(
+        "order_detail",
+        {"provider": "coupang", "order_id": "100"},
+        runtime_options=options,
+    )
+    failures_result = await invoke_tool(
+        "order_failures",
+        {"provider": "coupang", "start_date": "2026-01-01", "end_date": "2026-06-30", "limit": 10},
+        runtime_options=options,
+    )
+
+    # Then: each tool gets its own typed request object.
+    assert detail_result == OrderDetailRequest(order_id="100")
+    assert failures_result == OrderFailuresRequest(start_date="2026-01-01", end_date="2026-06-30", limit=10)

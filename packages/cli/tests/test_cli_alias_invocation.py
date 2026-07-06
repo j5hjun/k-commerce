@@ -9,14 +9,8 @@ from asyncclick.testing import CliRunner
 
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
-from k_commerce_cli.services.providers.coupang.types import (
-    CoupangOrderList,
-    CoupangOrderListResult,
-    CoupangOrderMeta,
-    CoupangOrderSummary,
-)
 from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRuntimeOptions
-from k_commerce_cli.services.types import ListCartResult, ListReviewableResult, ProviderName
+from k_commerce_cli.services.types import ListCartResult, ListReviewableResult, OrderListResult, ProviderName
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 
 RUNNER = CliRunner()
@@ -160,24 +154,17 @@ async def test_cart_alias_uses_shared_invocation() -> None:
 @pytest.mark.anyio
 async def test_order_list_alias_uses_shared_invocation() -> None:
     invoke_tool = ToolInvoker(
-        CoupangOrderListResult(
-            message="주문 수집 완료: 총 1건, 추가 0건, 변경 1건, 삭제 0건",
-            payload=CoupangOrderList(
-                meta=CoupangOrderMeta(
-                    provider=ProviderName.COUPANG,
-                    collectedAt="2026-06-28T12:00:00+09:00",
-                    years=["2026"],
-                    failedPages=[],
-                    refresh=False,
-                    summary=CoupangOrderSummary(
-                        totalOrders=1,
-                        addedOrders=0,
-                        updatedOrders=1,
-                        deletedOrders=0,
-                    ),
-                ),
-                orders=[],
-            ),
+        OrderListResult(
+            success=True,
+            provider="coupang",
+            message="저장된 주문 조회 완료: 0건(전체 0건)",
+            start_date=None,
+            end_date=None,
+            count=0,
+            total_count=0,
+            has_more=False,
+            next_cursor=None,
+            orders=(),
         )
     )
 
@@ -194,7 +181,17 @@ async def test_order_list_alias_uses_shared_invocation() -> None:
     assert result.stdout.splitlines() == []
     assert_invoked_once(
         invoke_tool,
-        ExpectedInvocation("order_list", {"provider": "coupang", "refresh": False, "failed_only": False}),
+        ExpectedInvocation(
+            "order_list",
+            {
+                "provider": "coupang",
+                "start_date": None,
+                "end_date": None,
+                "status": "all",
+                "limit": 50,
+                "cursor": None,
+            },
+        ),
     )
 
 

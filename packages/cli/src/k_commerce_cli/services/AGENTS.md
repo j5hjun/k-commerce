@@ -20,7 +20,7 @@ Provider abstraction and service layer for CLI business behavior.
 ## CONVENTIONS
 
 - Add capabilities through `BaseProvider` protocols and service class wiring.
-- The MCP tool contract is the source of truth for canonical names: `get_providers`, `login`, `status`, `logout`, `order_list`, `cart_list`, `cart_update_quantity`, `cart_delete_item`, `cart_delete_items`, `cart_clear`, `search_products`, `review_list_reviewable`, `review_list_editable`, `review_upload`, `review_edit`, `review_delete`.
+- The MCP tool contract is the source of truth for canonical names: `get_providers`, `login`, `status`, `logout`, `order_sync`, `order_list`, `order_detail`, `order_failures`, `cart_list`, `cart_update_quantity`, `cart_delete_item`, `cart_delete_items`, `cart_clear`, `search_products`, `review_list_reviewable`, `review_list_editable`, `review_upload`, `review_edit`, `review_delete`.
 - `tools/invoke.py` is the shared dispatcher used by MCP wrappers and the generic CLI runner.
 - `ToolRuntimeOptions.root_dir` is for CLI debug/runtime isolation; canonical payload parsing rejects `root_dir`.
 - Keep `registry.py`, `store.py`, and `paths.py` small and compositional.
