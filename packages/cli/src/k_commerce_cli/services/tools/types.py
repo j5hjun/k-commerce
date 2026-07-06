@@ -75,6 +75,7 @@ class ToolRequestError(Exception):
     tool_name: str
     message: str
     field: str | None = None
+    next_tools: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         if self.field is None:

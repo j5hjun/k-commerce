@@ -20,3 +20,4 @@ class SearchProductResult:
     success: bool
     message: str
     items: tuple[SearchResultItem, ...]
+    next_tools: tuple[str, ...] = ()

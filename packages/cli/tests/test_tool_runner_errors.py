@@ -79,6 +79,7 @@ async def test_request_file_cart_update_quantity_returns_json_error_when_provide
             "type": "tool_timeout",
             "message": "Tool invocation timed out after 0.01 seconds.",
             "tool_name": "cart_update_quantity",
+            "next_tools": [],
         }
     }
     assert hanging_provider.calls == [
@@ -109,6 +110,7 @@ async def test_provider_raised_timeout_error_returns_provider_error_json(
             "type": "tool_error",
             "message": "provider timed out internally",
             "tool_name": "cart_update_quantity",
+            "next_tools": [],
         }
     }
     assert provider.calls == [
@@ -139,6 +141,7 @@ async def test_unexpected_provider_exception_returns_sanitized_tool_error_json(
             "type": "tool_error",
             "message": "Tool invocation failed.",
             "tool_name": "cart_update_quantity",
+            "next_tools": [],
         }
     }
     assert "Traceback" not in result.stderr
@@ -173,6 +176,7 @@ async def test_provider_raised_value_error_returns_sanitized_tool_error_json(
             "type": "tool_error",
             "message": "Tool invocation failed.",
             "tool_name": "cart_update_quantity",
+            "next_tools": [],
         }
     }
     assert "Traceback" not in result.stderr

@@ -139,3 +139,4 @@ class CoupangOrderList:
 class CoupangOrderListResult:
     message: str
     payload: CoupangOrderList
+    next_tools: tuple[str, ...] = ()
