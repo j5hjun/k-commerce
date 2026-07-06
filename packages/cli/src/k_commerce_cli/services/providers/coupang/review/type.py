@@ -97,6 +97,15 @@ class ListReviewableResult:
 
 
 @dataclass(frozen=True)
+class ListReviewsResult:
+    provider: ProviderName
+    success: bool
+    message: str
+    reviewable: ListReviewableResult
+    editable: ListEditableReviewsResult
+
+
+@dataclass(frozen=True)
 class _ReviewableItemData:
     product_id: str
     product_name: str

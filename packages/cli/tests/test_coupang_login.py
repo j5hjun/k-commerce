@@ -166,6 +166,31 @@ async def test_launch_can_disable_browser_sandbox(
 
 
 @pytest.mark.anyio
+async def test_launch_removes_stale_profile_runtime_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    browser = NodriverBrowser()
+    runtime_browser = _DummyBrowser(_DummyTab())
+    nodriver_module = sys.modules["nodriver"]
+    original_start = nodriver_module.start
+    start_mock = AsyncMock(return_value=runtime_browser)
+    nodriver_module.start = start_mock
+    paths = ProviderPaths("coupang", root_dir=tmp_path)
+    paths.profile_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("DevToolsActivePort", "SingletonCookie", "SingletonLock", "SingletonSocket"):
+        (paths.profile_dir / name).write_text("stale", encoding="utf-8")
+
+    try:
+        await browser.launch(paths)
+    finally:
+        nodriver_module.start = original_start
+
+    for name in ("DevToolsActivePort", "SingletonCookie", "SingletonLock", "SingletonSocket"):
+        assert not (paths.profile_dir / name).exists()
+
+
+@pytest.mark.anyio
 async def test_open_login_entry_opens_login_page_directly() -> None:
     provider = _make_auth_provider()
     tab = _DummyTab()
@@ -430,6 +455,25 @@ async def test_login_with_credentials_uses_browser_form_submission() -> None:
     assert session.tab.get_calls == [COUPANG_LOGIN_URL]
     provider._fill_login_form.assert_awaited_once_with(session, "user@example.com", "secret")
     provider._wait_for_credentials_login.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_login_returns_already_logged_in_message_when_existing_session_is_valid() -> None:
+    provider = _make_auth_provider()
+    session = types.SimpleNamespace(tab=_DummyTab())
+    provider._restore_session = AsyncMock(return_value=session)
+    provider._verify_session = AsyncMock(return_value=True)
+    provider._load_credentials = Mock(return_value=None)
+    provider._close_browser_session = AsyncMock()
+
+    result = await provider.login()
+
+    assert result.provider == ProviderName.COUPANG
+    assert result.success is True
+    assert result.message == "이미 쿠팡 로그인 상태입니다."
+    provider._restore_session.assert_awaited_once_with()
+    provider._verify_session.assert_awaited_once_with(session)
+    provider._close_browser_session.assert_awaited_once_with()
 
 
 @pytest.mark.anyio

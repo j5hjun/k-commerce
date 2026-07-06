@@ -16,6 +16,7 @@ class ChatRequest(BaseModel):
 
     message: str | None = None
     messages: list[ChatMessage] | None = None
+    session_id: str | None = None
 
     def to_lc_messages(self) -> list[dict[str, str]]:
         if self.messages:

@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
         "특별한 언급이 없으면 provider는 'coupang'으로 간주하세요. "
         "주문 내역을 조회할 때는 order_list를 사용하세요. "
         "장바구니 항목을 변경하거나 삭제할 때는 cart_list로 얻은 product_id, vendor_item_id, item_id를 사용하세요. "
+        "사용자가 장바구니에서 보이는 상품명이나 '1번 상품'처럼 말하면 cart_update_quantity_smart를 우선 사용하세요. "
         "사용자에게는 한국어로 간결하게 답하세요."
     )
 
@@ -55,6 +57,9 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8000
+    memory_path: Path = Field(
+        default=Path.home() / ".k-commerce" / "agent-memory.json"
+    )
 
 
 settings = Settings()

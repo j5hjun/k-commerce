@@ -78,6 +78,10 @@ class CoupangDeliveryGroup:
     invoiceStatus: str
     pddMessage: dict[str, str | None]
     productList: list[CoupangOrderProduct]
+    displayStatus: str | None = None
+    hasTrackAction: bool = False
+    hasExchangeReturnAction: bool = False
+    hasWriteReviewAction: bool = False
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangDeliveryGroup":
@@ -86,6 +90,10 @@ class CoupangDeliveryGroup:
             invoiceNumber=str(payload["invoiceNumber"]),
             invoiceStatus=str(payload["invoiceStatus"]),
             pddMessage=dict(payload["pddMessage"]),
+            displayStatus=str(payload.get("displayStatus")) if payload.get("displayStatus") is not None else None,
+            hasTrackAction=bool(payload.get("hasTrackAction", False)),
+            hasExchangeReturnAction=bool(payload.get("hasExchangeReturnAction", False)),
+            hasWriteReviewAction=bool(payload.get("hasWriteReviewAction", False)),
             productList=[
                 CoupangOrderProduct.from_dict(product)
                 for product in payload["productList"]
@@ -139,3 +147,32 @@ class CoupangOrderList:
 class CoupangOrderListResult:
     message: str
     payload: CoupangOrderList
+
+
+@dataclass(frozen=True)
+class CoupangDeliveryTrackingEvent:
+    time: str | None
+    status: str
+    description: str | None = None
+    location: str | None = None
+
+
+@dataclass(frozen=True)
+class CoupangDeliveryTrackingPayload:
+    provider: ProviderName
+    orderId: int
+    shipmentBoxId: str
+    invoiceNumber: str
+    displayStatus: str | None
+    courierName: str | None
+    trackingNumber: str | None
+    summary: str | None
+    events: list[CoupangDeliveryTrackingEvent]
+    rawLines: list[str]
+    collectedAt: str
+
+
+@dataclass(frozen=True)
+class CoupangDeliveryTrackingResult:
+    message: str
+    payload: CoupangDeliveryTrackingPayload

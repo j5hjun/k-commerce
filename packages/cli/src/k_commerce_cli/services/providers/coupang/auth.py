@@ -68,7 +68,11 @@ class CoupangAuthService:
             if restored_session is not None and await self._verify_session(restored_session):
                 return self._emit_login_result(
                     terminal,
-                    LoginResult(provider=self.provider, success=True, message="쿠팡 로그인 성공"),
+                    LoginResult(
+                        provider=self.provider,
+                        success=True,
+                        message="이미 쿠팡 로그인 상태입니다.",
+                    ),
                 )
 
             if credentials is not None:

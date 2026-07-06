@@ -32,4 +32,4 @@ def test_coupang_login_with_existing_session_smoke(tmp_path: Path) -> None:
         pytest.skip("Copied Coupang session is no longer valid.")
 
     assert result.returncode == 0
-    assert result.stdout.splitlines()[-1] == "[ok] 쿠팡 로그인 성공"
+    assert result.stdout.splitlines()[-1] == "[ok] 이미 쿠팡 로그인 상태입니다."

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
@@ -90,9 +91,17 @@ class CoupangCartService(CoupangCartDelete):
         self.browser = browser
         self._browser_session: BrowserSession | None = None
 
-    async def list_cart(self) -> ListCartResult:
+    async def list_cart(self, refresh: bool = False) -> ListCartResult:
+        if not refresh:
+            cached = self._load_cached_cart()
+            if cached is not None:
+                return cached
+
         async with self.cart_session() as cart_session:
-            return await cart_session.list_cart()
+            result = await cart_session.list_cart()
+            if result.success:
+                self._write_cached_cart(result)
+            return result
 
     async def update_cart_quantity(
         self,
@@ -954,6 +963,46 @@ class CoupangCartService(CoupangCartDelete):
             success=True,
             message=format_cart_list(items),
             items=items,
+        )
+
+    def _load_cached_cart(self) -> ListCartResult | None:
+        payload = self.store.load_cart()
+        if payload is None:
+            return None
+        try:
+            items = tuple(
+                CartItem(
+                    index=int(item.get("index") or 0),
+                    product_name=str(item.get("product_name") or ""),
+                    option_text=str(item.get("option_text") or ""),
+                    quantity=int(item.get("quantity") or 0),
+                    unit_price=str(item.get("unit_price") or ""),
+                    total_price=str(item.get("total_price") or ""),
+                    product_id=str(item.get("product_id") or ""),
+                    vendor_item_id=str(item.get("vendor_item_id") or ""),
+                    item_id=str(item.get("item_id") or ""),
+                    delivery_text=str(item.get("delivery_text") or ""),
+                )
+                for item in payload.get("items", [])
+                if isinstance(item, dict)
+            )
+            return ListCartResult(
+                provider=str(payload.get("provider") or self.provider.value),
+                success=bool(payload.get("success", True)),
+                message=str(payload.get("message") or format_cart_list(items)),
+                items=items,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    def _write_cached_cart(self, result: ListCartResult) -> None:
+        self.store.write_cart(
+            {
+                "provider": result.provider,
+                "success": result.success,
+                "message": result.message,
+                "items": [asdict(item) for item in result.items],
+            }
         )
 
     def _to_quantity_update_result(

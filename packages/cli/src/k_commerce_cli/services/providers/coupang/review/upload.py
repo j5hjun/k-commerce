@@ -350,9 +350,17 @@ class CoupangReviewUpload(CoupangReviewBrowser):
               if (!textarea && text) return false;
               if (textarea) {{
                 textarea.focus();
-                textarea.value = text;
+                const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+                if (setter) setter.call(textarea, text);
+                else textarea.value = text;
                 textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                textarea.dispatchEvent(new KeyboardEvent('keydown', {{ key: ' ', bubbles: true }}));
+                textarea.dispatchEvent(new KeyboardEvent('keyup', {{ key: ' ', bubbles: true }}));
+                textarea.blur();
+                if ((textarea.value || '').trim() !== text.trim()) {{
+                  return false;
+                }}
               }}
 
               const submitButton =
@@ -382,7 +390,7 @@ class CoupangReviewUpload(CoupangReviewBrowser):
         if text:
             textarea = await self._safe_select(
                 tab,
-                'textarea[name*="review"], textarea[placeholder*="리뷰"], textarea.review-content, textarea',
+                '.js_reviewModifyTextArea, .js_reviewWritableTextArea, textarea[name*="review"], textarea[placeholder*="리뷰"], textarea.review-content, textarea',
                 timeout=3,
             )
             if textarea is None:

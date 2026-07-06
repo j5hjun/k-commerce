@@ -34,7 +34,10 @@ async def test_login_coupang_command_succeeds_with_existing_session(tmp_path: Pa
         result = await RUNNER.invoke(app, ["login", "coupang", "--root-dir", str(root_dir)])
 
     assert result.exit_code == 0
-    assert result.stdout.splitlines() == ["쿠팡 로그인을 시작합니다...", "[ok] 쿠팡 로그인 성공"]
+    assert result.stdout.splitlines() == [
+        "쿠팡 로그인을 시작합니다...",
+        "[ok] 이미 쿠팡 로그인 상태입니다.",
+    ]
     launch.assert_awaited_once_with(provider.store.paths)
     assert provider.store.paths == paths
     open_home.assert_awaited_once_with(session)

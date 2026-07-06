@@ -1,6 +1,7 @@
 from k_commerce_cli.services.providers.coupang.review.type import (
     EditableReviewItem,
     ListEditableReviewsResult,
+    ListReviewsResult,
     ListReviewableResult,
     ReviewDeleteRequest,
     ReviewDeleteResult,
@@ -14,6 +15,7 @@ from k_commerce_cli.services.providers.coupang.review.type import (
 __all__ = [
     "EditableReviewItem",
     "ListEditableReviewsResult",
+    "ListReviewsResult",
     "ListReviewableResult",
     "ReviewDeleteRequest",
     "ReviewDeleteResult",

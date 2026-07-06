@@ -14,9 +14,11 @@ from k_commerce_cli.services.types import (
     CartQuantityUpdateResult,
     ListCartResult,
     ListEditableReviewsResult,
+    ListReviewsResult,
     ListReviewableResult,
     LoginResult,
     LogoutResult,
+    DeliveryTrackingResult,
     OrderResult,
     ProviderName,
     ReviewDeleteRequest,
@@ -80,6 +82,7 @@ class Store(Protocol):
     credentials_path: Path
     session_meta_path: Path
     orders_path: Path
+    cart_path: Path
 
     def load_credentials(self) -> Credentials | None: ...
 
@@ -93,6 +96,10 @@ class Store(Protocol):
 
     def write_orders(self, payload: dict[str, Any]) -> None: ...
 
+    def load_cart(self) -> dict[str, Any] | None: ...
+
+    def write_cart(self, payload: dict[str, Any]) -> None: ...
+
 
 class Provider(Protocol):
     async def login(self) -> LoginResult: ...
@@ -101,7 +108,7 @@ class Provider(Protocol):
 
     async def logout(self) -> LogoutResult: ...
 
-    async def list_cart(self) -> ListCartResult: ...
+    async def list_cart(self, refresh: bool = False) -> ListCartResult: ...
 
     async def update_cart_quantity(
         self, request: CartQuantityUpdateRequest
@@ -121,6 +128,8 @@ class Provider(Protocol):
 
     async def list_editable(self) -> ListEditableReviewsResult: ...
 
+    async def list_reviews(self) -> ListReviewsResult: ...
+
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
 
     async def edit_review(self, request: ReviewEditRequest) -> ReviewEditResult: ...
@@ -132,6 +141,12 @@ class Provider(Protocol):
         refresh: bool = False,
         failed_only: bool = False,
     ) -> OrderResult: ...
+
+    async def get_delivery_tracking(
+        self,
+        order_id: int,
+        shipment_box_id: str,
+    ) -> DeliveryTrackingResult: ...
 
     async def search_products(
         self,
@@ -158,11 +173,19 @@ class OrderService(Protocol):
         failed_only: bool = False,
     ) -> OrderResult: ...
 
+    async def get_delivery_tracking(
+        self,
+        order_id: int,
+        shipment_box_id: str,
+    ) -> DeliveryTrackingResult: ...
+
 
 class ReviewService(Protocol):
     async def list_reviewable(self) -> ListReviewableResult: ...
 
     async def list_editable(self) -> ListEditableReviewsResult: ...
+
+    async def list_reviews(self) -> ListReviewsResult: ...
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult: ...
 
@@ -183,7 +206,7 @@ class SearchService(Protocol):
 
 
 class CartService(Protocol):
-    async def list_cart(self) -> ListCartResult: ...
+    async def list_cart(self, refresh: bool = False) -> ListCartResult: ...
 
     async def update_cart_quantity(
         self, request: CartQuantityUpdateRequest
@@ -317,8 +340,8 @@ class BaseProvider(
     async def logout(self) -> LogoutResult:
         return await self.auth_service.logout()
 
-    async def list_cart(self) -> ListCartResult:
-        return await self.cart_service.list_cart()
+    async def list_cart(self, refresh: bool = False) -> ListCartResult:
+        return await self.cart_service.list_cart(refresh=refresh)
 
     async def update_cart_quantity(
         self,
@@ -347,6 +370,9 @@ class BaseProvider(
     async def list_editable(self) -> ListEditableReviewsResult:
         return await self.review_service.list_editable()
 
+    async def list_reviews(self) -> ListReviewsResult:
+        return await self.review_service.list_reviews()
+
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
         return await self.review_service.upload_review(request)
 
@@ -364,6 +390,16 @@ class BaseProvider(
         return await self.order_service.list_orders(
             refresh=refresh,
             failed_only=failed_only,
+        )
+
+    async def get_delivery_tracking(
+        self,
+        order_id: int,
+        shipment_box_id: str,
+    ) -> DeliveryTrackingResult:
+        return await self.order_service.get_delivery_tracking(
+            order_id=order_id,
+            shipment_box_id=shipment_box_id,
         )
 
     async def search_products(

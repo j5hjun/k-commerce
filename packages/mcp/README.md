@@ -45,6 +45,11 @@ uv run k-commerce-mcp
   - example: `provider="coupang", quantity=3, product_id="...", vendor_item_id="...", item_id="..."`
   - return: `CartQuantityUpdateResult`
 
+- `cart_update_quantity_smart`: 장바구니 화면에 보이는 index 또는 상품명으로 수량을 변경합니다.
+  - example: `provider="coupang", quantity=5, item_index=1`
+  - example: `provider="coupang", quantity=5, product_name="Qiaokao 철제 서랍형 수납박스"`
+  - return: `CartQuantityUpdateResult`
+
 - `cart_delete_item`: 장바구니에서 상품 1건을 삭제합니다.
   - example: `provider="coupang", product_id="...", vendor_item_id="...", item_id="..."`
   - return: `CartDeleteResult`
@@ -63,6 +68,7 @@ uv run k-commerce-mcp
 | --- | --- |
 | `k-commerce cart coupang` / `--list` | `cart_list` |
 | `k-commerce cart coupang --quantity` | `cart_update_quantity` |
+| visible item based quantity update | `cart_update_quantity_smart` |
 | `k-commerce cart coupang --delete` (단일 삭제) | `cart_delete_item` |
 | `k-commerce cart coupang --delete` (선택 삭제) | `cart_delete_items` |
 | `k-commerce cart coupang --delete` (전체 삭제) | `cart_clear` |

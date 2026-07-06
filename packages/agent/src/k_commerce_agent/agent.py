@@ -94,7 +94,7 @@ def build_model() -> BaseChatModel:
     return init_chat_model(settings.llm_model)
 
 
-async def build_agent():
+async def build_agent(*, extra_system_prompt: str = ""):
     """Build a tool-calling agent backed by the MCP tools.
 
     The LLM is resolved lazily so the rest of the backend can run before a
@@ -104,4 +104,7 @@ async def build_agent():
 
     model = build_model()
     tools = await load_tools()
-    return create_agent(model=model, tools=tools, system_prompt=settings.system_prompt)
+    system_prompt = settings.system_prompt
+    if extra_system_prompt.strip():
+        system_prompt = f"{system_prompt}\n\n{extra_system_prompt.strip()}"
+    return create_agent(model=model, tools=tools, system_prompt=system_prompt)

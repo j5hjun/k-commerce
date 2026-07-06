@@ -108,6 +108,42 @@ def _order_result(**kwargs: Any) -> CoupangOrderResult:
 
 
 @pytest.mark.anyio
+async def test_list_orders_uses_cached_snapshot_without_browser_when_clean_snapshot_exists(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    cached = CoupangOrderList(
+        meta=CoupangOrderMeta(
+            provider=ProviderName.COUPANG,
+            collectedAt="2026-07-05T19:20:00+09:00",
+            years=["2026"],
+            failedPages=[],
+            refresh=False,
+            summary=CoupangOrderSummary(
+                totalOrders=1,
+                addedOrders=0,
+                updatedOrders=0,
+                deletedOrders=0,
+            ),
+        ),
+        orders=[_order_result(order_id=10, title="cached")],
+    )
+    store._orders = cached.to_dict()
+    browser = Mock()
+    browser.launch = AsyncMock()
+    browser.close = AsyncMock()
+
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.list_orders(refresh=False)
+
+    assert result.payload == cached
+    assert result.message == "주문 수집 완료: 총 1건, 추가 0건, 변경 0건, 삭제 0건"
+    browser.launch.assert_not_awaited()
+    browser.close.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Path) -> None:
     store = _StoreStub(tmp_path)
     browser = Mock()
@@ -154,10 +190,12 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
                 ],
                 "orderPagination": {"hasNext": False, "nextPageIndex": 0},
             },
+            [],
             {
                 "orderList": [],
                 "orderPagination": {"hasNext": False, "nextPageIndex": 0},
             },
+            [],
         ]
     )
 
@@ -188,7 +226,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
             provider=ProviderName.COUPANG,
             collectedAt="old",
             years=["2026"],
-            failedPages=[],
+            failedPages=[["2026", 1]],
             refresh=False,
             summary=CoupangOrderSummary(
                 totalOrders=1,
@@ -345,10 +383,8 @@ async def test_collect_orders_reuses_cached_tail_after_unchanged_page(tmp_path: 
         updatedOrders=0,
         deletedOrders=0,
     )
-    assert tab.get.await_count == 2
-    tab.get.assert_any_await(
-        "https://mc.coupang.com/ssr/desktop/order/list?requestYear=2026&pageIndex=0"
-    )
+    assert tab.get.await_count == 0
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -398,6 +434,7 @@ async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
                 "orderList": [_order_payload(order_id=10, title="first")],
                 "orderPagination": {"hasNext": True, "nextPageIndex": 1},
             },
+            [],
             {
                 "orderList": [
                     _order_payload(
@@ -412,6 +449,7 @@ async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
                 ],
                 "orderPagination": {"hasNext": False, "nextPageIndex": 0},
             },
+            [],
         ]
     )
 

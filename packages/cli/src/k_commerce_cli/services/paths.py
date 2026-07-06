@@ -30,3 +30,7 @@ class ProviderPaths:
     @property
     def orders_path(self) -> Path:
         return self.base_dir / "orders.json"
+
+    @property
+    def cart_path(self) -> Path:
+        return self.base_dir / "cart.json"

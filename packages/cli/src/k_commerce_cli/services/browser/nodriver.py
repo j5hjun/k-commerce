@@ -41,6 +41,7 @@ class NodriverBrowser(Browser):
         profile_dir = paths.profile_dir
         cookies_file = paths.cookies_file
         profile_dir.mkdir(parents=True, exist_ok=True)
+        self._cleanup_profile_runtime_artifacts(profile_dir)
 
         browser = await uc.start(
             headless=False,
@@ -134,6 +135,16 @@ class NodriverBrowser(Browser):
         load = getattr(cookies_api, "load", None)
         if load is not None:
             await load(file=str(cookies_file))
+
+    def _cleanup_profile_runtime_artifacts(self, profile_dir: Path) -> None:
+        # This profile is dedicated to MCP automation, so stale Chrome runtime
+        # lock files can be removed safely before launch.
+        for name in ("DevToolsActivePort", "SingletonCookie", "SingletonLock", "SingletonSocket"):
+            path = profile_dir / name
+            with contextlib.suppress(FileNotFoundError):
+                if path.is_dir() and not path.is_symlink():
+                    continue
+                path.unlink()
 
 
 def _browser_sandbox_enabled() -> bool:

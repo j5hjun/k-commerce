@@ -11,6 +11,10 @@ from k_commerce_cli.services.types import (
     LogoutResult,
     StatusResult,
 )
+from k_commerce_cli.services.providers.coupang.search.type import (
+    SearchProductResult,
+    SearchResultItem,
+)
 from k_commerce_mcp import server
 
 
@@ -28,9 +32,11 @@ async def test_create_mcp_server_registers_login_and_login_status_tools() -> Non
     assert "order_list" in tool_names
     assert "cart_list" in tool_names
     assert "cart_update_quantity" in tool_names
+    assert "cart_update_quantity_smart" in tool_names
     assert "cart_delete_item" in tool_names
     assert "cart_delete_items" in tool_names
     assert "cart_clear" in tool_names
+    assert "search_products" in tool_names
 
 
 @pytest.mark.anyio
@@ -59,7 +65,7 @@ async def test_login_tool_returns_provider_login_result_for_coupang_provider() -
     expected = LoginResult(
         provider="coupang",
         success=True,
-        message="쿠팡 로그인 성공",
+        message="이미 쿠팡 로그인 상태입니다.",
     )
     mocked_provider = type(
         "MockProvider",
@@ -220,6 +226,112 @@ async def test_cart_update_quantity_tool_delegates_to_provider() -> None:
 
 
 @pytest.mark.anyio
+async def test_cart_update_quantity_smart_resolves_by_index() -> None:
+    cart = ListCartResult(
+        provider="coupang",
+        success=True,
+        message="장바구니 1건",
+        items=(
+            CartItem(
+                index=1,
+                product_name="Qiaokao 철제 서랍형 수납박스",
+                option_text="1개, 화이트",
+                quantity=2,
+                unit_price="12,990원",
+                total_price="25,980원",
+                product_id="p1",
+                vendor_item_id="v1",
+                item_id="i1",
+            ),
+        ),
+    )
+    expected = CartQuantityUpdateResult(
+        provider="coupang",
+        success=True,
+        message="수량 변경 완료",
+        quantity=5,
+        product_id="p1",
+        vendor_item_id="v1",
+        item_id="i1",
+    )
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {
+            "list_cart": AsyncMock(return_value=cart),
+            "update_cart_quantity": AsyncMock(return_value=expected),
+        },
+    )()
+
+    with patch(
+        "k_commerce_mcp.tools.cart.get_provider",
+        return_value=mocked_provider,
+    ):
+        result = await server.cart_update_quantity_smart(
+            provider="coupang",
+            quantity=5,
+            item_index=1,
+        )
+
+    assert result == expected
+    request = mocked_provider.update_cart_quantity.await_args.args[0]
+    assert request.product_id == "p1"
+    assert request.vendor_item_id == "v1"
+    assert request.item_id == "i1"
+
+
+@pytest.mark.anyio
+async def test_cart_update_quantity_smart_resolves_by_product_name() -> None:
+    cart = ListCartResult(
+        provider="coupang",
+        success=True,
+        message="장바구니 1건",
+        items=(
+            CartItem(
+                index=1,
+                product_name="Qiaokao 철제 서랍형 수납박스",
+                option_text="1개, 화이트",
+                quantity=2,
+                unit_price="12,990원",
+                total_price="25,980원",
+                product_id="p1",
+                vendor_item_id="v1",
+                item_id="i1",
+            ),
+        ),
+    )
+    expected = CartQuantityUpdateResult(
+        provider="coupang",
+        success=True,
+        message="수량 변경 완료",
+        quantity=5,
+        product_id="p1",
+        vendor_item_id="v1",
+        item_id="i1",
+    )
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {
+            "list_cart": AsyncMock(return_value=cart),
+            "update_cart_quantity": AsyncMock(return_value=expected),
+        },
+    )()
+
+    with patch(
+        "k_commerce_mcp.tools.cart.get_provider",
+        return_value=mocked_provider,
+    ):
+        result = await server.cart_update_quantity_smart(
+            provider="coupang",
+            quantity=5,
+            product_name="Qiaokao 철제 서랍형 수납박스",
+        )
+
+    assert result == expected
+
+
+@pytest.mark.anyio
 async def test_cart_delete_item_tool_delegates_to_provider() -> None:
     expected = CartDeleteResult(
         provider="coupang",
@@ -301,6 +413,52 @@ async def test_cart_clear_tool_delegates_to_provider() -> None:
     assert result == expected
     get_provider.assert_called_once_with("coupang")
     mocked_provider.clear_cart.assert_awaited_once_with()
+
+
+@pytest.mark.anyio
+async def test_search_products_tool_delegates_to_provider() -> None:
+    expected = SearchProductResult(
+        provider="coupang",
+        success=True,
+        message="검색 결과 1건",
+        items=(
+            SearchResultItem(
+                index=1,
+                product_id="100",
+                product_name="테스트 생수",
+                price="9,900원",
+                rating="4.8",
+                image_url="https://example.com/item.png",
+                product_link="https://example.com/item",
+            ),
+        ),
+    )
+    mocked_provider = type(
+        "MockProvider",
+        (),
+        {"search_products": AsyncMock(return_value=expected)},
+    )()
+
+    with patch(
+        "k_commerce_mcp.tools.search.get_provider",
+        return_value=mocked_provider,
+    ) as get_provider:
+        result = await server.search_products(
+            provider="coupang",
+            keyword="생수",
+            category="",
+            sort="low_price",
+            max_results=5,
+        )
+
+    assert result == expected
+    get_provider.assert_called_once_with("coupang")
+    mocked_provider.search_products.assert_awaited_once_with(
+        "생수",
+        category=None,
+        sort="low_price",
+        max_results=5,
+    )
 
 
 def test_main_runs_mcp_server_over_stdio() -> None:

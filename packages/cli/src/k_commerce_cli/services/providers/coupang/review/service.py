@@ -5,6 +5,7 @@ from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab, St
 from k_commerce_cli.services.types import (
     EditableReviewItem,
     ListEditableReviewsResult,
+    ListReviewsResult,
     ListReviewableResult,
     ProviderName,
     ReviewDeleteRequest,
@@ -72,6 +73,50 @@ class CoupangReviewService(
                 else:
                     browser_result = _ListReviewableBrowserResult(state=login_state)
             return self._to_list_result(browser_result)
+        finally:
+            await self._close_browser_session()
+
+    async def list_reviews(self) -> ListReviewsResult:
+        """한 브라우저 세션으로 작성 가능 리뷰와 작성한 리뷰 목록을 순차 조회합니다."""
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            reviewable_result = await self._list_reviewable_items(self._browser_session)
+            if reviewable_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_REVIEWABLE_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    reviewable_result = await self._list_reviewable_items(self._browser_session)
+                else:
+                    reviewable_result = _ListReviewableBrowserResult(state=login_state)
+
+            editable_result = await self._list_editable_review_items(self._browser_session)
+            if editable_result.state == CoupangReviewState.NOT_LOGGED_IN:
+                login_state = await self._open_login_and_wait_for_review(
+                    self._browser_session,
+                    COUPANG_WROTE_REVIEWS_URL,
+                )
+                if login_state == CoupangReviewState.SUCCESS:
+                    editable_result = await self._list_editable_review_items(self._browser_session)
+                else:
+                    editable_result = _ListReviewableBrowserResult(state=login_state)
+
+            reviewable = self._to_list_result(reviewable_result)
+            editable = self._to_editable_list_result(editable_result)
+            success = reviewable.success and editable.success
+            message = (
+                "리뷰 목록을 불러왔습니다."
+                if success
+                else reviewable.message or editable.message or "리뷰 목록을 불러오지 못했습니다."
+            )
+            return ListReviewsResult(
+                provider=self.provider,
+                success=success,
+                message=message,
+                reviewable=reviewable,
+                editable=editable,
+            )
         finally:
             await self._close_browser_session()
 

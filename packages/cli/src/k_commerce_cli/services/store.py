@@ -16,6 +16,7 @@ class ProviderStore(Store):
         self.credentials_path = paths.credentials_path
         self.session_meta_path = paths.session_meta_path
         self.orders_path = paths.orders_path
+        self.cart_path = paths.cart_path
 
     def load_credentials(self) -> Credentials | None:
         if not self.credentials_path.exists():
@@ -74,6 +75,18 @@ class ProviderStore(Store):
     def write_orders(self, payload: dict[str, Any]) -> None:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.orders_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def load_cart(self) -> dict[str, Any] | None:
+        if not self.cart_path.exists():
+            return None
+        return json.loads(self.cart_path.read_text(encoding="utf-8"))
+
+    def write_cart(self, payload: dict[str, Any]) -> None:
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.cart_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

@@ -9,6 +9,9 @@ from urllib.parse import urlencode
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, Store
 from k_commerce_cli.services.providers.coupang.types import (
+    CoupangDeliveryTrackingEvent,
+    CoupangDeliveryTrackingPayload,
+    CoupangDeliveryTrackingResult,
     CoupangDeliveryGroup,
     CoupangOrderList,
     CoupangOrderListResult,
@@ -44,7 +47,24 @@ class CoupangOrderService:
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 주문 수집을 시작합니다...")
+        previous = self._load_previous_order_list()
+        if not refresh and not failed_only and previous is not None and not previous.meta.failedPages:
+            if terminal is not None:
+                terminal.cache("저장된 주문 스냅샷을 바로 불러옵니다.")
+            self._emit_order_result(terminal, previous)
+            return CoupangOrderListResult(
+                message=format_coupang_order_list_message(previous),
+                payload=previous,
+            )
         if not self.store.has_session():
+            if previous is not None:
+                if terminal is not None:
+                    terminal.warn("세션이 없어 기존 주문 스냅샷을 유지합니다.")
+                self._emit_order_result(terminal, previous)
+                return CoupangOrderListResult(
+                    message=format_coupang_order_list_message(previous),
+                    payload=previous,
+                )
             payload = self._empty_payload(refresh=refresh)
             self._emit_order_result(terminal, payload)
             return CoupangOrderListResult(
@@ -66,6 +86,14 @@ class CoupangOrderService:
 
             years = await self._wait_for_visible_years()
             if not years:
+                if previous is not None:
+                    if terminal is not None:
+                        terminal.warn("주문 페이지를 읽지 못해 기존 주문 스냅샷을 유지합니다.")
+                    self._emit_order_result(terminal, previous)
+                    return CoupangOrderListResult(
+                        message=format_coupang_order_list_message(previous),
+                        payload=previous,
+                    )
                 payload = self._empty_payload(refresh=refresh)
                 self._emit_order_result(terminal, payload)
                 return CoupangOrderListResult(
@@ -73,7 +101,7 @@ class CoupangOrderService:
                     payload=payload,
                 )
 
-            previous = None if refresh else self._load_previous_order_list()
+            previous = None if refresh else previous
             if terminal is not None:
                 terminal.info(f"수집 연도: {', '.join(years)}")
             orders, failed_pages = await self._collect_all_years(
@@ -93,11 +121,95 @@ class CoupangOrderService:
         finally:
             await self._close_browser_session()
 
+    async def get_delivery_tracking(
+        self,
+        order_id: int,
+        shipment_box_id: str,
+    ) -> CoupangDeliveryTrackingResult:
+        cached_order = self._find_cached_order(order_id, shipment_box_id)
+        if not self.store.has_session():
+            raise RuntimeError("쿠팡 로그인 상태가 아닙니다")
+
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            await self._open_order_list(self._browser_session)
+            page_match = await self._find_order_group_page(
+                order_id=order_id,
+                shipment_box_id=shipment_box_id,
+                preferred_year=self._cached_order_year(cached_order),
+            )
+            if page_match is None:
+                raise RuntimeError("해당 배송 그룹을 주문목록에서 찾지 못했습니다")
+
+            group, visible_index = page_match
+            if not group.hasTrackAction:
+                raise RuntimeError("이 배송 그룹은 배송조회 버튼이 없습니다")
+            clicked = await self._click_track_action(visible_index)
+            if not clicked:
+                raise RuntimeError("배송조회 버튼을 열지 못했습니다")
+
+            raw_payload = await self._wait_for_tracking_payload()
+            raw_lines = [
+                self._visible_card_text(line)
+                for line in raw_payload.get("rawLines", [])
+                if self._visible_card_text(line)
+            ]
+            events = [
+                CoupangDeliveryTrackingEvent(
+                    time=self._visible_card_text(item.get("time")),
+                    status=self._visible_card_text(item.get("status")) or "-",
+                    description=self._visible_card_text(item.get("description")),
+                    location=self._visible_card_text(item.get("location")),
+                )
+                for item in raw_payload.get("events", [])
+                if isinstance(item, dict) and self._visible_card_text(item.get("status"))
+            ]
+            payload = CoupangDeliveryTrackingPayload(
+                provider=self.provider,
+                orderId=order_id,
+                shipmentBoxId=shipment_box_id,
+                invoiceNumber=group.invoiceNumber,
+                displayStatus=group.displayStatus,
+                courierName=self._visible_card_text(raw_payload.get("courierName")),
+                trackingNumber=self._visible_card_text(raw_payload.get("trackingNumber")) or group.invoiceNumber,
+                summary=self._visible_card_text(raw_payload.get("summary")) or group.pddMessage.get("message"),
+                events=events,
+                rawLines=raw_lines,
+                collectedAt=datetime.now().astimezone().replace(microsecond=0).isoformat(),
+            )
+            return CoupangDeliveryTrackingResult(
+                message="배송조회 정보를 가져왔습니다",
+                payload=payload,
+            )
+        finally:
+            await self._close_browser_session()
+
     def _load_previous_orders(self) -> list[CoupangOrderResult]:
         previous = self._load_previous_order_list()
         if previous is None:
             return []
         return previous.orders
+
+    def _find_cached_order(
+        self,
+        order_id: int,
+        shipment_box_id: str,
+    ) -> tuple[CoupangOrderResult, CoupangDeliveryGroup] | None:
+        for order in self._load_previous_orders():
+            if order.orderId != order_id:
+                continue
+            for group in order.deliveryGroupList:
+                if group.shipmentBoxId == shipment_box_id:
+                    return order, group
+        return None
+
+    def _cached_order_year(
+        self,
+        cached_order: tuple[CoupangOrderResult, CoupangDeliveryGroup] | None,
+    ) -> str | None:
+        if cached_order is None:
+            return None
+        return self._ordered_at_year(cached_order[0])
 
     def _load_previous_order_list(self) -> CoupangOrderList | None:
         previous = self.store.load_orders()
@@ -118,6 +230,45 @@ class CoupangOrderService:
 
     async def _open_order_list(self, session: BrowserSession) -> None:
         await session.tab.get(COUPANG_ORDER_LIST_URL)
+
+    async def _find_order_group_page(
+        self,
+        *,
+        order_id: int,
+        shipment_box_id: str,
+        preferred_year: str | None,
+    ) -> tuple[CoupangDeliveryGroup, int] | None:
+        years = await self._wait_for_visible_years()
+        if not years:
+            return None
+        ordered_years = years[:]
+        if preferred_year and preferred_year in ordered_years:
+            ordered_years = [preferred_year, *[year for year in ordered_years if year != preferred_year]]
+
+        for year in ordered_years:
+            page_index = 0
+            while True:
+                page = await self._fetch_page_with_retry(year, page_index)
+                visible_cards = page.get("_visibleDeliveryCards", [])
+                visible_index = 0
+                for order in page["orderList"]:
+                    built_order, next_visible_index = self._build_order(
+                        order,
+                        visible_cards,
+                        visible_index,
+                    )
+                    for group_offset, group in enumerate(built_order.deliveryGroupList):
+                        if (
+                            built_order.orderId == order_id
+                            and group.shipmentBoxId == shipment_box_id
+                        ):
+                            return group, visible_index + group_offset
+                    visible_index = next_visible_index
+                pagination = page["orderPagination"]
+                if not pagination["hasNext"]:
+                    break
+                page_index = pagination["nextPageIndex"]
+        return None
 
     async def _wait_for_visible_years(self, poll_count: int = 5) -> list[str]:
         for attempt in range(poll_count):
@@ -149,9 +300,16 @@ class CoupangOrderService:
                 except Exception:
                     failed_pages.append([year, page_index + 1])
                     break
-                page_orders = [
-                    self._build_order(order) for order in page["orderList"]
-                ]
+                visible_cards = page.get("_visibleDeliveryCards", [])
+                visible_index = 0
+                page_orders: list[CoupangOrderResult] = []
+                for order in page["orderList"]:
+                    built_order, visible_index = self._build_order(
+                        order,
+                        visible_cards,
+                        visible_index,
+                    )
+                    page_orders.append(built_order)
                 cached_tail = self._cached_tail_for_page(
                     cached_year_orders,
                     len(year_orders),
@@ -214,7 +372,15 @@ class CoupangOrderService:
             except Exception:
                 failed_pages.append([year, page_number])
                 continue
-            collected.extend(self._build_order(order) for order in page["orderList"])
+            visible_cards = page.get("_visibleDeliveryCards", [])
+            visible_index = 0
+            for order in page["orderList"]:
+                built_order, visible_index = self._build_order(
+                    order,
+                    visible_cards,
+                    visible_index,
+                )
+                collected.append(built_order)
         return collected, failed_pages
 
     async def _fetch_page_with_retry(self, year: str, page_index: int) -> dict[str, Any]:
@@ -226,7 +392,9 @@ class CoupangOrderService:
                 )
                 if inspect.isawaitable(maybe_navigation):
                     await maybe_navigation
-                return await self._wait_for_order_page_payload()
+                payload = await self._wait_for_order_page_payload()
+                payload["_visibleDeliveryCards"] = await self._read_visible_delivery_cards()
+                return payload
             except Exception as exc:
                 last_error = exc
                 await asyncio.sleep(1)
@@ -303,19 +471,327 @@ class CoupangOrderService:
         finally:
             self._browser_session = None
 
-    def _build_order(self, data: dict[str, Any]) -> CoupangOrderResult:
-        return CoupangOrderResult(
-            provider=self.provider,
-            orderId=int(data["orderId"]),
-            title=str(data["title"]),
-            orderedAt=int(data["orderedAt"]),
-            totalProductPrice=int(data["totalProductPrice"]),
-            deliveryGroupList=[
+    async def _read_visible_delivery_cards(self) -> list[dict[str, Any]]:
+        try:
+            result = await self._evaluate(
+                """
+                (() => {
+                  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                  const actionLabels = ['배송 조회', '교환, 반품 신청', '리뷰 작성하기'];
+                  const productLinkSelector = 'a[href*="vendorItemId"], a[href*="/vp/products/"], a[href*="/ssr/sdp/link"]';
+                  const statusLabels = [
+                    ['주문 취소', '주문 취소'],
+                    ['주문취소', '주문 취소'],
+                    ['취소완료', '주문 취소'],
+                    ['취소', '주문 취소'],
+                    ['반품완료', '반품완료'],
+                    ['교환완료', '교환완료'],
+                    ['배송완료', '배송완료'],
+                    ['배송중', '배송중'],
+                    ['상품준비중', '상품준비중'],
+                    ['주문접수', '주문접수'],
+                    ['주문확인', '주문확인'],
+                  ];
+                  const statusText = (text) => {
+                    const normalized = normalize(text);
+                    const compact = normalized.replace(/\\s+/g, '');
+                    for (const [label, canonical] of statusLabels) {
+                      if (compact === label.replace(/\\s+/g, '')) {
+                        return canonical;
+                      }
+                    }
+                    return null;
+                  };
+                  const buttons = Array.from(document.querySelectorAll('button, a'));
+                  const productLinks = Array.from(document.querySelectorAll(productLinkSelector));
+                  const cardRoots = [];
+                  const seen = new Set();
+
+                  const findCardRoot = (node) => {
+                    let current = node instanceof Element ? node : null;
+                    let candidate = null;
+                    while (current && current !== document.body) {
+                      const text = normalize(current.textContent);
+                      const productLinkCount = current.querySelectorAll(productLinkSelector).length;
+                      const hasPrice = /\\d{1,3}(,\\d{3})*\\s*원/.test(text);
+                      const actionCount = actionLabels.filter((label) => text.includes(label)).length;
+                      const hasStatus = statusLabels.some(([label]) => text.replace(/\\s+/g, '').includes(label.replace(/\\s+/g, '')));
+                      if (productLinkCount >= 1 && hasPrice && (actionCount >= 1 || hasStatus)) {
+                        return current;
+                      }
+                      current = current.parentElement;
+                    }
+                    return candidate;
+                  };
+
+                  for (const node of [...productLinks, ...buttons]) {
+                    const root = findCardRoot(node);
+                    if (!root || seen.has(root)) {
+                      continue;
+                    }
+                    seen.add(root);
+                    cardRoots.push(root);
+                  }
+
+                  return cardRoots.map((root) => {
+                    const rootText = normalize(root.textContent);
+                    const descendants = Array.from(root.querySelectorAll('div, span, strong, em, p, h1, h2, h3, h4, h5, h6'));
+                    const displayStatus = descendants
+                      .map((node) => normalize(node.textContent))
+                      .map(statusText)
+                      .find(Boolean) || statusText(rootText);
+                    const buttonTexts = buttons
+                      .filter((button) => root.contains(button))
+                      .map((button) => normalize(button.textContent));
+
+                    return {
+                      displayStatus,
+                      hasTrackAction: buttonTexts.some((text) => text.includes('배송 조회')),
+                      hasExchangeReturnAction: buttonTexts.some((text) => text.includes('교환, 반품 신청')),
+                      hasWriteReviewAction: buttonTexts.some((text) => text.includes('리뷰 작성하기')),
+                    };
+                  });
+                })()
+                """
+            )
+        except Exception:
+            return []
+        return result if isinstance(result, list) else []
+
+    async def _click_track_action(self, visible_index: int) -> bool:
+        try:
+            result = await self._evaluate(
+                f"""
+                (() => {{
+                  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                  const actionLabels = ['배송 조회', '교환, 반품 신청', '리뷰 작성하기'];
+                  const productLinkSelector = 'a[href*="vendorItemId"], a[href*="/vp/products/"], a[href*="/ssr/sdp/link"]';
+                  const statusLabels = [
+                    ['주문 취소', '주문 취소'],
+                    ['주문취소', '주문 취소'],
+                    ['취소완료', '주문 취소'],
+                    ['취소', '주문 취소'],
+                    ['반품완료', '반품완료'],
+                    ['교환완료', '교환완료'],
+                    ['배송완료', '배송완료'],
+                    ['배송중', '배송중'],
+                    ['상품준비중', '상품준비중'],
+                    ['주문접수', '주문접수'],
+                    ['주문확인', '주문확인'],
+                  ];
+                  const buttons = Array.from(document.querySelectorAll('button, a'));
+                  const productLinks = Array.from(document.querySelectorAll(productLinkSelector));
+                  const cardRoots = [];
+                  const seen = new Set();
+
+                  const findCardRoot = (node) => {{
+                    let current = node instanceof Element ? node : null;
+                    let candidate = null;
+                    while (current && current !== document.body) {{
+                      const text = normalize(current.textContent);
+                      const productLinkCount = current.querySelectorAll(productLinkSelector).length;
+                      const hasPrice = /\\d{{1,3}}(,\\d{{3}})*\\s*원/.test(text);
+                      const actionCount = actionLabels.filter((label) => text.includes(label)).length;
+                      const hasStatus = statusLabels.some(([label]) => text.replace(/\\s+/g, '').includes(label.replace(/\\s+/g, '')));
+                      if (productLinkCount >= 1 && hasPrice && (actionCount >= 1 || hasStatus)) {{
+                        return current;
+                      }}
+                      current = current.parentElement;
+                    }}
+                    return candidate;
+                  }};
+
+                  for (const node of [...productLinks, ...buttons]) {{
+                    const root = findCardRoot(node);
+                    if (!root || seen.has(root)) {{
+                      continue;
+                    }}
+                    seen.add(root);
+                    cardRoots.push(root);
+                  }}
+
+                  const root = cardRoots[{visible_index}];
+                  if (!root) {{
+                    return false;
+                  }}
+                  const trackButton = buttons.find((button) =>
+                    root.contains(button) && normalize(button.textContent).includes('배송 조회')
+                  );
+                  if (!trackButton) {{
+                    return false;
+                  }}
+                  trackButton.click();
+                  return true;
+                }})()
+                """
+            )
+        except Exception:
+            return False
+        return bool(result)
+
+    async def _wait_for_tracking_payload(self, poll_count: int = 10) -> dict[str, Any]:
+        last_payload: dict[str, Any] | None = None
+        for attempt in range(poll_count):
+            payload = await self._read_tracking_payload()
+            if payload.get("summary") or payload.get("events") or payload.get("trackingNumber"):
+                return payload
+            last_payload = payload
+            if attempt < poll_count - 1:
+                await asyncio.sleep(1)
+        return last_payload or {}
+
+    async def _read_tracking_payload(self) -> dict[str, Any]:
+        try:
+            result = await self._evaluate(
+                """
+                (() => {
+                  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                  const candidates = Array.from(document.querySelectorAll('[role="dialog"], dialog, section, main, div'));
+                  const roots = candidates
+                    .map((node) => ({
+                      node,
+                      text: normalize(node.textContent),
+                    }))
+                    .filter(({ text }) =>
+                      text &&
+                      (
+                        text.includes('배송 조회') ||
+                        text.includes('배송조회') ||
+                        text.includes('송장번호') ||
+                        text.includes('운송장번호') ||
+                        text.includes('택배사') ||
+                        text.includes('배송상태')
+                      )
+                    )
+                    .sort((left, right) => right.text.length - left.text.length);
+
+                  const root = (roots[0] && roots[0].node) || document.body;
+
+                  const lineSet = new Set();
+                  const rawLines = normalize(root.textContent)
+                    .split(/\\n+/)
+                    .map((line) => normalize(line))
+                    .filter((line) => {
+                      if (!line || lineSet.has(line)) {
+                        return false;
+                      }
+                      lineSet.add(line);
+                      return true;
+                    })
+                    .slice(0, 80);
+
+                  const findValueByLabels = (labels) => {
+                    const nodes = Array.from(root.querySelectorAll('dt, dd, th, td, div, span, strong, p'));
+                    for (const node of nodes) {
+                      const text = normalize(node.textContent);
+                      if (!text) {
+                        continue;
+                      }
+                      for (const label of labels) {
+                        if (text === label || text.startsWith(`${label} `) || text.startsWith(`${label}:`)) {
+                          const siblingTexts = Array.from(node.parentElement?.children || [])
+                            .filter((child) => child !== node)
+                            .map((child) => normalize(child.textContent))
+                            .filter(Boolean);
+                          const combined = siblingTexts.join(' ');
+                          if (combined) {
+                            return combined;
+                          }
+                          const stripped = text.replace(label, '').replace(/^[:\\s-]+/, '').trim();
+                          if (stripped) {
+                            return stripped;
+                          }
+                        }
+                      }
+                    }
+                    return null;
+                  };
+
+                  const summary = rawLines.find((line) =>
+                    /(배송완료|배송중|집하|간선|배달|도착|출고|출발|취소|반품)/.test(line)
+                  ) || null;
+                  const courierName = findValueByLabels(['택배사', '배송업체', '배송사', '운송사']);
+                  const trackingNumber = findValueByLabels(['송장번호', '운송장번호', '배송번호']);
+
+                  const eventRoots = Array.from(root.querySelectorAll('tr, li, [role="listitem"], div, p'))
+                    .map((node) => ({
+                      node,
+                      text: normalize(node.textContent),
+                    }))
+                    .filter(({ text }) =>
+                      text &&
+                      text.length <= 240 &&
+                      (/(\\d{4}[./-]\\d{1,2}[./-]\\d{1,2})|(오전|오후|\\d{1,2}:\\d{2})/.test(text) ||
+                        /(배송완료|배송중|집하|배달|도착|출발|간선|취소|반품)/.test(text))
+                    );
+
+                  const seenEvents = new Set();
+                  const events = eventRoots.map(({ node, text }) => {
+                    const children = Array.from(node.children || [])
+                      .map((child) => normalize(child.textContent))
+                      .filter(Boolean);
+                    const pieces = children.length >= 2 ? children : text.split(/\\s{2,}/).filter(Boolean);
+                    const time = pieces.find((value) =>
+                      /(\\d{4}[./-]\\d{1,2}[./-]\\d{1,2})|(오전|오후|\\d{1,2}:\\d{2})/.test(value)
+                    ) || null;
+                    const status = pieces.find((value) =>
+                      /(배송완료|배송중|집하|배달|도착|출발|간선|취소|반품)/.test(value)
+                    ) || pieces[0] || text;
+                    const location = pieces.find((value, index) =>
+                      index > 0 &&
+                      value !== time &&
+                      value !== status &&
+                      value.length <= 40
+                    ) || null;
+                    const description = pieces
+                      .filter((value) => value !== time && value !== status && value !== location)
+                      .join(' ') || null;
+                    const key = [time || '', status, location || '', description || ''].join('|');
+                    if (seenEvents.has(key)) {
+                      return null;
+                    }
+                    seenEvents.add(key);
+                    return { time, status, location, description };
+                  }).filter(Boolean).slice(0, 20);
+
+                  return {
+                    summary,
+                    courierName,
+                    trackingNumber,
+                    events,
+                    rawLines,
+                  };
+                })()
+                """
+            )
+        except Exception:
+            return {}
+        return result if isinstance(result, dict) else {}
+
+    def _build_order(
+        self,
+        data: dict[str, Any],
+        visible_cards: list[dict[str, Any]] | None = None,
+        visible_index: int = 0,
+    ) -> tuple[CoupangOrderResult, int]:
+        delivery_groups: list[CoupangDeliveryGroup] = []
+        current_index = visible_index
+        for group in data.get("deliveryGroupList", []):
+            visible_card = (
+                visible_cards[current_index]
+                if visible_cards is not None and current_index < len(visible_cards)
+                else {}
+            )
+            delivery_groups.append(
                 CoupangDeliveryGroup(
                     shipmentBoxId=str(group["shipmentBoxId"]),
                     invoiceNumber=str(group["invoiceNumber"]),
                     invoiceStatus=str(group["invoiceStatus"]),
                     pddMessage={"message": self._read_message(group.get("pddMessage"))},
+                    displayStatus=self._visible_card_text(visible_card.get("displayStatus")),
+                    hasTrackAction=bool(visible_card.get("hasTrackAction", False)),
+                    hasExchangeReturnAction=bool(visible_card.get("hasExchangeReturnAction", False)),
+                    hasWriteReviewAction=bool(visible_card.get("hasWriteReviewAction", False)),
                     productList=[
                         CoupangOrderProduct(
                             vendorItemId=int(product["vendorItemId"]),
@@ -331,9 +807,22 @@ class CoupangOrderService:
                         for product in group.get("productList", [])
                     ],
                 )
-                for group in data.get("deliveryGroupList", [])
-            ],
-        )
+            )
+            current_index += 1
+        return CoupangOrderResult(
+            provider=self.provider,
+            orderId=int(data["orderId"]),
+            title=str(data["title"]),
+            orderedAt=int(data["orderedAt"]),
+            totalProductPrice=int(data["totalProductPrice"]),
+            deliveryGroupList=delivery_groups,
+        ), current_index
+
+    def _visible_card_text(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     def _build_product_url(self, product: dict[str, Any]) -> str:
         product_id = product.get("productId")
