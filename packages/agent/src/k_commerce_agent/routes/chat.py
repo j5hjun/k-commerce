@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from langchain_core.messages import AIMessageChunk
@@ -25,6 +26,8 @@ from k_commerce_agent.api_models import (
     OrderGroupResponse,
     OrderProductResponse,
     OrdersResponse,
+    ProductSearchItemResponse,
+    ProductSearchResponse,
     ProviderLoginResponse,
     ProviderLoginStatusResponse,
     ReviewDeleteRequestBody,
@@ -46,6 +49,14 @@ memory_store = SessionMemoryStore(settings.memory_path)
 QUANTITY_PATTERNS = (
     re.compile(r"장바구니\s*(?P<index>\d+)번.*?수량\s*(?P<quantity>\d+)개"),
     re.compile(r"(?P<name>.+?)\s+수량\s*(?P<quantity>\d+)개"),
+)
+REVIEW_UPLOAD_PATTERNS = (
+    re.compile(
+        r"(?P<index>\d+)번\s*(?:상품)?(?:에|은|는)?\s*(?P<text>.+?)\s*리뷰\s*(?:달|작성|남|올)"
+    ),
+    re.compile(
+        r"(?P<index>\d+)번\s*(?:상품)?\s*리뷰\s*(?:를|을)?\s*(?P<text>.+)"
+    ),
 )
 DIRECT_LOGIN_COMMANDS = {
     "로그인진행해줘",
@@ -96,6 +107,27 @@ def _parse_direct_cart_quantity_update(
             cleaned_name = re.sub(r"^(장바구니|현재|그)\s*", "", name).strip()
             if cleaned_name:
                 return {"quantity": quantity, "product_name": cleaned_name}
+    return None
+
+
+def _normalize_review_text(value: str) -> str:
+    text = re.sub(r"\s+", " ", value).strip(" .,!?\n\t")
+    text = re.sub(r"(?:이라고|라고)$", "", text).strip()
+    if text.endswith("다고"):
+        text = f"{text[:-2]}다"
+    return text.strip()
+
+
+def _parse_direct_review_upload(message: str) -> dict[str, int | str] | None:
+    if "리뷰" not in message:
+        return None
+    for pattern in REVIEW_UPLOAD_PATTERNS:
+        match = pattern.search(message)
+        if not match:
+            continue
+        review_text = _normalize_review_text(match.group("text"))
+        if review_text:
+            return {"item_index": int(match.group("index")), "text": review_text}
     return None
 
 
@@ -159,6 +191,14 @@ def _format_price_text(value: object) -> str:
         return f"{int(value):,}원"
     except Exception:
         return "-"
+
+
+def _parse_price_number(value: object) -> int:
+    text = str(value or "")
+    digits = re.sub(r"\D", "", text)
+    if not digits:
+        return 10**12
+    return int(digits)
 
 
 def _group_orders(payload: dict[str, object]) -> OrdersResponse:
@@ -302,6 +342,87 @@ async def _try_direct_login(
     return True
 
 
+async def _try_direct_review_upload(
+    websocket: WebSocket,
+    tools: dict[str, object],
+    message: str,
+) -> bool:
+    parsed = _parse_direct_review_upload(message)
+    if parsed is None:
+        return False
+
+    list_tool = tools.get("review_list_reviewable")
+    upload_tool = tools.get("review_upload")
+    if list_tool is None or upload_tool is None:
+        await websocket.send_json(
+            {
+                "type": "token",
+                "content": "리뷰 작성 기능을 사용할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해주세요.",
+            }
+        )
+        await websocket.send_json({"type": "done"})
+        return True
+
+    provider = "coupang"
+    item_index = int(parsed["item_index"])
+    review_text = str(parsed["text"])
+
+    await websocket.send_json(
+        {"type": "tool", "name": "review_list_reviewable", "args": {"provider": provider}}
+    )
+    list_payload = _parse_tool_result(await list_tool.ainvoke({"provider": provider}))
+    items = [
+        item
+        for item in list_payload.get("items", [])
+        if isinstance(item, dict)
+    ]
+    selected = next(
+        (item for item in items if int(item.get("index") or 0) == item_index),
+        None,
+    )
+    if selected is None and 0 < item_index <= len(items):
+        selected = items[item_index - 1]
+
+    if selected is None:
+        await websocket.send_json(
+            {
+                "type": "token",
+                "content": f"리뷰 작성 가능한 목록에서 {item_index}번 상품을 찾지 못했습니다.\n\n리뷰 목록을 다시 불러온 뒤 다시 시도해주세요.",
+            }
+        )
+        await websocket.send_json({"type": "done"})
+        return True
+
+    args = {
+        "provider": provider,
+        "order_id": str(selected.get("completed_order_vendor_item_id") or ""),
+        "product_id": str(selected.get("product_id") or ""),
+        "rating": 5,
+        "text": review_text,
+        "review_url": str(selected.get("review_url") or ""),
+    }
+    await websocket.send_json({"type": "tool", "name": "review_upload", "args": args})
+    upload_payload = _parse_tool_result(await upload_tool.ainvoke(args))
+    if bool(upload_payload.get("success", False)):
+        product_name = str(selected.get("product_name") or f"{item_index}번 상품")
+        await websocket.send_json(
+            {
+                "type": "token",
+                "content": f"{product_name} 리뷰를 작성했습니다.\n\n작성한 내용: {review_text}",
+            }
+        )
+    else:
+        await websocket.send_json(
+            {
+                "type": "token",
+                "content": upload_payload.get("message")
+                or "리뷰를 작성하지 못했습니다. 다시 시도해주세요.",
+            }
+        )
+    await websocket.send_json({"type": "done"})
+    return True
+
+
 @router.get("/health")
 async def health() -> dict[str, bool]:
     return {"ok": True}
@@ -346,6 +467,70 @@ async def get_orders(refresh: bool = False) -> OrdersResponse:
         )
     )
     return _group_orders(payload)
+
+
+@router.get("/api/orders/cache", response_model=OrdersResponse)
+async def get_cached_orders() -> OrdersResponse:
+    orders_path = Path.home() / ".k-commerce" / "coupang" / "orders.json"
+    if not orders_path.is_file():
+        return OrdersResponse(total=0, years=[], groups=[])
+    try:
+        payload = json.loads(orders_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return OrdersResponse(total=0, years=[], groups=[])
+    return _group_orders({"payload": payload})
+
+
+@router.get("/api/products/search", response_model=ProductSearchResponse)
+async def search_products(
+    keyword: str,
+    provider: str = "coupang",
+    sort: str = "low_price",
+    max_results: int = 10,
+) -> ProductSearchResponse:
+    tools = await load_tools()
+    tool_map = {tool.name: tool for tool in tools}
+    tool = tool_map.get("search_products")
+    if tool is None:
+        return ProductSearchResponse(
+            provider=provider,
+            success=False,
+            message="상품 검색을 사용할 수 없습니다.",
+            items=[],
+        )
+
+    payload = _parse_tool_result(
+        await tool.ainvoke(
+            {
+                "provider": provider,
+                "keyword": keyword,
+                "sort": sort,
+                "max_results": max_results,
+            }
+        )
+    )
+    items = payload.get("items") if isinstance(payload, dict) else []
+    sorted_items = sorted(
+        [item for item in items if isinstance(item, dict)],
+        key=lambda item: _parse_price_number(item.get("price")),
+    )
+    return ProductSearchResponse(
+        provider=str(payload.get("provider") or provider),
+        success=bool(payload.get("success", False)),
+        message=str(payload.get("message") or ""),
+        items=[
+            ProductSearchItemResponse(
+                index=index,
+                product_id=str(item.get("product_id") or ""),
+                product_name=str(item.get("product_name") or ""),
+                price=str(item.get("price") or ""),
+                rating=str(item.get("rating") or ""),
+                image_url=str(item.get("image_url") or ""),
+                product_link=str(item.get("product_link") or ""),
+            )
+            for index, item in enumerate(sorted_items, start=1)
+        ],
+    )
 
 
 @router.get(
@@ -905,6 +1090,13 @@ async def chat(websocket: WebSocket) -> None:
                     continue
 
                 if await _try_direct_login(
+                    websocket,
+                    tool_map,
+                    latest_user_message,
+                ):
+                    continue
+
+                if await _try_direct_review_upload(
                     websocket,
                     tool_map,
                     latest_user_message,

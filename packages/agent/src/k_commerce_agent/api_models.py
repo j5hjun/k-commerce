@@ -79,6 +79,23 @@ class CartListResponse(BaseModel):
     items: list[CartItemResponse] = []
 
 
+class ProductSearchItemResponse(BaseModel):
+    index: int
+    product_id: str
+    product_name: str
+    price: str
+    rating: str
+    image_url: str
+    product_link: str
+
+
+class ProductSearchResponse(BaseModel):
+    provider: str
+    success: bool
+    message: str
+    items: list[ProductSearchItemResponse] = []
+
+
 class CartItemIdentityBody(BaseModel):
     product_id: str = ""
     vendor_item_id: str = ""
