@@ -214,6 +214,8 @@ async def test_search_orders_collects_keyword_pages_with_same_order_payload_pars
     assert result.keyword == "세제"
     assert result.count == 2
     assert [order.order_id for order in result.orders] == ["10", "20"]
+    assert result.orders[0].item_count == 1
+    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     tab.get.assert_any_await(
         "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=0"

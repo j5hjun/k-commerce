@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from k_commerce_cli.services.types.provider import ProviderName
+if TYPE_CHECKING:
+    from k_commerce_cli.services.types.provider import ProviderName
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,8 @@ class CoupangOrderMeta:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderMeta":
+        from k_commerce_cli.services.types.provider import ProviderName
+
         return cls(
             provider=ProviderName(str(payload["provider"])),
             collectedAt=str(payload["collectedAt"]),
@@ -55,6 +58,8 @@ class CoupangOrderProduct:
     combinedUnitPrice: int
     imagePath: str
     productUrl: str = ""
+    productId: int = 0
+    itemId: int = 0
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderProduct":
@@ -68,6 +73,8 @@ class CoupangOrderProduct:
             combinedUnitPrice=int(payload["combinedUnitPrice"]),
             imagePath=str(payload["imagePath"]),
             productUrl=str(payload.get("productUrl") or ""),
+            productId=int(payload.get("productId") or 0),
+            itemId=int(payload.get("itemId") or 0),
         )
 
 
@@ -104,6 +111,8 @@ class CoupangOrderResult:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderResult":
+        from k_commerce_cli.services.types.provider import ProviderName
+
         return cls(
             provider=ProviderName(str(payload["provider"])),
             orderId=int(payload["orderId"]),

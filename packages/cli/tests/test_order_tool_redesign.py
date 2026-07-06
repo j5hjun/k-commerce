@@ -94,7 +94,29 @@ def _snapshot() -> dict:
                     "title": "old",
                     "orderedAt": 1767225600000,
                     "totalProductPrice": 1000,
-                    "deliveryGroupList": [],
+                    "deliveryGroupList": [
+                        {
+                            "shipmentBoxId": "box-100",
+                            "invoiceNumber": "invoice-100",
+                            "invoiceStatus": "CANCEL",
+                            "pddMessage": {"message": "cancelled"},
+                            "productList": [
+                                {
+                                    "vendorItemId": 102,
+                                    "productId": 1002,
+                                    "itemId": 2002,
+                                    "vendorItemName": "old item",
+                                    "productName": "old item",
+                                    "quantity": 1,
+                                    "unitPrice": 1000,
+                                    "discountedUnitPrice": 1000,
+                                    "combinedUnitPrice": 1000,
+                                    "imagePath": "https://image.example/old.jpg",
+                                    "productUrl": "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102",
+                                }
+                            ],
+                        }
+                    ],
                 }
             ),
             CoupangOrderResult.from_dict(
@@ -104,7 +126,29 @@ def _snapshot() -> dict:
                     "title": "recent",
                     "orderedAt": 1780272000000,
                     "totalProductPrice": 2000,
-                    "deliveryGroupList": [],
+                    "deliveryGroupList": [
+                        {
+                            "shipmentBoxId": "box-200",
+                            "invoiceNumber": "invoice-200",
+                            "invoiceStatus": "FINAL_DELIVERY",
+                            "pddMessage": {"message": "done"},
+                            "productList": [
+                                {
+                                    "vendorItemId": 101,
+                                    "productId": 1001,
+                                    "itemId": 2001,
+                                    "vendorItemName": "recent item",
+                                    "productName": "recent item",
+                                    "quantity": 1,
+                                    "unitPrice": 2000,
+                                    "discountedUnitPrice": 2000,
+                                    "combinedUnitPrice": 2000,
+                                    "imagePath": "https://image.example/recent.jpg",
+                                    "productUrl": "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101",
+                                }
+                            ],
+                        }
+                    ],
                 }
             ),
         ],
@@ -136,7 +180,44 @@ async def test_order_list_reads_saved_snapshot_without_launching_browser_when_or
     assert result.total_count == 1
     assert result.orders[0].order_id == "200"
     assert result.orders[0].title == "recent"
+    assert result.orders[0].item_count == 1
+    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
     assert result.next_tools == ()
+
+
+@pytest.mark.anyio
+async def test_order_detail_returns_product_identifiers_and_urls(tmp_path: Path) -> None:
+    # Given: a saved order snapshot with product identifiers and product URL.
+    store = _StoreStub(tmp_path, orders=_snapshot())
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=object())
+
+    # When: the detail tool reads the saved order.
+    result = await service.get_order_detail(OrderDetailRequest(order_id="200"))
+
+    # Then: the item has the identifiers and URL needed for follow-up tools or direct inspection.
+    assert result.success is True
+    assert result.items[0].vendor_item_id == "101"
+    assert result.items[0].product_id == "1001"
+    assert result.items[0].item_id == "2001"
+    assert result.items[0].product_url == "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101"
+    assert result.items[0].image_url == "https://image.example/recent.jpg"
+
+
+@pytest.mark.anyio
+async def test_order_failures_return_actionable_summary_fields(tmp_path: Path) -> None:
+    # Given: a saved snapshot containing a failed order with product details.
+    store = _StoreStub(tmp_path, orders=_snapshot())
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=object())
+
+    # When: the failure-list tool reads saved failed orders.
+    result = await service.list_order_failures(OrderFailuresRequest(limit=10))
+
+    # Then: the failed order summary keeps the order key and representative product URL.
+    assert result.success is True
+    assert result.orders[0].order_id == "100"
+    assert result.orders[0].amount == 1000
+    assert result.orders[0].item_count == 1
+    assert result.orders[0].product_url == "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102"
 
 
 @pytest.mark.anyio

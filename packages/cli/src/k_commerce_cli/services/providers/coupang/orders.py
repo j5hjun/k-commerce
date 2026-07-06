@@ -562,6 +562,8 @@ class CoupangOrderService:
                             combinedUnitPrice=int(product["combinedUnitPrice"]),
                             imagePath=str(product["imagePath"]),
                             productUrl=self._build_product_url(product),
+                            productId=int(product.get("productId") or 0),
+                            itemId=int(product.get("itemId") or 0),
                         )
                         for product in group.get("productList", [])
                     ],
@@ -753,33 +755,47 @@ class CoupangOrderService:
         return self._order_status(order) == status
 
     def _order_list_item(self, order: CoupangOrderResult) -> OrderListItem:
+        products = self._order_products(order)
         return OrderListItem(
             order_id=str(order.orderId),
             ordered_at=self._ordered_at_date_text(order),
             status=self._order_status(order),
             title=order.title,
             amount=order.totalProductPrice,
+            item_count=len(products),
+            product_url=products[0].productUrl if products else "",
         )
 
     def _order_failure_item(self, order: CoupangOrderResult) -> OrderFailureItem:
+        products = self._order_products(order)
         return OrderFailureItem(
             order_id=str(order.orderId),
             ordered_at=self._ordered_at_date_text(order),
             failure_type=self._order_status(order),
             title=order.title,
+            amount=order.totalProductPrice,
+            item_count=len(products),
+            product_url=products[0].productUrl if products else "",
         )
 
     def _order_detail_items(self, order: CoupangOrderResult) -> list[OrderDetailItem]:
         return [
             OrderDetailItem(
                 vendor_item_id=str(product.vendorItemId),
+                product_id=str(product.productId) if product.productId else "",
+                item_id=str(product.itemId) if product.itemId else "",
                 name=product.productName or product.vendorItemName,
                 quantity=product.quantity,
                 amount=product.combinedUnitPrice,
+                product_url=product.productUrl,
+                image_url=product.imagePath,
             )
             for group in order.deliveryGroupList
             for product in group.productList
         ]
+
+    def _order_products(self, order: CoupangOrderResult) -> list[CoupangOrderProduct]:
+        return [product for group in order.deliveryGroupList for product in group.productList]
 
     def _is_failure_order(self, order: CoupangOrderResult) -> bool:
         failure_markers = ("CANCEL", "RETURN", "EXCHANGE", "FAIL", "ERROR")

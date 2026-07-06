@@ -67,6 +67,8 @@ class OrderListItem:
     status: str
     title: str
     amount: int
+    item_count: int = 0
+    product_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,14 +77,21 @@ class OrderFailureItem:
     ordered_at: str
     failure_type: str
     title: str
+    amount: int = 0
+    item_count: int = 0
+    product_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class OrderDetailItem:
     vendor_item_id: str
+    product_id: str
+    item_id: str
     name: str
     quantity: int
     amount: int
+    product_url: str
+    image_url: str
 
 
 @dataclass(frozen=True, slots=True)
