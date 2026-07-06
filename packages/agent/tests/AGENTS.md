@@ -1,6 +1,24 @@
-# Agent Tests File Map
+# Agent Tests Knowledge Base
 
-This directory contains tests for the agent backend.
+## OVERVIEW
 
-- `test_agent_backend.py` - settings defaults and `build_agent()` behavior when no LLM is configured.
-- `__init__.py` - test package marker.
+Backend tests for FastAPI boot, lazy model setup, and MCP tool exposure.
+
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Backend contract | `test_agent_backend.py` | Settings defaults, no-model failure path, `/api/tools` contract. |
+
+## CONVENTIONS
+
+- Keep app import and `create_app()` usable without model credentials.
+- `/health` and `/api/tools` tests should not require an LLM configuration.
+- When isolating route behavior, monkeypatch MCP tool loading instead of calling CLI provider internals.
+- `/api/tools` should expose only the canonical MCP tool names.
+- Add WebSocket tests beside `test_agent_backend.py` when changing `/ws/chat`; assert message types `token`, `tool`, `done`, and `error`.
+
+## ANTI-PATTERNS
+
+- Do not require `HF_TOKEN`, `WATSONX_*`, or other model secrets for default backend tests.
+- Do not drive real browser/provider automation from agent tests.

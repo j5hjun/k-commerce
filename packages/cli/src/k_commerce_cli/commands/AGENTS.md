@@ -1,13 +1,28 @@
-# CLI Commands File Map
+# CLI Commands Knowledge Base
 
-This directory contains command handlers registered by `k_commerce_cli/cli.py`.
+## OVERVIEW
 
-- `login.py` - `login` command, root-dir resolution, and provider login dispatch.
-- `logout.py` - `logout` command, root-dir resolution, and provider session cleanup dispatch.
-- `status.py` - `status` command, root-dir resolution, and provider login-status dispatch.
-- `order.py` - `order` command group plus `order list` handler and refresh flag plumbing.
-- `review/` - review command group, upload/edit/delete handlers, and shared interactive prompts. See `review/AGENTS.md`.
-- `cart/` - cart command, list-browse/quantity/delete flows, and shared interactive prompts. See `cart/AGENTS.md`.
-- `__init__.py` - command package marker.
+Command handlers registered by `k_commerce_cli/cli.py`. This layer owns CLI parsing and output, not provider behavior.
 
-Command files should stay thin: parse CLI options, resolve paths/provider names, call services, and print terminal messages.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Login/status/logout | `login.py`, `status.py`, `logout.py` | Root-dir handling and provider dispatch. |
+| Generic tool runner | `tool_runner.py` | JSON runner for canonical tool names with inline JSON and `--request-file`. |
+| Orders | `order.py` | `order list`, `--refresh`, `--failed-only`. |
+| Search | `search.py` | Sort validation, table/JSON output, optional JSON save. |
+| Cart workflows | `cart/` | List-browse, quantity, delete; see local map. |
+| Review workflows | `review/` | Upload/edit/delete; see local map. |
+
+## CONVENTIONS
+
+- The MCP tool contract is the source of truth; command handlers call shared tool invocation for commerce work.
+- Existing command groups are human/debug compatibility aliases over the canonical tools.
+- `root_dir` is accepted only as a CLI debug/runtime option, not as a canonical request payload field.
+- Keep command modules thin: parse, prompt, delegate, print.
+- Preserve exact user-facing strings that tests assert.
+
+## ANTI-PATTERNS
+
+- Do not duplicate Coupang scraping or state logic here.

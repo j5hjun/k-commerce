@@ -6,6 +6,8 @@ from pathlib import Path
 import asyncclick as click
 
 from k_commerce_cli.services.registry import get_provider
+from k_commerce_cli.services.tools.invoke import invoke_tool
+from k_commerce_cli.services.tools.types import ToolRuntimeOptions
 
 SUPPORTED_SORTS = [
     "relevance",
@@ -64,20 +66,23 @@ async def search(
 ) -> None:
     terminal = ctx.obj["terminal"]
     try:
-        provider_service = get_provider(
-            provider,
-            root_dir=_resolve_root_dir(root_dir),
-            terminal=terminal,
+        result = await invoke_tool(
+            "search_products",
+            {
+                "provider": provider,
+                "keyword": keyword,
+                "category": category,
+                "sort": sort,
+                "max_results": 10,
+            },
+            runtime_options=ToolRuntimeOptions(
+                root_dir=_resolve_root_dir(root_dir),
+                terminal=terminal,
+                get_provider=get_provider,
+            ),
         )
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    result = await provider_service.search_products(
-        keyword,
-        category=category,
-        sort=sort,
-        max_results=10,
-    )
 
     if not result.success:
         terminal.abort(result.message)

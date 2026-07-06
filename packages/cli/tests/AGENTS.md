@@ -1,18 +1,33 @@
-# CLI Tests File Map
+# CLI Tests Knowledge Base
 
-This directory contains tests for the CLI package.
+## OVERVIEW
 
-## Unit and service tests
+CLI package tests: fast unit/service coverage, login e2e coverage, and opt-in real-browser smoke coverage.
 
-- `test_cli.py` - command registration, help output, parser validation, terminal printing, and command-to-service plumbing.
-- `test_auth_service.py` - provider registry behavior and default provider creation.
-- `test_provider_store.py` - credential/session/order persistence behavior in `ProviderStore`.
-- `test_coupang_login.py` - Coupang auth/browser/session behavior with test doubles.
-- `test_coupang_logout.py` - Coupang logout/session cleanup behavior.
-- `test_coupang_orders.py` - Coupang order collection, retry, diff-count, cache, and failure-message behavior.
-- `__init__.py` - test package marker.
+## WHERE TO LOOK
 
-## Scenario directories
+| Task | Location | Notes |
+|------|----------|-------|
+| Command contract | `test_cli.py` | Help, parser validation, terminal printing, command-service plumbing. |
+| Alias routing | `test_cli_alias_invocation.py` | Human/debug aliases delegate through shared tool invocation and keep `root_dir` runtime-only. |
+| Generic runner | `test_tool_runner.py`, `test_tool_runner_errors.py` | `k-commerce <tool-name> <json>` / `--request-file`, JSON errors, timeout and sanitized provider failures. |
+| Tool dispatch | `test_tool_registry.py`, `test_tool_invoke.py`, `tool_runner_support.py` | Canonical tool registry, typed fake providers, runtime options. |
+| Provider/store | `test_auth_service.py`, `test_provider_store.py` | Registry/default provider and state persistence. |
+| Coupang services | `test_coupang_*.py` | Login/logout/orders/review/search/cart service behavior. |
+| Interactive flows | `test_cart_interactive.py`, `test_cart_list_browse.py`, `test_review_list_browse.py` | Prompt loops and browse behavior. |
+| Login e2e | `e2e/` | File-backed login/session scenarios. |
+| Smoke | `smoke/` | Opt-in browser/local-state tests; see local maps. |
 
-- `e2e/` - end-to-end CLI login scenarios against browser/session helpers. See `e2e/AGENTS.md`.
-- `smoke/` - opt-in smoke tests for local/manual Coupang login scenarios. See `smoke/AGENTS.md`.
+## CONVENTIONS
+
+- Default tests should be fake-driven and isolated.
+- Use `tmp_path`/`--root-dir` for provider state isolation.
+- Keep command/provider tests separate from live browser coverage.
+- Most async tests use `@pytest.mark.anyio`.
+- Use typed fake providers and dataclass call records for shared-tool and alias-routing tests.
+- Keep new focused test files small; split new coverage instead of adding to already large behavior suites.
+
+## ANTI-PATTERNS
+
+- Do not add local credential/session dependency to default unit tests.
+- Do not make command alias tests call providers directly; they should prove delegation through shared invocation.

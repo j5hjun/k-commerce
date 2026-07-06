@@ -1,14 +1,26 @@
-# k_commerce_agent File Map
+# k_commerce_agent Knowledge Base
 
-This package contains the FastAPI agent backend and its MCP/LLM wiring.
+## OVERVIEW
 
-- `main.py` - `create_app()` FastAPI factory, CORS setup, and `main()` uvicorn runner (`k-commerce-agent` entry point).
-- `config.py` - `Settings` (env prefix `AGENT_`): LLM provider/model, watsonx credentials (WATSONX_* aliases), MCP launch command, CORS, host/port.
-- `mcp_client.py` - `build_mcp_client()`/`load_tools()`; connects to `k-commerce-mcp` over stdio and loads MCP tools as LangChain tools (stateless).
-- `agent.py` - `build_model()` (watsonx via `ChatWatsonx`, else `init_chat_model`), `is_model_configured()`, and `build_agent()` using `create_agent`; raises `ModelNotConfiguredError` when the LLM is not fully configured.
-- `schemas.py` - request/response models for chat and the tools listing.
-- `routes/` - FastAPI routers. See `routes/AGENTS.md`.
-- `__init__.py` - package marker.
+FastAPI backend, MCP client bootstrap, LangChain model/agent wiring, schemas, and chat routes.
 
-LLM is resolved lazily so `/health` and `/api/tools` work before a model is configured.
-Tool behavior is delegated through MCP to `packages/mcp`, which delegates to `packages/cli` services.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| App factory | `main.py` | `create_app()`, CORS, `app`, uvicorn `main()`. |
+| Settings | `config.py` | `AGENT_*`, HuggingFace, watsonx, MCP command, host/port. |
+| MCP tools | `mcp_client.py` | `build_mcp_client()` and `load_tools()` over stdio. |
+| Agent/model | `agent.py` | `is_model_configured()`, `build_model()`, `build_agent()`. |
+| Schemas | `schemas.py` | Chat and tool-list request/response models. |
+| Routes | `routes/` | HTTP/WebSocket API; see local map. |
+
+## CONVENTIONS
+
+- Resolve LLM lazily so non-chat endpoints work before API keys/models are set.
+- MCP calls are stateless; persistent commerce state remains in the CLI layer.
+- Default provider mode is HuggingFace; watsonx and generic `provider:model` are supported.
+
+## ANTI-PATTERNS
+
+- Do not require model credentials for app import or health/tool-list endpoints.

@@ -1,10 +1,24 @@
-# Auth Smoke Tests File Map
+# Auth Smoke Tests Knowledge Base
 
-This directory contains opt-in smoke tests for Coupang authentication flows.
+## OVERVIEW
 
-- `test_coupang_login_with_credentials.py` - credentials-based Coupang login using copied local credentials.
-- `test_coupang_login_with_existing_session.py` - existing Coupang session reuse using copied browser/session artifacts.
-- `test_coupang_login_with_malformed_credentials.py` - malformed credentials handling.
-- `test_coupang_manual_login_without_credentials.py` - manual login when credentials are absent.
-- `_helpers.py` - auth-specific smoke helpers for login invocation and credentials writing.
-- `__init__.py` - auth smoke test package marker.
+Opt-in Coupang authentication smoke scenarios.
+
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Auth helpers | `_helpers.py` | Login invocation and credentials writing. |
+| Credentials login | `test_coupang_login_with_credentials.py` | Uses copied local credentials. |
+| Existing session | `test_coupang_login_with_existing_session.py` | Uses copied browser/session artifacts. |
+| Malformed credentials | `test_coupang_login_with_malformed_credentials.py` | Writes invalid credentials. |
+| Manual login | `test_coupang_manual_login_without_credentials.py` | Starts from empty temp root. |
+
+## CONVENTIONS
+
+- Validate login outcomes and session metadata.
+- Skip rather than mutate or repair stale local source artifacts.
+
+## ANTI-PATTERNS
+
+- Do not write test credentials into the real provider directory.

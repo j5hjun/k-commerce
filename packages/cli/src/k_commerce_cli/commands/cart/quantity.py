@@ -9,6 +9,8 @@ from k_commerce_cli.commands.cart.common import (
     MSG_LIST_CART,
     MSG_NO_CART_ITEMS,
     MSG_QUANTITY_UPDATE_EXITED,
+    invoke_cart_list,
+    invoke_cart_update_quantity,
     report_unless_list_success,
 )
 from k_commerce_cli.prompts import QuestionaryPrompts as Prompts
@@ -26,26 +28,18 @@ async def run_quantity_update(
     terminal: Terminal,
     prompts: Prompts,
 ) -> None:
+    provider_factory = common.cached_provider_factory(root_dir)
     try:
-        update_provider = common.get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=None,
-        )
-        list_provider = common.get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=terminal,
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        terminal.info(MSG_LIST_CART)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
+        list_result = await interactive.await_unless_cancelled(
+            terminal,
+            invoke_cart_list(provider, root_dir, terminal, provider_factory),
+            message=MSG_INTERACTIVE_CANCELLED,
         )
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    terminal.info(MSG_LIST_CART)
-    list_result = await interactive.await_unless_cancelled(
-        terminal,
-        list_provider.list_cart(),
-        message=MSG_INTERACTIVE_CANCELLED,
-    )
     if not report_unless_list_success(terminal, list_result):
         return
     if not list_result.items:
@@ -71,13 +65,16 @@ async def run_quantity_update(
 
         update_result = await interactive.await_unless_cancelled(
             terminal,
-            update_provider.update_cart_quantity(
+            invoke_cart_update_quantity(
+                provider,
+                root_dir,
                 CartQuantityUpdateRequest(
                     product_id=selected_item.product_id,
                     vendor_item_id=selected_item.vendor_item_id,
                     item_id=selected_item.item_id,
                     quantity=quantity,
-                )
+                ),
+                provider_factory,
             ),
             message=MSG_INTERACTIVE_CANCELLED,
         )
@@ -105,7 +102,7 @@ async def run_quantity_update(
         terminal.info(MSG_LIST_CART)
         list_result = await interactive.await_unless_cancelled(
             terminal,
-            list_provider.list_cart(),
+            invoke_cart_list(provider, root_dir, terminal, provider_factory),
             message=MSG_INTERACTIVE_CANCELLED,
         )
         if not report_unless_list_success(terminal, list_result):

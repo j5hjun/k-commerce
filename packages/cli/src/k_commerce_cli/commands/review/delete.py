@@ -11,10 +11,12 @@ from k_commerce_cli.commands.review.interactive import (
     prompt_review_continue,
     run_deletable_list_browse,
 )
+from k_commerce_cli.commands.tool_invocation import CachedProviderFactory
 from k_commerce_cli.services.providers.coupang.review.utils import format_rating
 from k_commerce_cli.prompts import QuestionaryPrompts as Prompts
 from k_commerce_cli.services.registry import get_provider
-from k_commerce_cli.services.types import ReviewDeleteRequest
+from k_commerce_cli.services.tools.invoke import invoke_tool
+from k_commerce_cli.services.tools.types import ToolProviderFactory, ToolRuntimeOptions
 
 MSG_NO_DELETABLE_ITEMS = "삭제 가능한 작성 리뷰가 없습니다."
 MSG_INTERACTIVE_CANCELLED = "리뷰 삭제를 취소했습니다."
@@ -36,32 +38,44 @@ def _format_deleted_review(
     return f"{product_name} / {format_rating(rating)} / {review_text}"
 
 
+def _cached_provider_factory(root_dir: Path | None) -> CachedProviderFactory:
+    return CachedProviderFactory(root_dir=root_dir, provider_factory=get_provider)
+
+
+def _runtime_options(
+    root_dir: Path | None,
+    terminal: Terminal | None,
+    provider_factory: ToolProviderFactory | None,
+) -> ToolRuntimeOptions:
+    return ToolRuntimeOptions(
+        root_dir=root_dir,
+        terminal=terminal,
+        get_provider=provider_factory or get_provider,
+    )
+
+
 async def _run_interactive_delete(
     provider: str,
-    root_dir,
+    root_dir: Path | None,
     terminal: Terminal,
     prompts: Prompts,
 ) -> None:
+    provider_factory = _cached_provider_factory(root_dir)
     try:
-        review_provider = get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=None,
-        )
-        list_provider = get_provider(
-            provider,
-            root_dir=root_dir,
-            terminal=terminal,
+        provider_factory(provider, root_dir=root_dir, terminal=None)
+        terminal.info(MSG_LIST_DELETABLE)
+        provider_factory(provider, root_dir=root_dir, terminal=terminal)
+        list_result = await await_unless_cancelled(
+            terminal,
+            invoke_tool(
+                "review_list_editable",
+                {"provider": provider},
+                runtime_options=_runtime_options(root_dir, terminal, provider_factory),
+            ),
+            message=MSG_INTERACTIVE_CANCELLED,
         )
     except ValueError as error:
         raise click.BadParameter(str(error), param_hint="provider") from error
-
-    terminal.info(MSG_LIST_DELETABLE)
-    list_result = await await_unless_cancelled(
-        terminal,
-        list_provider.list_editable(),
-        message=MSG_INTERACTIVE_CANCELLED,
-    )
     if not list_result.success:
         terminal.abort(list_result.message)
     if not list_result.items:
@@ -83,12 +97,15 @@ async def _run_interactive_delete(
 
         result = await await_unless_cancelled(
             terminal,
-            review_provider.delete_review(
-                ReviewDeleteRequest(
-                    order_id=selected_item.order_id,
-                    product_id=selected_item.product_id,
-                    review_id=selected_item.review_id,
-                )
+            invoke_tool(
+                "review_delete",
+                {
+                    "provider": provider,
+                    "order_id": selected_item.order_id,
+                    "product_id": selected_item.product_id,
+                    "review_id": selected_item.review_id,
+                },
+                runtime_options=_runtime_options(root_dir, None, provider_factory),
             ),
             message=MSG_INTERACTIVE_CANCELLED,
         )
@@ -118,11 +135,18 @@ async def _run_interactive_delete(
             return
 
         terminal.info(MSG_LIST_DELETABLE)
-        list_result = await await_unless_cancelled(
-            terminal,
-            list_provider.list_editable(),
-            message=MSG_INTERACTIVE_CANCELLED,
-        )
+        try:
+            list_result = await await_unless_cancelled(
+                terminal,
+                invoke_tool(
+                    "review_list_editable",
+                    {"provider": provider},
+                    runtime_options=_runtime_options(root_dir, terminal, provider_factory),
+                ),
+                message=MSG_INTERACTIVE_CANCELLED,
+            )
+        except ValueError as error:
+            raise click.BadParameter(str(error), param_hint="provider") from error
         if not list_result.success:
             terminal.abort(list_result.message)
         if not list_result.items:
@@ -151,20 +175,20 @@ async def review_delete(
     if list_only:
         terminal = ctx.obj["terminal"]
         prompts = ctx.obj["prompts"]
+        provider_factory = _cached_provider_factory(resolved_root_dir)
         try:
-            review_provider = get_provider(
-                provider,
-                root_dir=resolved_root_dir,
-                terminal=terminal,
+            terminal.info(MSG_LIST_DELETABLE)
+            list_result = await await_unless_cancelled(
+                terminal,
+                invoke_tool(
+                    "review_list_editable",
+                    {"provider": provider},
+                    runtime_options=_runtime_options(resolved_root_dir, terminal, provider_factory),
+                ),
+                message=MSG_INTERACTIVE_CANCELLED,
             )
         except ValueError as error:
             raise click.BadParameter(str(error), param_hint="provider") from error
-        terminal.info(MSG_LIST_DELETABLE)
-        list_result = await await_unless_cancelled(
-            terminal,
-            review_provider.list_editable(),
-            message=MSG_INTERACTIVE_CANCELLED,
-        )
         if not list_result.success:
             terminal.abort(list_result.message)
         if not list_result.items:

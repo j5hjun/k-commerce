@@ -1,11 +1,24 @@
-# Review Commands File Map
+# Review Commands Knowledge Base
 
-This directory contains the `review` command group and interactive review workflows.
+## OVERVIEW
 
-- `__init__.py` - review command group registration for upload, edit, and delete subcommands.
-- `upload.py` - `review upload` command, list-only mode, reviewable item selection, and upload request dispatch.
-- `edit.py` - `review edit` command, editable review selection, edit prompt flow, and edit request dispatch.
-- `delete.py` - `review delete` command, deletable review selection and delete request dispatch.
-- `interactive.py` - shared prompt helpers for selecting review items, ratings, and review text.
+`review` command group for upload, edit, and delete workflows.
 
-Command files should stay thin: parse CLI options, collect user input, call provider services, and print terminal messages.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Group registration | `__init__.py` | Upload/edit/delete command group. |
+| Upload | `upload.py` | List-only, item selection, upload request dispatch. |
+| Edit | `edit.py` | Editable review selection and edit dispatch. |
+| Delete | `delete.py` | Deletable review selection and delete dispatch. |
+| Shared prompts | `interactive.py` | Item/rating/text prompts. |
+
+## CONVENTIONS
+
+- Command code collects user input and passes typed review requests to services.
+- Preserve list-only modes; tests cover command-to-service plumbing.
+
+## ANTI-PATTERNS
+
+- Do not put browser form automation in command modules.

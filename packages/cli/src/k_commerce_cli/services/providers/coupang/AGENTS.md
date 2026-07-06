@@ -1,16 +1,30 @@
-# Coupang Provider File Map
+# Coupang Provider Knowledge Base
 
-This directory contains the Coupang provider implementation.
+## OVERVIEW
 
-- `provider.py` - `CoupangProvider`, which wires store, browser, auth service, order service, and review service together through `BaseProvider`.
-- `auth.py` - `CoupangAuthService`, login/logout/status flow, login page state detection, session restore/persist behavior, and manual-login waiting.
-- `orders.py` - `CoupangOrderService`, order page scraping/evaluation, cache refresh/merge behavior, and order-list terminal message formatting.
-- `types.py` - Coupang order dataclasses for summaries, metadata, products, delivery groups, order results, and list results.
-- `review/` - Coupang review listing, upload, edit, delete, browser-evaluation helpers, state handling, and review dataclasses. See `review/AGENTS.md`.
-- `__init__.py` - public Coupang provider exports.
+Concrete Coupang provider implementation and the main complexity hub for browser-backed workflows.
 
-Tests for this provider are mainly in `packages/cli/tests/test_coupang_login.py`, `test_coupang_logout.py`, `test_coupang_orders.py`, `test_coupang_review.py`, `test_coupang_review_cli.py`, and the e2e/smoke subdirectories.
+## WHERE TO LOOK
 
-## Coupang Service Rules
+| Task | Location | Notes |
+|------|----------|-------|
+| Provider wiring | `provider.py` | `CoupangProvider`; wires auth/order/review/search/cart services. |
+| Login/session | `auth.py` | Restore session, credentials login, manual browser fallback. |
+| Orders | `orders.py` | `orders.json` snapshot merge, refresh, failed-page retry. |
+| Order types | `types.py` | Coupang order dataclasses. |
+| Cart | `cart/` | Cart list, quantity, delete, clear; see local map. |
+| Review | `review/` | List/upload/edit/delete reviews; see local map. |
+| Search | `search/` | Product search and detail-price enrichment; see local map. |
 
-- Keep Coupang service constructors aligned as `provider`, `store`, `browser`, and optional `terminal` so they can be instantiated through `BaseProvider`.
+## CONVENTIONS
+
+- Service constructors stay aligned as `provider` or `provider_name`, `store`, `browser`, optional `terminal`.
+- Convert browser/login failures into typed result objects with state messages.
+- `not_logged_in` is the shared login gate; browser-closed is the main browser/evaluation fallback.
+- Preserve `login_method` session metadata.
+- Pair browser-flow edits with broad fake-browser tests before live smoke coverage.
+
+## ANTI-PATTERNS
+
+- Do not leak raw browser exceptions to CLI/MCP boundaries.
+- Do not add a separate `orders/AGENTS.md` unless `orders.py` becomes a package.

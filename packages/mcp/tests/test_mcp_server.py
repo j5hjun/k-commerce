@@ -1,208 +1,171 @@
-from unittest.mock import AsyncMock, patch
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from k_commerce_cli.base import Terminal
+from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
+from k_commerce_cli.services.tools import ToolRequestError
 from k_commerce_cli.services.types import (
     CartDeleteRequest,
     CartDeleteResult,
-    CartItem,
+    CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
-    ListCartResult,
-    LoginResult,
-    LogoutResult,
+    ProviderName,
+    ReviewUploadRequest,
+    ReviewUploadResult,
     StatusResult,
 )
 from k_commerce_mcp import server
+from k_commerce_mcp.tools.cart import cart_delete_items, cart_update_quantity
+from k_commerce_mcp.tools.review import review_upload
+from k_commerce_mcp.tools.search import search_products
+from k_commerce_mcp.tools.status import status
+
+ProviderFactory = Callable[[str, Path | None, Terminal | None], "RecordingProvider"]
+
+
+@dataclass(slots=True)
+class RecordingProvider:
+    factory_calls: list[tuple[str, Path | None, bool]] = field(default_factory=list)
+    status_calls: int = 0
+    search_call: tuple[str, str | None, str, int] | None = None
+    cart_quantity_request: CartQuantityUpdateRequest | None = None
+    cart_delete_requests: tuple[CartDeleteRequest, ...] | None = None
+    review_upload_request: ReviewUploadRequest | None = None
+
+    async def status(self) -> StatusResult:
+        self.status_calls += 1
+        return StatusResult(provider=ProviderName.COUPANG, logged_in=True, message="logged in")
+
+    async def search_products(
+        self,
+        keyword: str,
+        *,
+        category: str | None = None,
+        sort: str = "relevance",
+        max_results: int = 10,
+    ) -> SearchProductResult:
+        self.search_call = (keyword, category, sort, max_results)
+        return SearchProductResult(provider="coupang", success=True, message="found", items=())
+
+    async def update_cart_quantity(
+        self,
+        request: CartQuantityUpdateRequest,
+    ) -> CartQuantityUpdateResult:
+        self.cart_quantity_request = request
+        return CartQuantityUpdateResult(
+            provider=ProviderName.COUPANG,
+            success=True,
+            message="updated",
+            quantity=request.quantity,
+            product_id=request.product_id,
+            vendor_item_id=request.vendor_item_id,
+            item_id=request.item_id,
+        )
+
+    async def delete_cart_items(
+        self,
+        requests: tuple[CartDeleteRequest, ...],
+    ) -> CartDeleteResult:
+        self.cart_delete_requests = requests
+        return CartDeleteResult(provider=ProviderName.COUPANG, success=True, message="deleted", deleted_count=len(requests))
+
+    async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
+        self.review_upload_request = request
+        return ReviewUploadResult(
+            provider=ProviderName.COUPANG,
+            success=True,
+            message="uploaded",
+            order_id=request.order_id,
+            product_id=request.product_id,
+        )
+
+
+@dataclass(slots=True)
+class RecordingMcpServer:
+    transport: str | None = None
+
+    def run(self, *, transport: str) -> None:
+        self.transport = transport
+
+
+def provider_factory(provider: RecordingProvider) -> ProviderFactory:
+    def build_provider(
+        provider_name: str,
+        root_dir: Path | None = None,
+        terminal: Terminal | None = None,
+    ) -> RecordingProvider:
+        provider.factory_calls.append((provider_name, root_dir, terminal is not None))
+        return provider
+
+    return build_provider
 
 
 @pytest.mark.anyio
-async def test_create_mcp_server_registers_login_and_login_status_tools() -> None:
+async def test_create_mcp_server_registers_canonical_tools_only() -> None:
     mcp_server = server.create_mcp_server()
 
     tools = await mcp_server.list_tools()
     tool_names = {tool.name for tool in tools}
 
-    assert "get_providers" in tool_names
-    assert "login" in tool_names
-    assert "login_status" in tool_names
-    assert "logout" in tool_names
-    assert "order_list" in tool_names
-    assert "cart_list" in tool_names
-    assert "cart_update_quantity" in tool_names
-    assert "cart_delete_item" in tool_names
-    assert "cart_delete_items" in tool_names
-    assert "cart_clear" in tool_names
+    assert tool_names == {
+        "get_providers",
+        "login",
+        "status",
+        "logout",
+        "order_list",
+        "cart_list",
+        "cart_update_quantity",
+        "cart_delete_item",
+        "cart_delete_items",
+        "cart_clear",
+        "search_products",
+        "review_list_reviewable",
+        "review_list_editable",
+        "review_upload",
+        "review_edit",
+        "review_delete",
+    }
 
 
 @pytest.mark.anyio
-async def test_login_tool_has_clear_description() -> None:
-    mcp_server = server.create_mcp_server()
+async def test_status_tool_delegates_to_provider_through_shared_invocation() -> None:
+    provider = RecordingProvider()
 
-    tools = await mcp_server.list_tools()
-    login_tool = next(tool for tool in tools if tool.name == "login")
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await status(provider="coupang")
 
-    assert "Coupang" in login_tool.description
-
-
-@pytest.mark.anyio
-async def test_login_status_tool_has_clear_description() -> None:
-    mcp_server = server.create_mcp_server()
-
-    tools = await mcp_server.list_tools()
-    login_status_tool = next(tool for tool in tools if tool.name == "login_status")
-
-    assert "status" in login_status_tool.description.lower()
-    assert "logged in" in login_status_tool.description.lower()
+    assert result == StatusResult(provider=ProviderName.COUPANG, logged_in=True, message="logged in")
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.status_calls == 1
 
 
 @pytest.mark.anyio
-async def test_login_tool_returns_provider_login_result_for_coupang_provider() -> None:
-    expected = LoginResult(
-        provider="coupang",
-        success=True,
-        message="쿠팡 로그인 성공",
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"login": AsyncMock(return_value=expected)},
-    )()
+async def test_search_tool_delegates_canonical_fields_to_provider() -> None:
+    provider = RecordingProvider()
 
-    with patch("k_commerce_mcp.tools.login.get_provider", return_value=mocked_provider) as get_provider:
-        result = await server.login(provider="coupang")
-
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.login.assert_awaited_once_with()
-
-
-@pytest.mark.anyio
-async def test_login_status_tool_returns_provider_status_result_for_coupang_provider() -> None:
-    expected = StatusResult(
-        provider="coupang",
-        logged_in=True,
-        message="쿠팡 로그인 상태입니다",
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"status": AsyncMock(return_value=expected)},
-    )()
-
-    with patch(
-        "k_commerce_mcp.tools.login_status.get_provider",
-        return_value=mocked_provider,
-    ) as get_provider:
-        result = await server.login_status(provider="coupang")
-
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.status.assert_awaited_once_with()
-
-
-@pytest.mark.anyio
-async def test_logout_tool_returns_provider_logout_result_for_coupang_provider() -> None:
-    expected = LogoutResult(
-        provider="coupang",
-        success=True,
-        message="쿠팡 로그아웃 완료",
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"logout": AsyncMock(return_value=expected)},
-    )()
-
-    with patch("k_commerce_mcp.tools.logout.get_provider", return_value=mocked_provider) as get_provider:
-        result = await server.logout(provider="coupang")
-
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.logout.assert_awaited_once_with()
-
-
-@pytest.mark.anyio
-async def test_order_list_tool_delegates_to_provider() -> None:
-    expected = object()
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"list_orders": AsyncMock(return_value=expected)},
-    )()
-
-    with patch(
-        "k_commerce_mcp.tools.order.get_provider",
-        return_value=mocked_provider,
-    ) as get_provider:
-        result = await server.order_list(
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await search_products(
             provider="coupang",
-            refresh=True,
-            failed_only=False,
+            keyword="coffee",
+            category="food",
+            sort="low_price",
+            max_results=5,
         )
 
-    assert result is expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.list_orders.assert_awaited_once_with(
-        refresh=True,
-        failed_only=False,
-    )
+    assert result == SearchProductResult(provider="coupang", success=True, message="found", items=())
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.search_call == ("coffee", "food", "low_price", 5)
 
 
 @pytest.mark.anyio
-async def test_cart_list_tool_returns_provider_cart_list_result() -> None:
-    expected = ListCartResult(
-        provider="coupang",
-        success=True,
-        message="장바구니 1건",
-        items=(
-            CartItem(
-                index=1,
-                product_name="테스트 상품",
-                option_text="옵션",
-                quantity=2,
-                unit_price="10,000원",
-                total_price="20,000원",
-                product_id="p1",
-                vendor_item_id="v1",
-                item_id="i1",
-            ),
-        ),
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"list_cart": AsyncMock(return_value=expected)},
-    )()
+async def test_cart_quantity_tool_builds_provider_request_dataclass() -> None:
+    provider = RecordingProvider()
 
-    with patch("k_commerce_mcp.tools.cart.get_provider", return_value=mocked_provider) as get_provider:
-        result = await server.cart_list(provider="coupang")
-
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.list_cart.assert_awaited_once_with()
-
-
-@pytest.mark.anyio
-async def test_cart_update_quantity_tool_delegates_to_provider() -> None:
-    expected = CartQuantityUpdateResult(
-        provider="coupang",
-        success=True,
-        message="수량 변경 완료",
-        quantity=3,
-        product_id="p1",
-        vendor_item_id="v1",
-        item_id="i1",
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"update_cart_quantity": AsyncMock(return_value=expected)},
-    )()
-
-    with patch(
-        "k_commerce_mcp.tools.cart.get_provider",
-        return_value=mocked_provider,
-    ) as get_provider:
-        result = await server.cart_update_quantity(
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await cart_update_quantity(
             provider="coupang",
             quantity=3,
             product_id="p1",
@@ -210,104 +173,98 @@ async def test_cart_update_quantity_tool_delegates_to_provider() -> None:
             item_id="i1",
         )
 
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    request = mocked_provider.update_cart_quantity.await_args.args[0]
-    assert request.quantity == 3
-    assert request.product_id == "p1"
-    assert request.vendor_item_id == "v1"
-    assert request.item_id == "i1"
+    assert result == CartQuantityUpdateResult(
+        provider=ProviderName.COUPANG,
+        success=True,
+        message="updated",
+        quantity=3,
+        product_id="p1",
+        vendor_item_id="v1",
+        item_id="i1",
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.cart_quantity_request == CartQuantityUpdateRequest(
+        quantity=3,
+        product_id="p1",
+        vendor_item_id="v1",
+        item_id="i1",
+    )
 
 
 @pytest.mark.anyio
-async def test_cart_delete_item_tool_delegates_to_provider() -> None:
-    expected = CartDeleteResult(
-        provider="coupang",
-        success=True,
-        message="삭제 완료",
-        deleted_count=1,
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"delete_cart_item": AsyncMock(return_value=expected)},
-    )()
+async def test_cart_delete_items_tool_builds_provider_request_dataclasses() -> None:
+    provider = RecordingProvider()
 
-    with patch(
-        "k_commerce_mcp.tools.cart.get_provider",
-        return_value=mocked_provider,
-    ) as get_provider:
-        result = await server.cart_delete_item(
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await cart_delete_items(
             provider="coupang",
-            product_id="p1",
-            vendor_item_id="v1",
-            item_id="i1",
+            items=[
+                CartDeleteRequest(product_id="p1", vendor_item_id="v1", item_id="i1"),
+                CartDeleteRequest(product_id="p2", vendor_item_id="v2", item_id="i2"),
+            ],
         )
 
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    request = mocked_provider.delete_cart_item.await_args.args[0]
-    assert request.product_id == "p1"
-    assert request.vendor_item_id == "v1"
-    assert request.item_id == "i1"
-
-
-@pytest.mark.anyio
-async def test_cart_delete_items_tool_delegates_to_provider() -> None:
-    expected = CartDeleteResult(
-        provider="coupang",
-        success=True,
-        message="2건 삭제 완료",
-        deleted_count=2,
-    )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"delete_cart_items": AsyncMock(return_value=expected)},
-    )()
-    items = (
+    assert result == CartDeleteResult(provider=ProviderName.COUPANG, success=True, message="deleted", deleted_count=2)
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.cart_delete_requests == (
         CartDeleteRequest(product_id="p1", vendor_item_id="v1", item_id="i1"),
         CartDeleteRequest(product_id="p2", vendor_item_id="v2", item_id="i2"),
     )
 
-    with patch(
-        "k_commerce_mcp.tools.cart.get_provider",
-        return_value=mocked_provider,
-    ) as get_provider:
-        result = await server.cart_delete_items(provider="coupang", items=list(items))
 
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.delete_cart_items.assert_awaited_once_with(items)
+@pytest.mark.anyio
+async def test_review_upload_tool_builds_provider_request_dataclass() -> None:
+    provider = RecordingProvider()
+
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await review_upload(
+            provider="coupang",
+            order_id="o1",
+            product_id="p1",
+            rating=5,
+            text="좋아요",
+            review_url="https://example.test/review",
+        )
+
+    assert result == ReviewUploadResult(
+        provider=ProviderName.COUPANG,
+        success=True,
+        message="uploaded",
+        order_id="o1",
+        product_id="p1",
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.review_upload_request == ReviewUploadRequest(
+        order_id="o1",
+        product_id="p1",
+        rating=5,
+        text="좋아요",
+        review_url="https://example.test/review",
+    )
 
 
 @pytest.mark.anyio
-async def test_cart_clear_tool_delegates_to_provider() -> None:
-    expected = CartDeleteResult(
-        provider="coupang",
-        success=True,
-        message="장바구니 비우기 완료",
-        deleted_count=5,
+async def test_cart_delete_items_tool_surfaces_shared_validation_errors() -> None:
+    with pytest.raises(ToolRequestError) as exc_info:
+        _ = await cart_delete_items(provider="coupang", items=[])
+
+    assert exc_info.value == ToolRequestError(
+        "cart_delete_items",
+        "items must be a non-empty list",
+        field="items",
     )
-    mocked_provider = type(
-        "MockProvider",
-        (),
-        {"clear_cart": AsyncMock(return_value=expected)},
-    )()
-
-    with patch("k_commerce_mcp.tools.cart.get_provider", return_value=mocked_provider) as get_provider:
-        result = await server.cart_clear(provider="coupang")
-
-    assert result == expected
-    get_provider.assert_called_once_with("coupang")
-    mocked_provider.clear_cart.assert_awaited_once_with()
 
 
 def test_main_runs_mcp_server_over_stdio() -> None:
-    with patch("k_commerce_mcp.server.create_mcp_server") as create_mcp_server:
-        mcp_server = create_mcp_server.return_value
+    created_servers: list[RecordingMcpServer] = []
 
+    def create_fake_server() -> RecordingMcpServer:
+        fake_server = RecordingMcpServer()
+        created_servers.append(fake_server)
+        return fake_server
+
+    with patch("k_commerce_mcp.server.create_mcp_server", new=create_fake_server):
         server.main()
 
-    create_mcp_server.assert_called_once_with()
-    mcp_server.run.assert_called_once_with(transport="stdio")
+    assert len(created_servers) == 1
+    assert created_servers[0].transport == "stdio"

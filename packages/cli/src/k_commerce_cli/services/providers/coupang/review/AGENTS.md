@@ -1,15 +1,27 @@
-# Coupang Review Service File Map
+# Coupang Review Knowledge Base
 
-This directory contains Coupang review listing, upload, edit, and delete automation.
+## OVERVIEW
 
-- `service.py` - `CoupangReviewService`, session handling, review list orchestration, result conversion, and public review methods.
-- `upload.py` - browser automation mixin for opening review forms, detecting upload state, and submitting new reviews.
-- `edit.py` - browser automation mixin for opening existing reviews, validating identifiers, and submitting edits.
-- `delete.py` - browser automation mixin for locating reviews and confirming review deletion.
-- `browser.py` - helpers for deserializing browser/CDP evaluation results.
-- `state.py` - review workflow state constants and user-facing state messages.
-- `type.py` - review request/result dataclasses plus browser-scrape helper dataclasses.
-- `utils.py` - Coupang review URLs, URL builders, formatting helpers, and text normalization utilities.
-- `__init__.py` - review package marker.
+Review listing, upload, edit, and delete automation for Coupang.
 
-Keep provider-facing service construction aligned with `BaseProvider`: accept `provider`, `store`, `browser`, and optional `terminal`.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Public service | `service.py` | `CoupangReviewService` and result conversion. |
+| Upload flow | `upload.py` | Opens forms, detects state, submits new reviews. |
+| Edit flow | `edit.py` | Opens existing reviews, validates identifiers, submits edits. |
+| Delete flow | `delete.py` | Locates reviews and confirms deletion. |
+| Browser decoding | `browser.py` | Browser/CDP evaluation result helpers. |
+| State/messages | `state.py` | Review workflow state constants. |
+| Types/helpers | `type.py`, `utils.py` | Request/result dataclasses, URLs, formatting. |
+
+## CONVENTIONS
+
+- Use state checks for login, editability, already-reviewed, and identifier mismatch.
+- Keep provider-facing constructor shape compatible with `BaseProvider`.
+- Preserve repeated scroll/stability loops and JSON-encoded identifiers unless replacing the whole browser strategy.
+
+## ANTI-PATTERNS
+
+- Do not move review prompt logic here; command prompts live in `commands/review/`.

@@ -1,10 +1,26 @@
-# GitHub File Map
+# GitHub Knowledge Base
 
-This directory contains repository-level GitHub collaboration files.
+## OVERVIEW
 
-- `pull_request_template.md` - default pull request checklist/body.
-- `ISSUE_TEMPLATE/` - structured issue forms. See `.github/ISSUE_TEMPLATE/AGENTS.md`.
+Repository collaboration metadata: PR template plus issue forms.
 
-## Pull Request Rules
+## WHERE TO LOOK
 
-- Keep pull request bodies aligned with `.github/pull_request_template.md`; preserve the template headings even when writing the content in Korean.
+| Task | Location | Notes |
+|------|----------|-------|
+| PR body | `pull_request_template.md` | Preserve headings and checklist shape. |
+| Issue forms | `ISSUE_TEMPLATE/` | Bug/feature forms and chooser config. |
+
+## CONVENTIONS
+
+- Issue and PR titles are written in English.
+- Commit messages are written in English and follow the repository's conventional style, for example `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...`, or `refactor: ...`.
+- Issue and PR bodies are written in Korean while preserving the template's original headings and checklist shape.
+- Issue bodies follow the selected issue form sections. Feature issues use `Summary`, `Goal`, `Scope`, and `Acceptance Criteria`; bug issues use `Summary`, `Current Behavior`, `Expected Behavior`, `Steps To Reproduce`, and `Acceptance Criteria`.
+- Keep PR bodies aligned with `pull_request_template.md`, even when writing the content in Korean.
+- Required PR sections are `What`, `How To Test`, `Review Focus`, `Screenshots / Logs`, and `Related`.
+
+## ANTI-PATTERNS
+
+- Do not translate issue titles, PR titles, commit subjects, or template headings to Korean.
+- Do not remove template headings just because a section is short; mark non-applicable sections explicitly.

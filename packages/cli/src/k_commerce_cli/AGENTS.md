@@ -1,15 +1,26 @@
-# k_commerce_cli File Map
+# k_commerce_cli Knowledge Base
 
-This package contains the command-line application and service layer.
+## OVERVIEW
 
-## Entry points
+Import package for CLI composition, terminal/prompt adapters, command handlers, and service/provider code.
 
-- `cli.py` - Typer/asyncclick app definition, command registration, and `main()` entry point.
-- `base.py` - `Terminal` protocol/base abstraction used by command handlers.
-- `__init__.py` - package marker/exports.
+## WHERE TO LOOK
 
-## Subpackages
+| Task | Location | Notes |
+|------|----------|-------|
+| CLI composition | `cli.py` | Registers all commands and initializes terminal/prompts in context. |
+| Terminal contract | `base.py` | Abstract terminal output protocol. |
+| Prompt helpers | `prompts.py` | Questionary-backed async prompts. |
+| Commands | `commands/` | User-facing command handlers; see local map. |
+| Services | `services/` | Provider contracts, canonical tool contract, and implementations; see local map. |
+| Terminal adapter | `terminal/asyncclick.py` | Concrete terminal adapter. |
 
-- `commands/` - user-facing CLI commands (`login`, `logout`, `status`, `order`, `review`, `cart`). See `commands/AGENTS.md`.
-- `services/` - provider interfaces, stores, browser automation, provider registry, and provider implementations. See `services/AGENTS.md`.
-- `terminal/` - concrete terminal output adapter. See `terminal/AGENTS.md`.
+## CONVENTIONS
+
+- Keep the app entry point thin; command registration belongs here, behavior belongs below.
+- `cli.py` dispatches unknown canonical names such as `search_products` and `review_upload` to the generic `k-commerce <tool-name> '<json-request>'` runner.
+- Preserve asyncclick patterns; do not describe this package as Typer-based.
+
+## ANTI-PATTERNS
+
+- Do not make `cli.py` a workflow implementation file.

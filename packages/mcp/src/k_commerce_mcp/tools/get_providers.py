@@ -1,5 +1,5 @@
-from k_commerce_cli.services.registry import list_providers
+from k_commerce_cli.services.tools import invoke_tool
 
 
 async def get_providers() -> list[str]:
-    return list_providers()
+    return await invoke_tool("get_providers", {})

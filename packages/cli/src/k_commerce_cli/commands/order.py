@@ -5,6 +5,8 @@ from pathlib import Path
 import asyncclick as click
 
 from k_commerce_cli.services.registry import get_provider
+from k_commerce_cli.services.tools.invoke import invoke_tool
+from k_commerce_cli.services.tools.types import ToolRuntimeOptions
 
 
 def _resolve_root_dir(root_dir: str | None) -> Path | None:
@@ -39,12 +41,14 @@ async def order_list(
 
     terminal = ctx.obj["terminal"]
     try:
-        provider_service = get_provider(
-            provider,
-            root_dir=_resolve_root_dir(root_dir),
-            terminal=terminal,
+        await invoke_tool(
+            "order_list",
+            {"provider": provider, "refresh": refresh, "failed_only": failed_only},
+            runtime_options=ToolRuntimeOptions(
+                root_dir=_resolve_root_dir(root_dir),
+                terminal=terminal,
+                get_provider=get_provider,
+            ),
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
-
-    await provider_service.list_orders(refresh=refresh, failed_only=failed_only)

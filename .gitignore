@@ -177,6 +177,10 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Local pyright overrides
+pyrightconfig.json
+packages/*/pyrightconfig.json
+
 # pytype static type analyzer
 .pytype/
 

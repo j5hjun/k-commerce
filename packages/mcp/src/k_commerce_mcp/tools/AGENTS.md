@@ -1,13 +1,27 @@
-# MCP Tools File Map
+# MCP Tools Knowledge Base
 
-This directory contains MCP tool functions registered by `../server.py`.
+## OVERVIEW
 
-- `get_providers.py` - `get_providers` tool returning available provider names.
-- `login.py` - `login` tool that delegates provider login.
-- `login_status.py` - `login_status` tool that delegates provider status checks.
-- `logout.py` - `logout` tool that delegates provider logout/session cleanup.
-- `order.py` - `order_list` tool that delegates provider order snapshot collection.
-- `cart.py` - cart list, quantity update, delete, and clear tools.
-- `__init__.py` - tool package exports.
+Tool functions registered by `../server.py`.
 
-Keep tool modules thin: validate/describe MCP-facing inputs and delegate business behavior to the CLI service layer.
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Providers | `get_providers.py` | Returns supported provider names. |
+| Session | `login.py`, `status.py`, `logout.py` | Provider session operations. |
+| Orders | `order.py` | `order_list` snapshot tool. |
+| Cart | `cart.py` | List, quantity update, single/batch delete, clear. |
+| Search | `search.py` | Product search wrapper. |
+| Review | `review.py` | Reviewable/editable list, upload, edit, and delete wrappers. |
+
+## CONVENTIONS
+
+- Keep tool functions async and thin.
+- Validate/shape MCP-facing inputs, then delegate through `k_commerce_cli.services.tools.invoke.invoke_tool`.
+- Canonical tool names are owned by `k_commerce_cli.services.tools.registry`; this directory implements wrappers for `get_providers`, `login`, `status`, `logout`, `order_list`, cart tools, `search_products`, and review tools including `review_upload`.
+- Keep cart delete/update request identity fields explicit.
+
+## ANTI-PATTERNS
+
+- Do not duplicate CLI command prompting or Coupang scraping here.
