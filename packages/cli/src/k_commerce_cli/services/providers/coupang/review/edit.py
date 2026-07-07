@@ -33,15 +33,42 @@ class CoupangReviewEdit(CoupangReviewBrowser):
         if page_state != CoupangReviewState.SUCCESS:
             return _ReviewUploadBrowserResult(state=page_state)
 
+        product_name = await self._read_review_product_name(active_tab)
+
         submitted = await self._submit_review_form(active_tab, rating, text)
         if not submitted:
-            return _ReviewUploadBrowserResult(state=CoupangReviewState.SUBMIT_FAILED)
+            return _ReviewUploadBrowserResult(state=CoupangReviewState.SUBMIT_FAILED, product_name=product_name)
 
         confirmation = await self._read_review_edit_confirmation(active_tab)
         if confirmation == CoupangReviewState.SUCCESS:
-            return _ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
+            return _ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS, product_name=product_name)
 
-        return _ReviewUploadBrowserResult(state=confirmation)
+        return _ReviewUploadBrowserResult(state=confirmation, product_name=product_name)
+
+    async def _read_review_product_name(self, tab: BrowserTab) -> str:
+        result = await self._evaluate_json(
+            tab,
+            """
+            (() => {
+              const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+              const selectors = [
+                '.prod-buy-header__title',
+                '[class*="product-name" i]',
+                '[class*="product_name" i]',
+                '.product-title',
+                'h1',
+                'h2',
+              ];
+              for (const selector of selectors) {
+                const element = document.querySelector(selector);
+                const text = normalizeText(element?.textContent || '');
+                if (text.length > 2) return text;
+              }
+              return '';
+            })()
+            """,
+        )
+        return str(result or "").strip()
 
     async def _read_review_edit_state(
         self,

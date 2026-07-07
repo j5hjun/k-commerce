@@ -63,6 +63,8 @@ async def test_request_file_invokes_generic_runner_when_tool_name_is_registered(
         "product_id": "p",
         "vendor_item_id": "v",
         "item_id": "i",
+        "product_name": "",
+        "option_text": "",
         "notice": "",
         "error_code": "",
         "retryable": False,

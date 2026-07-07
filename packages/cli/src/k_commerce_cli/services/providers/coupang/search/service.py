@@ -75,6 +75,24 @@ def deserialize_evaluate_result(value: object) -> object:
     return value
 
 
+SEARCH_NAME_MAX_LENGTH = 80
+
+
+def _format_price_display(price: str) -> str:
+    text = price.strip()
+    if not text or text == "-":
+        return "-"
+    if "원" in text or "쿠폰" in text:
+        return text
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        return text
+    value = int(digits)
+    if value <= 0:
+        return text
+    return f"{value:,}원"
+
+
 class CoupangSearchService:
     def __init__(
         self,
@@ -163,7 +181,7 @@ class CoupangSearchService:
                 index=index,
                 product_id=item.product_id,
                 product_name=item.product_name,
-                price=item.price,
+                price=_format_price_display(item.price),
                 rating=item.rating,
                 image_url=item.image_url,
                 product_link=item.product_link,
@@ -503,7 +521,7 @@ class CoupangSearchService:
                 );
                 const productName = truncateText(
                   normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
-                  30
+                  {SEARCH_NAME_MAX_LENGTH}
                 );
                 if (!productId || !productName) {{
                   return null;
@@ -542,13 +560,10 @@ class CoupangSearchService:
                 candidates.push(element);
               }};
 
-              for (const element of Array.from(
-                productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"], [class*="ProductUnit_productUnit"]')
-              )) {{
-                addCandidate(element);
-              }}
-
               for (const entry of rankMarkerEntries) {{
+                if (candidates.length >= {max_results}) {{
+                  break;
+                }}
                 const element =
                   entry.marker.closest('li[class*="ProductUnit_productUnit"], li') ||
                   entry.marker.closest('[class*="ProductUnit_productUnit"]') ||
@@ -556,6 +571,88 @@ class CoupangSearchService:
                 addCandidate(element);
               }}
 
+              if (!candidates.length) {{
+                const productUnits = Array.from(
+                  productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"]')
+                );
+                for (const element of productUnits) {{
+                  if (candidates.length >= {max_results}) {{
+                    break;
+                  }}
+                  if (seenElements.has(element)) {{
+                    continue;
+                  }}
+                  seenElements.add(element);
+                  candidates.push(element);
+                }}
+              }}
+
+              if (!candidates.length) {{
+                const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
+                for (const productLink of productLinks) {{
+                  if (candidates.length >= {max_results}) {{
+                    break;
+                  }}
+                  const element =
+                    productLink.closest('li') ||
+                    productLink.closest('[class*="ProductUnit"]') ||
+                    productLink.closest('article') ||
+                    productLink.closest('div[class*="product"]') ||
+                    productLink.parentElement;
+                  if (!element || seenElements.has(element)) {{
+                    continue;
+                  }}
+                  seenElements.add(element);
+                  candidates.push(element);
+                }}
+              }}
+
+              if (!candidates.length) {{
+                const productLinks = Array.from(productRoot.querySelectorAll('a[href*="/vp/products/"]'));
+                const seenProductIds = new Set();
+                for (const linkElement of productLinks) {{
+                  if (items.length >= {max_results}) {{
+                    break;
+                  }}
+                  const productLink = linkElement.href || '';
+                  const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
+                  const productId = productIdMatch ? productIdMatch[1] : '';
+                  if (!productId || seenProductIds.has(productId)) {{
+                    continue;
+                  }}
+                  const container =
+                    linkElement.closest('[class*="ProductUnit"]') ||
+                    linkElement.closest('li') ||
+                    linkElement.parentElement;
+                  const titleElement =
+                    container?.querySelector(
+                      '[class*="ProductUnit_productNameV2__"], [class*="ProductUnit_productName__"], div.name, .name, .product-name, .prod-name'
+                    ) || linkElement;
+                  const productName = truncateText(
+                    normalizeText(titleElement?.textContent || linkElement?.textContent || ''),
+                    {SEARCH_NAME_MAX_LENGTH}
+                  );
+                  if (!productName) {{
+                    continue;
+                  }}
+                  seenProductIds.add(productId);
+                  const price = container ? readPrice(container) : '';
+                  const rating = container ? readReviewStat(container) : '-';
+                  const imageElement = container?.querySelector('img');
+                  const imageUrl = imageElement?.src || imageElement?.dataset?.src || '';
+                  items.push({{
+                    product_id: productId,
+                    product_name: productName,
+                    price: price || '-',
+                    rating: rating || '-',
+                    image_url: imageUrl,
+                    product_link: productLink,
+                  }});
+                }}
+                if (items.length) {{
+                  return {{foundRankMarkers: false, items}};
+                }}
+              }} else {{
               for (const element of candidates) {{
                 const item = buildItemFromElement(element);
                 if (!item) {{
@@ -568,7 +665,47 @@ class CoupangSearchService:
                   break;
                 }}
               }}
-              return {{foundRankMarkers: items.length >= Math.min({max_results}, candidates.length), items}};
+              }}
+              if (!items.length) {{
+                for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {{
+                  try {{
+                    const data = JSON.parse(script.textContent || '');
+                    const list = data?.mainEntity?.itemListElement || data?.itemListElement;
+                    if (!Array.isArray(list)) {{
+                      continue;
+                    }}
+                    const ranked = list
+                      .filter((entry) => entry?.item)
+                      .sort((left, right) => Number(left.position) - Number(right.position))
+                      .slice(0, {max_results});
+                    for (const entry of ranked) {{
+                      const item = entry.item || {{}};
+                      const productLink = String(item.url || '');
+                      const productIdMatch = productLink.match(/\/vp\/products\/(\d+)/);
+                      const productId = productIdMatch ? productIdMatch[1] : '';
+                      const productName = truncateText(normalizeText(item.name || ''), {SEARCH_NAME_MAX_LENGTH});
+                      if (!productId || !productName) {{
+                        continue;
+                      }}
+                      const offerPrice = item?.offers?.price;
+                      const reviewCount = item?.aggregateRating?.reviewCount;
+                      items.push({{
+                        product_id: productId,
+                        product_name: productName,
+                        price: offerPrice !== undefined && offerPrice !== null ? String(offerPrice) : '-',
+                        rating: reviewCount !== undefined && reviewCount !== null ? String(reviewCount) : '-',
+                        image_url: String(item.image || ''),
+                        product_link: productLink,
+                      }});
+                    }}
+                    if (items.length) {{
+                      break;
+                    }}
+                  }} catch (error) {{
+                  }}
+                }}
+              }}
+              return {{foundRankMarkers: rankMarkerEntries.length > 0, items}};
             }})()
             """,
         )

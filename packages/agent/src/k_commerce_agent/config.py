@@ -1,7 +1,17 @@
 import sys
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from k_commerce_agent.profiles.kcommerce import SYSTEM_PROMPT
+
+# pydantic-settings only pulls .env values into fields declared below, so a
+# provider-native var like OPENAI_API_KEY (used by the generic "provider:model"
+# path's underlying client, which reads os.environ directly) would otherwise
+# never reach the process environment. Load .env into os.environ too so any
+# provider's own env var convention works without a bespoke Settings field.
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -15,6 +25,7 @@ class Settings(BaseSettings):
 
     # LLM provider:
     #  - "huggingface": HF OpenAI-compatible router (uses HF_TOKEN)
+    #  - "ollama": local Ollama server (OpenAI-compatible, no API key)
     #  - "watsonx": IBM watsonx.ai
     #  - "" (empty): generic "provider:model" form in ``llm_model``
     llm_provider: str = "huggingface"
@@ -28,22 +39,21 @@ class Settings(BaseSettings):
     hf_token: str = Field(default="", validation_alias="HF_TOKEN")
     hf_base_url: str = "https://router.huggingface.co/v1"
 
+    # Local Ollama server (OpenAI-compatible endpoint). No API key needed.
+    # Set llm_provider="ollama" and llm_model to a tool-calling model tag
+    # (e.g. "qwen2.5:7b-instruct").
+    ollama_base_url: str = "http://localhost:11434/v1"
+
     # IBM watsonx.ai credentials. Read from the standard WATSONX_* env vars
     # (no AGENT_ prefix) so an existing .env keeps working.
     watsonx_url: str = Field(default="", validation_alias="WATSONX_URL")
     watsonx_project_id: str = Field(default="", validation_alias="WATSONX_PROJECT_ID")
     watsonx_api_key: str = Field(default="", validation_alias="WATSONX_API_KEY")
 
-    system_prompt: str = (
-        "당신은 한국 커머스 자동화를 돕는 어시스턴트입니다. "
-        "제공된 도구를 사용해 로그인 상태 확인, 주문 조회, 장바구니 조회/수정/삭제 등을 수행하세요. "
-        "도구의 provider 인자는 항상 소문자 식별자를 사용하세요(예: 'coupang'). "
-        "특별한 언급이 없으면 provider는 'coupang'으로 간주하세요. "
-        "저장된 주문 내역을 조회할 때는 order_list를 사용하고, sync_required가 반환되면 order_sync로 먼저 수집하세요. "
-        "주문 페이지에서 상품명이나 키워드로 검색해야 할 때는 order_search를 사용하세요. "
-        "장바구니 항목을 변경하거나 삭제할 때는 cart_list로 얻은 product_id, vendor_item_id, item_id를 사용하세요. "
-        "사용자에게는 한국어로 간결하게 답하세요."
-    )
+    # Pre-call rules only, owned by the k-commerce profile. Post-result
+    # guidance (what to do after a tool returns) is attached per-result as a
+    # ``next_step`` field by ``k_commerce_agent.profiles.kcommerce``.
+    system_prompt: str = SYSTEM_PROMPT
 
     # Command used to launch the MCP server as a stdio subprocess.
     # Defaults to running the installed k-commerce-mcp package as a module.

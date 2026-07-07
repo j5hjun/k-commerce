@@ -1,9 +1,20 @@
+import json
+import logging
+from typing import Any
+
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
 
 from k_commerce_agent.config import settings
-from k_commerce_agent.mcp_client import load_tools
+from k_commerce_agent.history import LIST_TOOLS, compact_tool_content
+from k_commerce_agent.mcp_client import load_tools_by_server
+from k_commerce_agent.profiles.kcommerce import attach_next_step
+from k_commerce_agent.tools.web_search import web_search
+
+
+logger = logging.getLogger(__name__)
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -16,6 +27,8 @@ def is_model_configured() -> bool:
     provider = settings.llm_provider.strip().lower()
     if provider in ("hf", "huggingface"):
         return bool(settings.llm_model and settings.hf_token)
+    if provider == "ollama":
+        return bool(settings.llm_model)
     if provider in ("watsonx", "ibm"):
         return all(
             (
@@ -59,6 +72,23 @@ def build_model() -> BaseChatModel:
             api_key=settings.hf_token,
         )
 
+    if provider == "ollama":
+        if not settings.llm_model:
+            raise ModelNotConfiguredError(
+                "Ollama 설정이 부족합니다. AGENT_LLM_MODEL에 tool calling을 지원하는 "
+                "모델 태그(예: 'qwen2.5:7b-instruct')를 지정하세요."
+            )
+
+        from langchain_openai import ChatOpenAI
+
+        # Ollama's OpenAI-compatible endpoint ignores the API key but the
+        # client requires a non-empty value.
+        return ChatOpenAI(
+            model=settings.llm_model,
+            base_url=settings.ollama_base_url,
+            api_key="ollama",
+        )
+
     if provider in ("watsonx", "ibm"):
         missing = [
             name
@@ -94,6 +124,137 @@ def build_model() -> BaseChatModel:
     return init_chat_model(settings.llm_model)
 
 
+def _tool_error_payload(tool_name: str, exc: Exception) -> str:
+    return json.dumps(
+        {
+            "error": {
+                "type": "tool_error",
+                "message": str(exc),
+                "tool_name": tool_name,
+            }
+        },
+        ensure_ascii=False,
+    )
+
+
+def _raw_response_text(result: Any) -> Any:
+    """Extract the raw MCP payload from a tool result for logging."""
+
+    # content_and_artifact tools return (content, artifact); log only the content.
+    if isinstance(result, tuple) and result:
+        return result[0]
+    return result
+
+
+def _with_response_logging(tool: BaseTool) -> BaseTool:
+    """Log the raw response an MCP tool returns before any host rewriting.
+
+    This is the innermost wrapper, so what it logs is exactly what the MCP
+    server sent back — before compaction or next-step hints modify it.
+    """
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    async def logging_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        logger.info("MCP tool response [%s]: %s", tool.name, _raw_response_text(result))
+        return result
+
+    return tool.model_copy(update={"coroutine": logging_coroutine})
+
+
+def _with_safe_tool_errors(tool: BaseTool) -> BaseTool:
+    """Return tool results instead of raising so the chat stream can finish."""
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def safe_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        try:
+            return await coroutine(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the frontend as structured JSON
+            payload = _tool_error_payload(tool.name, exc)
+            if use_artifact:
+                return payload, None
+            return payload
+
+    return tool.model_copy(update={"coroutine": safe_coroutine})
+
+
+def _with_compact_tool_results(tool: BaseTool) -> BaseTool:
+    """Return compact list-tool payloads so the LLM does not see huge JSON blobs."""
+
+    if tool.name not in LIST_TOOLS:
+        return tool
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def compact_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        if use_artifact and isinstance(result, tuple):
+            content, artifact = result
+            return compact_tool_content(tool.name, content), artifact
+        return compact_tool_content(tool.name, result)
+
+    return tool.model_copy(update={"coroutine": compact_coroutine})
+
+
+def _with_next_step_hints(tool: BaseTool, *, first_party: bool) -> BaseTool:
+    """Attach agent-loop next-step hints to tool results."""
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    use_artifact = getattr(tool, "response_format", "content") == "content_and_artifact"
+
+    async def hinted_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        if use_artifact and isinstance(result, tuple):
+            content, artifact = result
+            return attach_next_step(tool.name, content, first_party=first_party), artifact
+        return attach_next_step(tool.name, result, first_party=first_party)
+
+    return tool.model_copy(update={"coroutine": hinted_coroutine})
+
+
+def _wrap_tool(tool: BaseTool, *, first_party: bool) -> BaseTool:
+    """Wrap a tool with host-level and (for first-party tools) profile-level layers.
+
+    Error safety applies to every tool. Name-keyed layers — list compaction
+    and next-step hints — only apply to first-party tools, so a third-party
+    MCP tool that happens to share a name (e.g. another server's ``status``)
+    is never rewritten.
+    """
+
+    wrapped = _with_response_logging(tool)
+    wrapped = _with_safe_tool_errors(wrapped)
+    if first_party:
+        wrapped = _with_compact_tool_results(wrapped)
+    return _with_next_step_hints(wrapped, first_party=first_party)
+
+
 async def build_agent():
     """Build a tool-calling agent backed by the MCP tools.
 
@@ -103,5 +264,9 @@ async def build_agent():
     """
 
     model = build_model()
-    tools = await load_tools()
+    tools: list[BaseTool] = []
+    for server_name, server_tools in (await load_tools_by_server()).items():
+        first_party = server_name == settings.mcp_server_name
+        tools.extend(_wrap_tool(tool, first_party=first_party) for tool in server_tools)
+    tools.append(_wrap_tool(web_search, first_party=True))
     return create_agent(model=model, tools=tools, system_prompt=settings.system_prompt)

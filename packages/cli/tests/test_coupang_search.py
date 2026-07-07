@@ -209,7 +209,6 @@ async def test_scrape_search_results_returns_only_ranked_dom_items() -> None:
 
     assert found_rank_markers is False
     assert items == ()
-    assert "application/ld+json" not in tab.evaluate_calls[0]
 
 
 @pytest.mark.anyio

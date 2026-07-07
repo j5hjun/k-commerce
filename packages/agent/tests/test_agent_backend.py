@@ -17,6 +17,147 @@ def test_settings_default_mcp_launch_targets_mcp_module() -> None:
     assert settings.mcp_server_name == "k-commerce"
 
 
+def test_ensure_default_mcp_server_registers_k_commerce_once() -> None:
+    from k_commerce_agent import mcp_client
+
+    mcp_client._servers.clear()
+    try:
+        mcp_client.ensure_default_mcp_server()
+        first = mcp_client.list_registered_servers()
+        assert "k-commerce" in first
+        assert first["k-commerce"]["transport"] == "stdio"
+        assert first["k-commerce"]["command"]
+
+        mcp_client.register_servers({"other": {"transport": "stdio", "command": "echo", "args": []}})
+        mcp_client.ensure_default_mcp_server()
+        second = mcp_client.list_registered_servers()
+        assert "k-commerce" in second
+        assert "other" in second
+        assert second["k-commerce"] == first["k-commerce"]
+    finally:
+        mcp_client._servers.clear()
+
+
+def test_with_safe_tool_errors_preserves_content_and_artifact() -> None:
+    from langchain_core.tools import StructuredTool
+
+    from k_commerce_agent.agent import _with_safe_tool_errors
+
+    async def failing(**kwargs: object) -> tuple[str, None]:
+        raise RuntimeError("boom")
+
+    tool = StructuredTool.from_function(
+        coroutine=failing,
+        name="status",
+        description="test",
+        response_format="content_and_artifact",
+    )
+    wrapped = _with_safe_tool_errors(tool)
+
+    async def invoke_wrapped() -> str:
+        return await wrapped.ainvoke({})
+
+    result = asyncio.run(invoke_wrapped())
+    assert "boom" in result
+    assert "tool_error" in result
+
+
+def test_with_compact_tool_results_shrinks_order_list() -> None:
+    import json
+
+    from langchain_core.tools import StructuredTool
+
+    from k_commerce_agent.agent import _with_compact_tool_results
+
+    orders = [
+        {"orderId": index, "title": f"주문{index}", "deliveryGroupList": []}
+        for index in range(1, 21)
+    ]
+    huge = json.dumps(
+        {"payload": {"meta": {"summary": {"totalOrders": 20}}, "orders": orders}},
+        ensure_ascii=False,
+    )
+
+    async def order_list(**kwargs: object) -> tuple[list[dict[str, str]], None]:
+        return [{"type": "text", "text": huge}], None
+
+    tool = StructuredTool.from_function(
+        coroutine=order_list,
+        name="order_list",
+        description="test",
+        response_format="content_and_artifact",
+    )
+    wrapped = _with_compact_tool_results(tool)
+
+    async def invoke_wrapped() -> str:
+        result = await wrapped.ainvoke({})
+        if isinstance(result, tuple):
+            content, _artifact = result
+        else:
+            content = result
+        if isinstance(content, list):
+            return content[0]["text"]
+        return str(content)
+
+    compact = json.loads(asyncio.run(invoke_wrapped()))
+    assert compact["total_count"] == 20
+    assert compact["shown_count"] == 10
+    assert len(compact["items"]) == 10
+
+
+def test_tool_result_payload_omits_tool_response_content() -> None:
+    # Given: a tool result whose content is JSON text.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = '{"ok":true,"items":[{"name":"item"}]}'
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("search_products", content, "call_1")
+
+    # Then: only completion metadata is sent to the user-facing websocket.
+    assert payload == {
+        "type": "tool_result",
+        "id": "call_1",
+        "name": "search_products",
+        "status": "completed",
+    }
+
+
+def test_tool_result_payload_marks_error_without_leaking_message() -> None:
+    # Given: a structured tool error payload.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = '{"error":{"type":"tool_error","message":"boom","tool_name":"status"}}'
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("status", content, "call_2")
+
+    # Then: the UI sees failure state, but not the tool response body.
+    assert payload == {
+        "type": "tool_result",
+        "id": "call_2",
+        "name": "status",
+        "status": "failed",
+    }
+
+
+def test_tool_result_payload_omits_plain_text_response() -> None:
+    # Given: a plain-text tool result.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = "plain result"
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("web_search", content, None)
+
+    # Then: plain text is not sent to the browser.
+    assert payload == {
+        "type": "tool_result",
+        "name": "web_search",
+        "status": "completed",
+    }
+
+
 def test_build_agent_without_model_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     async def build_agent_without_model() -> None:
         assert await build_agent() is not None

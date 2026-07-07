@@ -44,11 +44,11 @@ async def review_upload(
 
 async def review_edit(
     provider: str,
-    order_id: str,
-    product_id: str,
     review_id: str,
     rating: int,
     text: str,
+    product_id: str = "",
+    order_id: str = "",
 ) -> ReviewEditResult:
     return expect_tool_result(
         "review_edit",

@@ -30,6 +30,16 @@ def _make_cart_service(root_dir: Path, browser: _BrowserSpy) -> CoupangCartServi
     )
 
 
+def test_scrape_cart_items_script_uses_single_braces() -> None:
+    import inspect
+
+    source = inspect.getsource(CoupangCartService._scrape_cart_items)
+    script_start = source.index('(() => {')
+    script_end = source.rindex('})()')
+    script = source[script_start:script_end]
+    assert "{{" not in script, "scrape script must not contain Python f-string brace escapes"
+
+
 def test_cart_list_result_formats_cart_items() -> None:
     service = CoupangCartService(
         provider=ProviderName.COUPANG,
@@ -50,6 +60,8 @@ def test_cart_list_result_formats_cart_items() -> None:
                     product_id="9459571406",
                     vendor_item_id="95103608027",
                     item_id="44245695211",
+                    image_url="https://thumbnail.example/umbrella.jpg",
+                    product_link="https://www.coupang.com/vp/products/9459571406?vendorItemId=95103608027",
                 ),
                 _CartItemData(
                     product_name="Qiaokao 철제 서랍형 수납박스",
@@ -69,6 +81,8 @@ def test_cart_list_result_formats_cart_items() -> None:
     assert len(result.items) == 2
     assert result.items[0].vendor_item_id == "95103608027"
     assert result.items[0].option_text == "베이지"
+    assert result.items[0].image_url == "https://thumbnail.example/umbrella.jpg"
+    assert "9459571406" in result.items[0].product_link
     assert result.items[1].quantity == 2
     assert "장바구니 상품 (2건):" in result.message
     assert "Qiaokao 철제 서랍형 수납박스" in result.message
@@ -125,6 +139,8 @@ def test_cart_quantity_update_result_uses_applied_quantity_and_notice() -> None:
             state=CoupangCartState.SUCCESS,
             message="최대 구매 가능한 수량으로 변경되었습니다.",
             applied_quantity=10,
+            product_name="Qiaokao 철제 서랍형 수납박스",
+            option_text="1개, 화이트",
         ),
     )
 
@@ -132,6 +148,8 @@ def test_cart_quantity_update_result_uses_applied_quantity_and_notice() -> None:
     assert result.message == "쿠팡 장바구니 수량 수정 성공"
     assert result.notice == "최대 구매 가능한 수량으로 변경되었습니다."
     assert result.quantity == 10
+    assert result.product_name == "Qiaokao 철제 서랍형 수납박스"
+    assert result.option_text == "1개, 화이트"
 
 
 def test_cart_delete_result_success_messages() -> None:

@@ -1,76 +1,127 @@
 # K-Commerce
 
-AI agent and MCP infrastructure for Korean commerce workflows.
+K-Commerce provides a local Python CLI and stdio MCP server for Coupang workflows.
 
-## Workspace
+Korean documentation is available in [README.ko.md](README.ko.md).
 
-This repository is a `uv` workspace with Python `3.11` to `3.13` support.
+## Installation
 
-Install the workspace from the repository root:
-
-```bash
-uv sync
-```
-
-## Packages
-
-- `packages/cli`: end-user CLI for commerce workflows. See [packages/cli/README.md](packages/cli/README.md).
-- `packages/mcp`: MCP server exposing commerce tools. See [packages/mcp/README.md](packages/mcp/README.md).
-- `packages/agent`: LangChain agent backend bridging a web frontend to the MCP server. See [packages/agent/README.md](packages/agent/README.md).
-
-## Current Scope
-
-The MCP tool contract is the source of truth for commerce tool names, request payloads, validation,
-and shared service invocation. Both MCP wrappers and the generic CLI runner delegate through
-`k_commerce_cli.services.tools.invoke.invoke_tool`.
-
-The canonical tool names are:
-
-- `get_providers`
-- `login`
-- `status`
-- `logout`
-- `order_sync`
-- `order_list`
-- `order_search`
-- `order_detail`
-- `order_failures`
-- `product_detail`
-- `cart_list`
-- `cart_update_quantity`
-- `cart_delete_item`
-- `cart_delete_items`
-- `cart_clear`
-- `search_products`
-- `review_list_reviewable`
-- `review_list_editable`
-- `review_upload`
-- `review_edit`
-- `review_delete`
-
-Run any canonical tool through the generic CLI runner with inline JSON or a request file:
+Install with `pipx`:
 
 ```bash
-uv run k-commerce <tool-name> '<json-request>'
-uv run k-commerce <tool-name> --request-file ./request.json
+pipx install k-commerce
 ```
 
-Run the MCP stdio server directly or open it in MCP Inspector:
+Or install with `uv`:
 
 ```bash
-uv run k-commerce-mcp
-npx @modelcontextprotocol/inspector uv run k-commerce-mcp
+uv tool install k-commerce
 ```
 
-Human-oriented CLI aliases such as `k-commerce login coupang`, `k-commerce order list coupang`,
-and `k-commerce search coupang KEYWORD` remain available for local debugging and interactive
-browser checks. Their `--root-dir` option is a CLI-only debug/runtime option and is not part of the
-canonical MCP or JSON request payload.
+The package installs two commands:
 
-## Supported Providers
+- `k-commerce`: CLI for running tools directly from a terminal
+- `k-commerce-mcp`: local stdio MCP server for MCP clients
 
-The provider registry currently supports:
+K-Commerce supports Python `3.11` through `3.13`.
 
-- `coupang`
+## CLI Usage
 
-Provider-specific usage, credential formats, and session storage details are documented in the package READMEs to avoid duplication here.
+The current provider is `coupang`.
+
+Check session status:
+
+```bash
+k-commerce status '{"provider":"coupang"}'
+```
+
+Log in:
+
+```bash
+k-commerce login '{"provider":"coupang"}'
+```
+
+Search products:
+
+```bash
+k-commerce search_products '{"provider":"coupang","keyword":"keyboard","sort":"relevance","max_results":10}'
+```
+
+For longer JSON requests, pass a request file:
+
+```bash
+k-commerce <tool-name> --request-file ./request.json
+```
+
+## MCP Registration
+
+Register the server in your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "k-commerce": {
+      "command": "k-commerce-mcp"
+    }
+  }
+}
+```
+
+You can verify the local server with MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector k-commerce-mcp
+```
+
+## Tools
+
+| Tool | Description |
+| --- | --- |
+| `get_providers` | Return the supported provider list. |
+| `login` | Run the provider login flow. |
+| `status` | Check saved provider session status. |
+| `logout` | Remove saved session artifacts. |
+| `order_sync` | Collect provider orders into the local order snapshot. |
+| `order_list` | Return saved orders. |
+| `order_search` | Search orders on the provider order page. |
+| `order_detail` | Return details for one saved order. |
+| `order_failures` | Return order failure items that need attention. |
+| `product_detail` | Collect product details, detail images, and OCR text. |
+| `cart_list` | Return cart items. |
+| `cart_update_quantity` | Update the quantity of one cart item. |
+| `cart_delete_item` | Delete one cart item. |
+| `cart_delete_items` | Delete multiple cart items. |
+| `cart_clear` | Clear the cart. |
+| `search_products` | Search provider products. |
+| `review_list_reviewable` | Return products eligible for review. |
+| `review_list_editable` | Return editable reviews. |
+| `review_upload` | Upload a product review. |
+| `review_edit` | Edit a product review. |
+| `review_delete` | Delete a product review. |
+
+## Login And Local State
+
+The `login` tool first tries to restore a saved browser session. If no valid session is available,
+it tries automatic login with saved credentials. If automatic login is unavailable, it waits for
+manual login in the browser.
+
+To enable automatic login, create:
+
+```text
+~/.k-commerce/coupang/credentials.json
+```
+
+```json
+{
+  "email": "you@example.com",
+  "password": "your-password"
+}
+```
+
+Sessions, cookies, and order snapshots are stored under:
+
+```text
+~/.k-commerce/coupang/
+```
+
+Treat files in this directory as sensitive local account state.

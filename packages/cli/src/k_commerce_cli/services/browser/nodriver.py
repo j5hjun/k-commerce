@@ -36,25 +36,49 @@ class NodriverBrowserSession(BrowserSession):
     tab: BrowserTab
 
 
+_BROWSER_LAUNCH_ATTEMPTS = 2
+_BROWSER_LAUNCH_RETRY_DELAY_SECONDS = 1.0
+
+
+def _is_transient_browser_launch_error(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionError, OSError)):
+        return True
+    message = str(exc).lower()
+    return "connect to browser" in message or "failed to connect" in message
+
+
 class NodriverBrowser(Browser):
     async def launch(self, paths: ProviderPaths) -> NodriverBrowserSession:
         profile_dir = paths.profile_dir
         cookies_file = paths.cookies_file
         profile_dir.mkdir(parents=True, exist_ok=True)
 
-        browser = await uc.start(
-            headless=False,
-            user_data_dir=str(profile_dir),
-            browser_args=[
-                "--window-size=1440,900",
-                "--lang=ko-KR",
-            ],
-            lang="ko-KR",
-            sandbox=_browser_sandbox_enabled(),
-        )
+        browser = await self._start_browser(profile_dir)
         tab = await self._ensure_tab(browser)
         await self._load_cookies(browser, cookies_file)
         return NodriverBrowserSession(browser=browser, tab=tab)
+
+    async def _start_browser(self, profile_dir: Path) -> BrowserRuntime:
+        last_error: BaseException | None = None
+        for attempt in range(_BROWSER_LAUNCH_ATTEMPTS):
+            try:
+                return await uc.start(
+                    headless=False,
+                    user_data_dir=str(profile_dir),
+                    browser_args=[
+                        "--window-size=1440,900",
+                        "--lang=ko-KR",
+                    ],
+                    lang="ko-KR",
+                    sandbox=_browser_sandbox_enabled(),
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt + 1 >= _BROWSER_LAUNCH_ATTEMPTS or not _is_transient_browser_launch_error(exc):
+                    raise
+                await asyncio.sleep(_BROWSER_LAUNCH_RETRY_DELAY_SECONDS)
+        assert last_error is not None
+        raise last_error
 
     async def save_session(self, session: NodriverBrowserSession, cookies_file: Path) -> None:
         cookies_api = getattr(session.browser, "cookies", None)
