@@ -226,3 +226,24 @@ async def test_validation_failure_returns_json_error() -> None:
             "next_tools": [],
         }
     }
+
+
+@pytest.mark.anyio
+async def test_payload_field_type_error_reports_invoked_tool_name() -> None:
+    # Given: a valid tool payload with an invalid optional field type.
+    # When: the generic runner emits the validation error.
+    result = await RUNNER.invoke(app, ["order_list", '{"provider":"coupang","status":123}'])
+
+    # Then: the error names the invoked tool instead of the payload parser.
+    assert result.exit_code != 0
+    assert json.loads(result.stderr) == {
+        "error": {
+            "type": "tool_error",
+            "message": "status must be a string",
+            "error_code": "invalid_field",
+            "retryable": False,
+            "tool_name": "order_list",
+            "field": "status",
+            "next_tools": [],
+        }
+    }

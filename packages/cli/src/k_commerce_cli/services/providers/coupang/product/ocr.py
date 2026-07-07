@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import anyio
 import httpx
 from ibm_watsonx_ai.wml_client_error import WMLClientError
 from langchain_core.messages import HumanMessage
@@ -89,7 +90,7 @@ async def extract_product_image_text(
 
     for image in images:
         try:
-            content = _extract_one_image(model, image.url)
+            content = await anyio.to_thread.run_sync(_extract_one_image, model, image.url)
         except (WMLClientError, httpx.HTTPError, RuntimeError, ValueError, OSError, TimeoutError) as exc:
             warning = f"OCR 실패: {type(exc).__name__}"
             warnings.append(warning)

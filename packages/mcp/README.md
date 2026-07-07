@@ -39,6 +39,7 @@ Canonical tools:
 - `order_search`: Searches the browser-backed provider order page and returns matched orders.
 - `order_detail`: Shows one saved provider order in detail.
 - `order_failures`: Lists saved provider orders that need attention.
+- `product_detail`: Collects product details, detail images, and OCR text from a provider product page.
 - `cart_list`: Lists cart items.
 - `cart_update_quantity`: Updates one cart item quantity.
 - `cart_delete_item`: Deletes one cart item.
@@ -76,6 +77,7 @@ Automation should prefer the canonical MCP tool names and request payloads.
 | `k-commerce order search coupang KEYWORD` | `order_search` |
 | `k-commerce order detail coupang ORDER_ID` | `order_detail` |
 | `k-commerce order failures coupang` | `order_failures` |
+| `k-commerce product detail coupang URL` | `product_detail` |
 | `k-commerce search coupang KEYWORD` | `search_products` |
 | `k-commerce cart coupang` / `--list` | `cart_list` |
 | `k-commerce cart coupang --quantity` | `cart_update_quantity` |
