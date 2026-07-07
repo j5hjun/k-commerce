@@ -6,7 +6,6 @@ import { MarkdownContent } from "@/components/MarkdownContent";
 import { stamp } from "@/lib/format";
 import type { ChatMessage, McpServerInfo, ToolCall } from "@/lib/types";
 import { BoltIcon, SendIcon } from "@/components/icons";
-import { ToolResult } from "@/components/ToolResult";
 
 export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
   const { messages, thinking, busy, errorMessage, status, send } = useChatContext();
@@ -71,11 +70,10 @@ export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="space-y-5">
           <IntroBubble time={mountedTime} />
-          {messages.map((m, index) => (
+          {messages.map((m) => (
             <MessageRow
               key={m.id}
               message={m}
-              priorMessages={messages.slice(0, index + 1)}
               toolSource={toolSource}
             />
           ))}
@@ -166,11 +164,9 @@ function IntroBubble({ time }: { time: string }) {
 
 function MessageRow({
   message,
-  priorMessages,
   toolSource,
 }: {
   message: ChatMessage;
-  priorMessages: ChatMessage[];
   toolSource: (name: string) => string | undefined;
 }) {
   if (message.role === "tool" && message.toolCall) {
@@ -180,7 +176,6 @@ function MessageRow({
     return (
       <ToolCallRow
         call={message.toolCall}
-        priorMessages={priorMessages}
         source={toolSource(message.toolCall.name)}
       />
     );
@@ -216,11 +211,9 @@ function MessageRow({
 
 function ToolCallRow({
   call,
-  priorMessages,
   source,
 }: {
   call: ToolCall;
-  priorMessages: ChatMessage[];
   source?: string;
 }) {
   const running = call.status === "running";
@@ -252,14 +245,6 @@ function ToolCallRow({
           </span>
           {source && <span className="font-mono text-[10px] text-faint">{source}</span>}
         </div>
-        {call.result && (
-          <ToolResult
-            content={call.result}
-            toolName={call.name}
-            priorMessages={priorMessages}
-            toolArgs={call.args}
-          />
-        )}
         {call.time && <p className="pl-1 text-[11px] text-faint">{call.time}</p>}
       </div>
     </div>

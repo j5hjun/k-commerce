@@ -1,4 +1,5 @@
 import json
+from typing import Literal, NotRequired, TypedDict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from langchain_core.messages import AIMessageChunk, ToolMessage
@@ -18,6 +19,15 @@ from k_commerce_agent.mcp_client import load_tools
 from k_commerce_agent.schemas import ChatRequest, ToolInfo, ToolsResponse
 
 router = APIRouter()
+
+ToolResultStatus = Literal["completed", "failed"]
+
+
+class ToolResultPayload(TypedDict):
+    type: Literal["tool_result"]
+    name: str
+    status: ToolResultStatus
+    id: NotRequired[str]
 
 
 @router.get("/health")
@@ -120,14 +130,13 @@ async def _forward_chunk(
                         pending_tools[:] = [(pid, pname) for pid, pname in pending_tools if pid != call_id]
                     else:
                         pending_tools[:] = [(pid, pname) for pid, pname in pending_tools if pname != name]
-                    payload: dict[str, str] = {
-                        "type": "tool_result",
-                        "name": name,
-                        "content": _tool_result_content(name, message.content),
-                    }
-                    if call_id:
-                        payload["id"] = call_id
-                    await websocket.send_json(payload)
+                    await websocket.send_json(
+                        _tool_result_payload(
+                            name,
+                            _content_to_text(message.content),
+                            call_id,
+                        )
+                    )
 
 
 async def _emit_tool_call(
@@ -158,27 +167,42 @@ async def _fail_pending_tools(
 ) -> None:
     while pending_tools:
         call_id, name = pending_tools.pop(0)
-        payload: dict[str, str] = {
-            "type": "tool_result",
-            "name": name,
-            "content": json.dumps(
-                {
-                    "error": {
-                        "type": "tool_error",
-                        "message": str(exc),
-                        "tool_name": name,
-                    }
-                },
-                ensure_ascii=False,
-            ),
-        }
-        if call_id:
-            payload["id"] = call_id
-        await websocket.send_json(payload)
+        content = json.dumps(
+            {
+                "error": {
+                    "type": "tool_error",
+                    "message": str(exc),
+                    "tool_name": name,
+                }
+            },
+            ensure_ascii=False,
+        )
+        await websocket.send_json(_tool_result_payload(name, content, call_id))
 
 
-def _tool_result_content(tool_name: str, content: str | list) -> str:
-    return _content_to_text(content)
+def _tool_result_payload(
+    tool_name: str,
+    content: str,
+    call_id: str | None,
+) -> ToolResultPayload:
+    payload: ToolResultPayload = {
+        "type": "tool_result",
+        "name": tool_name,
+        "status": _tool_result_status(content),
+    }
+    if call_id:
+        payload["id"] = call_id
+    return payload
+
+
+def _tool_result_status(content: str) -> ToolResultStatus:
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError:
+        return "completed"
+    if isinstance(value, dict) and "error" in value:
+        return "failed"
+    return "completed"
 
 
 def _content_to_text(content: str | list) -> str:

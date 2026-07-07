@@ -105,6 +105,59 @@ def test_with_compact_tool_results_shrinks_order_list() -> None:
     assert len(compact["items"]) == 10
 
 
+def test_tool_result_payload_omits_tool_response_content() -> None:
+    # Given: a tool result whose content is JSON text.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = '{"ok":true,"items":[{"name":"item"}]}'
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("search_products", content, "call_1")
+
+    # Then: only completion metadata is sent to the user-facing websocket.
+    assert payload == {
+        "type": "tool_result",
+        "id": "call_1",
+        "name": "search_products",
+        "status": "completed",
+    }
+
+
+def test_tool_result_payload_marks_error_without_leaking_message() -> None:
+    # Given: a structured tool error payload.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = '{"error":{"type":"tool_error","message":"boom","tool_name":"status"}}'
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("status", content, "call_2")
+
+    # Then: the UI sees failure state, but not the tool response body.
+    assert payload == {
+        "type": "tool_result",
+        "id": "call_2",
+        "name": "status",
+        "status": "failed",
+    }
+
+
+def test_tool_result_payload_omits_plain_text_response() -> None:
+    # Given: a plain-text tool result.
+    from k_commerce_agent.routes.chat import _tool_result_payload
+
+    content = "plain result"
+
+    # When: the websocket payload is built.
+    payload = _tool_result_payload("web_search", content, None)
+
+    # Then: plain text is not sent to the browser.
+    assert payload == {
+        "type": "tool_result",
+        "name": "web_search",
+        "status": "completed",
+    }
+
+
 def test_build_agent_without_model_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     async def build_agent_without_model() -> None:
         assert await build_agent() is not None
