@@ -560,6 +560,17 @@ class CoupangSearchService:
                 candidates.push(element);
               }};
 
+              for (const entry of rankMarkerEntries) {{
+                if (candidates.length >= {max_results}) {{
+                  break;
+                }}
+                const element =
+                  entry.marker.closest('li[class*="ProductUnit_productUnit"], li') ||
+                  entry.marker.closest('[class*="ProductUnit_productUnit"]') ||
+                  entry.marker.closest('[class*="ProductUnit"]');
+                addCandidate(element);
+              }}
+
               if (!candidates.length) {{
                 const productUnits = Array.from(
                   productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"]')
@@ -694,7 +705,7 @@ class CoupangSearchService:
                   }}
                 }}
               }}
-              return {{foundRankMarkers: rankMarkers.length > 0, items}};
+              return {{foundRankMarkers: rankMarkerEntries.length > 0, items}};
             }})()
             """,
         )

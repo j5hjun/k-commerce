@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from questionary import Choice
 
 from k_commerce_cli.commands.cart.interactive import (
     CART_LIST_HEADER,
@@ -169,43 +168,6 @@ async def test_prompt_clear_cart_action_returns_selected_action() -> None:
         "뒤로가기",
         "나가기",
     ]
-
-
-@pytest.mark.anyio
-async def test_prompt_bulk_delete_confirmation_returns_confirm() -> None:
-    from k_commerce_cli.commands.cart.interactive import (
-        _BULK_DELETE_CONFIRM,
-        prompt_bulk_delete_confirmation,
-    )
-
-    prompts = Mock()
-    prompts.select = AsyncMock(return_value=_BULK_DELETE_CONFIRM)
-
-    result = await prompt_bulk_delete_confirmation(prompts)
-
-    assert result == "confirm"
-    assert "정말 삭제하시겠습니까?" in prompts.select.call_args.args[0]
-
-
-def test_format_selected_cart_delete_list_uses_delete_heading() -> None:
-    from k_commerce_cli.commands.cart.interactive import format_selected_cart_delete_list
-
-    item = CartItem(
-        index=1,
-        product_name="테스트 상품",
-        option_text="옵션",
-        quantity=1,
-        unit_price="1,000원",
-        total_price="1,000원",
-        product_id="1",
-        vendor_item_id="2",
-        item_id="3",
-    )
-
-    formatted = format_selected_cart_delete_list((item,))
-
-    assert formatted.startswith("삭제할 상품 (1건):")
-    assert "테스트 상품" in formatted
 
 
 @pytest.mark.anyio

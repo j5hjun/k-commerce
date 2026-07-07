@@ -287,8 +287,8 @@ async def _invoke_review_edit(
     options: ToolRuntimeOptions,
 ) -> ReviewEditResult:
     request = ReviewEditRequest(
-        order_id=_optional_str(payload, "order_id"),
-        product_id=_optional_str(payload, "product_id"),
+        order_id=_optional_str("review_edit", payload, "order_id"),
+        product_id=_optional_str("review_edit", payload, "product_id"),
         review_id=_required_str("review_edit", payload, "review_id"),
         rating=_required_int("review_edit", payload, "rating"),
         text=_required_str("review_edit", payload, "text", allow_empty=True),
