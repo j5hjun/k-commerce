@@ -106,7 +106,6 @@ PRODUCT_DETAIL_SCRIPT: Final = """
       .map((src) => src.startsWith('//') ? `https:${src}` : src)
       .filter((src) => src.includes('coupangcdn.com') || src.includes('image/'))
   );
-  const detailText = normalizeText(detailRoot?.innerText || '');
   const headings = Array.from(detailRoot?.querySelectorAll('h2, h3, h4, strong, b') || [])
     .map(compactText)
     .filter((text) => text.length >= 2 && text.length <= 80);
@@ -136,7 +135,6 @@ PRODUCT_DETAIL_SCRIPT: Final = """
     mainImageUrl,
     requiredInfo,
     detailImages,
-    detailText,
     sections,
     tables,
   };

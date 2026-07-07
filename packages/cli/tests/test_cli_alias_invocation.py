@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
 
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
-from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRuntimeOptions
+from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRequestError, ToolRuntimeOptions
 from k_commerce_cli.services.types import (
     ListCartResult,
     ListReviewableResult,
@@ -198,6 +198,34 @@ async def test_order_list_alias_uses_shared_invocation() -> None:
             },
         ),
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("args", "tool_name"),
+    [
+        (["order", "list", "invalid"], "order_list"),
+        (["order", "sync", "invalid"], "order_sync"),
+        (["order", "search", "invalid", "세제"], "order_search"),
+        (["order", "detail", "invalid", "100"], "order_detail"),
+        (["order", "failures", "invalid"], "order_failures"),
+    ],
+)
+async def test_order_alias_unsupported_provider_uses_bad_parameter(args: list[str], tool_name: str) -> None:
+    invoke_tool = AsyncMock(
+        side_effect=ToolRequestError(
+            tool_name=tool_name,
+            message="Unsupported provider: invalid",
+            error_code="unsupported_provider",
+        )
+    )
+
+    with patch("k_commerce_cli.commands.order.invoke_tool", invoke_tool, create=True):
+        result = await RUNNER.invoke(app, args)
+
+    assert result.exit_code == 2
+    assert "Invalid value for provider: Unsupported provider: invalid" in result.output
+    invoke_tool.assert_awaited_once()
 
 
 @pytest.mark.anyio

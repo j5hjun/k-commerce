@@ -95,7 +95,7 @@ class CoupangOrderService:
             self.store.write_orders(payload.to_dict())
             self._emit_order_result(terminal, payload)
             return self._order_sync_result(payload, request)
-        except RuntimeError as exc:
+        except Exception as exc:
             if not is_browser_closed_error(exc):
                 raise
             payload = self._empty_payload(refresh=request.refresh)
@@ -181,7 +181,7 @@ class CoupangOrderService:
                 retryable=metadata.retryable,
                 next_tools=metadata.next_tools,
             )
-        except RuntimeError as exc:
+        except Exception as exc:
             if not is_browser_closed_error(exc):
                 raise
             return self._browser_closed_order_search_result(request)
@@ -325,7 +325,9 @@ class CoupangOrderService:
                     terminal.info(f"{year}년 {page_index + 1}페이지 수집 중...")
                 try:
                     page = await self._fetch_page_with_retry(year, page_index)
-                except Exception:
+                except Exception as exc:
+                    if is_browser_closed_error(exc):
+                        raise
                     failed_pages.append([year, page_index + 1])
                     break
                 page_orders = [
@@ -366,7 +368,9 @@ class CoupangOrderService:
                     terminal.info(f"{year}년 검색 결과 {page_index + 1}페이지 수집 중...")
                 try:
                     page = await self._fetch_search_page_with_retry(year, page_index, keyword)
-                except RuntimeError:
+                except Exception as exc:
+                    if is_browser_closed_error(exc):
+                        raise
                     failed_pages.append([year, page_index + 1])
                     break
                 collected.extend(self._build_order(order) for order in page["orderList"])
@@ -415,7 +419,9 @@ class CoupangOrderService:
                 terminal.info(f"{year}년 {page_number}페이지 재수집 중...")
             try:
                 page = await self._fetch_page_with_retry(year, page_number - 1)
-            except Exception:
+            except Exception as exc:
+                if is_browser_closed_error(exc):
+                    raise
                 failed_pages.append([year, page_number])
                 continue
             collected.extend(self._build_order(order) for order in page["orderList"])
@@ -447,7 +453,7 @@ class CoupangOrderService:
                 if inspect.isawaitable(maybe_navigation):
                     await maybe_navigation
                 return await self._wait_for_order_page_payload()
-            except RuntimeError as exc:
+            except Exception as exc:
                 last_error = exc
                 await anyio.sleep(1)
         assert last_error is not None

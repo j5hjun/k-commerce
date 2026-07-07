@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -50,6 +51,11 @@ class _StoreStub:
 
     def write_orders(self, payload):
         self._orders = payload
+
+
+class _SessionStoreStub(_StoreStub):
+    def has_session(self) -> bool:
+        return True
 
 
 class _FakeProvider:
@@ -240,6 +246,37 @@ async def test_order_list_reports_sync_required_when_snapshot_is_missing(tmp_pat
     assert result.error_code == "sync_required"
     assert result.retryable is False
     assert result.next_tools == ("order_sync",)
+
+
+@pytest.mark.anyio
+async def test_order_sync_maps_non_runtime_browser_closed_error(tmp_path: Path) -> None:
+    store = _SessionStoreStub(tmp_path)
+    browser = AsyncMock()
+    browser.launch.side_effect = ConnectionError("Session with given id not found.")
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.sync_orders(OrderSyncRequest())
+
+    assert result.success is False
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+
+
+@pytest.mark.anyio
+async def test_order_search_reraises_browser_closed_from_page_collection(tmp_path: Path) -> None:
+    store = _SessionStoreStub(tmp_path)
+    browser = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+    service._open_order_list = AsyncMock()
+    service._is_order_login_page = AsyncMock(return_value=False)
+    service._wait_for_visible_years = AsyncMock(return_value=["2026"])
+    service._fetch_search_page_with_retry = AsyncMock(side_effect=ConnectionError("Session with given id not found."))
+
+    result = await service.search_orders(OrderSearchRequest(keyword="세제"))
+
+    assert result.success is False
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
 
 
 @pytest.mark.anyio

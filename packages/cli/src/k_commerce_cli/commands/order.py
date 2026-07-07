@@ -6,11 +6,17 @@ import asyncclick as click
 
 from k_commerce_cli.services.registry import get_provider
 from k_commerce_cli.services.tools.invoke import invoke_tool
-from k_commerce_cli.services.tools.types import ToolRuntimeOptions
+from k_commerce_cli.services.tools.types import ToolRequestError, ToolRuntimeOptions
 
 
 def _resolve_root_dir(root_dir: str | None) -> Path | None:
     return Path(root_dir) if root_dir is not None else None
+
+
+def _raise_provider_parameter_error(error: ToolRequestError) -> None:
+    if error.error_code == "unsupported_provider":
+        raise click.BadParameter(error.message, param_hint="provider") from error
+    raise error
 
 
 @click.group()
@@ -57,6 +63,8 @@ async def order_list(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        _raise_provider_parameter_error(exc)
 
 
 @order.command("sync")
@@ -103,6 +111,8 @@ async def order_sync(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        _raise_provider_parameter_error(exc)
 
 
 @order.command("search")
@@ -135,6 +145,8 @@ async def order_search(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        _raise_provider_parameter_error(exc)
 
 
 @order.command("detail")
@@ -161,6 +173,8 @@ async def order_detail(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        _raise_provider_parameter_error(exc)
 
 
 @order.command("failures")
@@ -191,3 +205,5 @@ async def order_failures(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        _raise_provider_parameter_error(exc)
