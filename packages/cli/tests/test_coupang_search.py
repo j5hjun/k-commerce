@@ -12,7 +12,6 @@ from k_commerce_cli.services.providers.coupang.search.service import (
     _SearchBrowserResult,
     _SearchResultItemData,
 )
-from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
 from k_commerce_cli.services.registry import get_provider, list_providers
 from k_commerce_cli.services.store import ProviderStore
 
@@ -38,6 +37,12 @@ class _SearchTab:
 
     async def get(self, url: str) -> None:
         self.get_calls.append(url)
+
+
+class _ClosingSearchTab(_SearchTab):
+    async def get(self, url: str) -> None:
+        self.get_calls.append(url)
+        raise RuntimeError("Session with given id not found.")
 
 
 class _Session:
@@ -70,6 +75,20 @@ def _build_result() -> _SearchBrowserResult:
     )
 
 
+def _build_search_items(start: int, count: int) -> tuple[_SearchResultItemData, ...]:
+    return tuple(
+        _SearchResultItemData(
+            product_id=str(8800000000 + index),
+            product_name=f"검색 상품 {index}",
+            price=str(1000 + index),
+            rating=str(index),
+            image_url=f"https://example.com/image-{index}.jpg",
+            product_link=f"https://www.coupang.com/vp/products/{8800000000 + index}?itemId={index}",
+        )
+        for index in range(start, start + count)
+    )
+
+
 def test_get_provider_returns_coupang_provider_instance() -> None:
     provider = get_provider("coupang")
 
@@ -97,6 +116,29 @@ async def test_search_products_fails_when_session_is_missing(tmp_path: Path) -> 
     assert result.success is False
     assert result.items == ()
     assert "쿠팡 로그인 상태" in result.message
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+
+
+@pytest.mark.anyio
+async def test_search_products_returns_browser_closed_when_tab_closes(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    tab = _ClosingSearchTab(payloads=[])
+    browser.launch.return_value = _Session(tab)
+    service = _make_search_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
+
+    result = await service.search_products("후레이크", print_result=False)
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "브라우저가 닫혀 상품 검색을 완료하지 못했습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -129,7 +171,8 @@ async def test_scrapes_top_ranked_items_from_rank_markers() -> None:
     assert "document.querySelector('#product-list')" in tab.evaluate_calls[0]
     assert "const productRoot = productList || document" in tab.evaluate_calls[0]
     assert "RankMark_rank" in tab.evaluate_calls[0]
-    assert "expectedRanks.every" in tab.evaluate_calls[0]
+    assert "ProductUnit_productUnit" in tab.evaluate_calls[0]
+    assert "addCandidate(element)" in tab.evaluate_calls[0]
     assert "productLink.match(/\\/vp\\/products\\/(\\d+)/)" in tab.evaluate_calls[0]
     assert "itemId" not in tab.evaluate_calls[0]
     assert "closest('li[class*=\"ProductUnit_productUnit\"], li')" in tab.evaluate_calls[0]
@@ -181,56 +224,6 @@ async def test_scrape_search_results_fails_when_rank_markers_are_missing() -> No
 
 
 @pytest.mark.anyio
-async def test_scrape_search_results_scrolls_until_all_rank_markers_are_found() -> None:
-    service = _make_search_service()
-    tab = _SearchTab(
-        payloads=[
-            {
-                "foundRankMarkers": False,
-                "items": [
-                    {
-                        "product_id": "8825977723",
-                        "product_name": "포스트 아몬드후레이크",
-                        "price": "12300",
-                        "rating": "4.8",
-                        "image_url": "https://example.com/image.jpg",
-                        "product_link": "https://www.coupang.com/vp/products/8825977723",
-                    }
-                ],
-            },
-            True,
-            {
-                "foundRankMarkers": True,
-                "items": [
-                    {
-                        "product_id": "8825977723",
-                        "product_name": "포스트 아몬드후레이크",
-                        "price": "12300",
-                        "rating": "4.8",
-                        "image_url": "https://example.com/image.jpg",
-                        "product_link": "https://www.coupang.com/vp/products/8825977723",
-                    },
-                    {
-                        "product_id": "4914224511",
-                        "product_name": "켈로그 현미 푸레이크",
-                        "price": "8900",
-                        "rating": "1234",
-                        "image_url": "https://example.com/image2.jpg",
-                        "product_link": "https://www.coupang.com/vp/products/4914224511",
-                    },
-                ],
-            },
-        ]
-    )
-
-    items, found_all_rank_markers = await service._scrape_search_results_with_scroll(tab, max_results=2)
-
-    assert found_all_rank_markers is True
-    assert len(items) == 2
-    assert "window.scrollBy" in tab.evaluate_calls[1]
-
-
-@pytest.mark.anyio
 async def test_list_search_results_does_not_visit_product_detail_pages() -> None:
     service = _make_search_service()
     tab = _SearchTab(payloads=[])
@@ -238,7 +231,7 @@ async def test_list_search_results_does_not_visit_product_detail_pages() -> None
     service._active_tab = Mock(return_value=tab)
     service._is_logged_in = AsyncMock(return_value=True)
     service._wait_for_search_page_ready = AsyncMock()
-    service._scrape_search_results_with_scroll = AsyncMock(return_value=(_build_result().items, True))
+    service._scrape_search_results = AsyncMock(return_value=(_build_result().items, True))
 
     result = await service._list_search_results(
         session,
@@ -251,6 +244,44 @@ async def test_list_search_results_does_not_visit_product_detail_pages() -> None
     assert result.state == "success"
     assert tab.get_calls == ["https://www.coupang.com/np/search?q=%EC%9A%B0%EC%82%B0&page=1"]
     assert all("/vp/products/" not in url for url in tab.get_calls)
+
+
+@pytest.mark.anyio
+async def test_list_search_results_collects_max_results_across_search_pages() -> None:
+    service = _make_search_service()
+    tab = _SearchTab(payloads=[])
+    session = _Session(tab)
+    service._active_tab = Mock(return_value=tab)
+    service._is_logged_in = AsyncMock(return_value=True)
+    service._wait_for_search_page_ready = AsyncMock()
+    service._scrape_search_results = AsyncMock(
+        side_effect=[
+            (_build_search_items(1, 10), True),
+            (_build_search_items(11, 5), True),
+        ]
+    )
+    service._read_next_search_page_url = AsyncMock(
+        side_effect=[
+            "https://www.coupang.com/np/search?q=%EA%B0%80%EB%B0%A9%EA%B1%B8%EC%9D%B4&page=2",
+            "",
+        ]
+    )
+
+    result = await service._list_search_results(
+        session,
+        keyword="가방걸이",
+        category=None,
+        sort="relevance",
+        max_results=15,
+    )
+
+    assert result.state == "success"
+    assert len(result.items) == 15
+    assert tab.get_calls == [
+        "https://www.coupang.com/np/search?q=%EA%B0%80%EB%B0%A9%EA%B1%B8%EC%9D%B4&page=1",
+        "https://www.coupang.com/np/search?q=%EA%B0%80%EB%B0%A9%EA%B1%B8%EC%9D%B4&page=2",
+    ]
+    assert service._scrape_search_results.await_count == 2
 
 
 def test_to_search_result_includes_incomplete_rank_warning() -> None:
@@ -295,4 +326,3 @@ async def test_to_search_result_formats_table() -> None:
     assert result.success is True
     assert result.items[0].index == 1
     assert "검색 결과" in result.message
-

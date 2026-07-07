@@ -14,7 +14,7 @@ from k_commerce_cli.services.providers.coupang.types import (
     CoupangOrderResult,
     CoupangOrderSummary,
 )
-from k_commerce_cli.services.types import ProviderName
+from k_commerce_cli.services.types import OrderSearchRequest, OrderSyncRequest, ProviderName
 
 
 class ExceptionDetails:
@@ -24,7 +24,7 @@ class ExceptionDetails:
 
 
 class _StoreStub:
-    def __init__(self, root_dir: Path):
+    def __init__(self, root_dir: Path, *, has_session: bool = True):
         self.paths = ProviderPaths("coupang", root_dir)
         self.base_dir = self.paths.base_dir
         self.profile_dir = self.paths.profile_dir
@@ -33,12 +33,13 @@ class _StoreStub:
         self.session_meta_path = self.paths.session_meta_path
         self.orders_path = self.paths.orders_path
         self._orders = None
+        self._has_session = has_session
 
     def load_credentials(self):
         return None
 
     def has_session(self) -> bool:
-        return True
+        return self._has_session
 
     def clear_session(self) -> bool:
         return False
@@ -163,7 +164,7 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=True)
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
     payload = result.payload
 
     assert payload.meta.provider == "coupang"
@@ -178,6 +179,163 @@ async def test_collect_orders_refresh_writes_meta_and_nested_orders(tmp_path: Pa
     tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
     assert store._orders == payload.to_dict()
     assert result.message == "주문 새로 생성 완료: 총 1건"
+
+
+@pytest.mark.anyio
+async def test_search_orders_collects_keyword_pages_with_same_order_payload_parser(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    first_order = _order_payload(order_id=10, title="detergent")
+    first_order["deliveryGroupList"][0]["productList"].append(
+        {
+            "vendorItemId": 102,
+            "productId": 1002,
+            "itemId": 2002,
+            "vendorItemName": "refill",
+            "productName": "refill",
+            "quantity": 2,
+            "unitPrice": 2000,
+            "discountedUnitPrice": 2000,
+            "combinedUnitPrice": 4000,
+            "imagePath": "https://example.com/refill.jpg",
+        }
+    )
+    tab.evaluate = AsyncMock(
+        side_effect=[
+            [],
+            ["최근 6개월", "2026"],
+            {
+                "orderList": [first_order],
+                "orderPagination": {"hasNext": True, "nextPageIndex": 1},
+            },
+            {
+                "orderList": [_order_payload(order_id=20, title="detergent refill")],
+                "orderPagination": {"hasNext": False, "nextPageIndex": 0},
+            },
+        ]
+    )
+
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.search_orders(OrderSearchRequest(keyword="세제", limit=10))
+
+    assert result.success is True
+    assert result.keyword == "세제"
+    assert result.total_count == 2
+    assert result.payload is not None
+    assert [str(order.orderId) for order in result.payload.orders] == ["10", "20"]
+    assert len(result.payload.orders[0].deliveryGroupList[0].productList) == 2
+    assert [product.productUrl for product in result.payload.orders[0].deliveryGroupList[0].productList] == [
+        "https://www.coupang.com/vp/products/1001?itemId=2001&vendorItemId=101",
+        "https://www.coupang.com/vp/products/1002?itemId=2002&vendorItemId=102",
+    ]
+    assert [product.productName for product in result.payload.orders[0].deliveryGroupList[0].productList] == ["item", "refill"]
+    tab.get.assert_any_await("https://mc.coupang.com/ssr/desktop/order/list")
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=0"
+    )
+    tab.get.assert_any_await(
+        "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=%EC%84%B8%EC%A0%9C&requestYear=2026&pageIndex=1"
+    )
+
+
+@pytest.mark.anyio
+async def test_search_orders_returns_not_logged_in_when_session_is_missing(tmp_path: Path) -> None:
+    store = _StoreStub(tmp_path, has_session=False)
+    browser = Mock()
+    browser.launch = AsyncMock()
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.search_orders(OrderSearchRequest(keyword="세제"))
+
+    assert result.success is False
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_list_orders_returns_not_logged_in_when_session_is_missing(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path, has_session=False)
+    browser = Mock()
+    browser.launch = AsyncMock()
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
+
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.payload.orders == []
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+    browser.close.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_list_orders_returns_not_logged_in_when_order_page_redirects_to_login(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock()
+    tab.evaluate = AsyncMock(
+        return_value={
+            "url": "https://login.coupang.com/login/login.pang",
+            "body_text": "로그인이 필요합니다",
+            "has_password_input": True,
+        }
+    )
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
+
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.payload.orders == []
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.close.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_list_orders_returns_browser_closed_when_initial_navigation_closes(
+    tmp_path: Path,
+) -> None:
+    store = _StoreStub(tmp_path)
+    browser = Mock()
+    session = Mock()
+    tab = Mock()
+    session.tab = tab
+    tab.get = AsyncMock(side_effect=RuntimeError("Session with given id not found."))
+    browser.launch = AsyncMock(return_value=session)
+    browser.close = AsyncMock()
+    service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
+
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
+
+    assert result.message == "브라우저가 닫혀 주문 수집을 완료하지 못했습니다."
+    assert result.payload.orders == []
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
@@ -274,7 +432,7 @@ async def test_collect_orders_diff_counts_orders_not_items(tmp_path: Path) -> No
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=False)
+    result = await service.sync_orders(OrderSyncRequest(refresh=False))
     payload = result.payload
 
     assert payload.meta.summary == CoupangOrderSummary(
@@ -336,7 +494,7 @@ async def test_collect_orders_reuses_cached_tail_after_unchanged_page(tmp_path: 
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=False)
+    result = await service.sync_orders(OrderSyncRequest(refresh=False))
 
     assert [order.orderId for order in result.payload.orders] == [10, 20]
     assert result.payload.meta.summary == CoupangOrderSummary(
@@ -417,7 +575,7 @@ async def test_collect_orders_ignores_cache_when_previous_snapshot_has_failures(
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=False)
+    result = await service.sync_orders(OrderSyncRequest(refresh=False))
 
     assert [order.orderId for order in result.payload.orders] == [10, 20]
     assert result.payload.meta.failedPages == []
@@ -448,7 +606,7 @@ async def test_collect_orders_reports_failed_pages_in_message(tmp_path: Path) ->
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=True)
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
     payload = result.payload
 
     assert payload.meta.failedPages == [["2026", 1]]
@@ -551,7 +709,7 @@ async def test_collect_orders_failed_only_retries_recorded_pages(tmp_path: Path)
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(failed_only=True)
+    result = await service.sync_orders(OrderSyncRequest(failed_only=True))
     payload = result.payload
 
     assert payload.meta.failedPages == []
@@ -605,7 +763,7 @@ async def test_collect_orders_failed_only_keeps_failed_pages_when_retry_fails(tm
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(failed_only=True)
+    result = await service.sync_orders(OrderSyncRequest(failed_only=True))
 
     assert result.payload.meta.failedPages == [["2026", 1]]
     assert result.payload.orders == []
@@ -650,7 +808,7 @@ async def test_collect_orders_unwraps_nodriver_evaluate_payloads(tmp_path: Path)
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=True)
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
 
     assert result.payload.meta.years == ["2026"]
     assert result.payload.meta.summary.totalOrders == 0
@@ -680,7 +838,7 @@ async def test_collect_orders_retries_when_evaluate_returns_exception_details(tm
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=True)
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
 
     assert result.payload.meta.years == ["2026"]
     assert result.payload.meta.summary.totalOrders == 0
@@ -710,7 +868,7 @@ async def test_collect_orders_waits_for_order_page_payload_after_navigation(tmp_
 
     service = CoupangOrderService(provider=ProviderName.COUPANG, store=store, browser=browser)
 
-    result = await service.list_orders(refresh=True)
+    result = await service.sync_orders(OrderSyncRequest(refresh=True))
 
     assert result.payload.meta.failedPages == []
     assert result.payload.meta.summary.totalOrders == 0

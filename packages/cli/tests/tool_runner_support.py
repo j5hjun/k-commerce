@@ -8,14 +8,31 @@ from pathlib import Path
 from unittest.mock import patch
 
 from k_commerce_cli.base import Terminal
-from k_commerce_cli.services.types import CartQuantityUpdateRequest, CartQuantityUpdateResult, ProviderName
+from k_commerce_cli.services.providers.coupang.types import (
+    CoupangDeliveryGroup,
+    CoupangOrderList,
+    CoupangOrderMeta,
+    CoupangOrderProduct,
+    CoupangOrderResult,
+    CoupangOrderSummary,
+)
+from k_commerce_cli.services.types import (
+    CartQuantityUpdateRequest,
+    CartQuantityUpdateResult,
+    OrderSearchRequest,
+    OrderSearchResult,
+    ProductDetailRequest,
+    ProductDetailResult,
+    ProductOcrResult,
+    ProviderName,
+)
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderCall:
     name: str
-    request: CartQuantityUpdateRequest | None = None
+    request: CartQuantityUpdateRequest | OrderSearchRequest | ProductDetailRequest | None = None
 
 
 class FakeProvider:
@@ -59,6 +76,80 @@ class FakeProvider:
             product_id=request.product_id,
             vendor_item_id=request.vendor_item_id,
             item_id=request.item_id,
+        )
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        self.calls.append(ProviderCall("search_orders", request))
+        return OrderSearchResult(
+            success=True,
+            provider="coupang",
+            message="주문 검색 완료: 1건(전체 1건)",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=1,
+            payload=CoupangOrderList(
+                meta=CoupangOrderMeta(
+                    provider=ProviderName.COUPANG,
+                    collectedAt="2026-07-01T00:00:00+09:00",
+                    years=["2026"],
+                    failedPages=[],
+                    refresh=False,
+                    summary=CoupangOrderSummary(
+                        totalOrders=1,
+                        addedOrders=0,
+                        updatedOrders=0,
+                        deletedOrders=0,
+                    ),
+                ),
+                orders=[
+                    CoupangOrderResult(
+                        provider=ProviderName.COUPANG,
+                        orderId=1,
+                        title="가방걸이",
+                        orderedAt=1780272000000,
+                        totalProductPrice=1000,
+                        deliveryGroupList=[
+                            CoupangDeliveryGroup(
+                                shipmentBoxId="box-1",
+                                invoiceNumber="invoice-1",
+                                invoiceStatus="FINAL_DELIVERY",
+                                pddMessage={"message": "done"},
+                                productList=[
+                                    CoupangOrderProduct(
+                                        vendorItemId=3,
+                                        vendorItemName="가방걸이",
+                                        productName="가방걸이",
+                                        quantity=1,
+                                        unitPrice=1000,
+                                        discountedUnitPrice=1000,
+                                        combinedUnitPrice=1000,
+                                        imagePath="https://example.test/bag-hook.jpg",
+                                        productUrl="https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3",
+                                        productId=1,
+                                        itemId=2,
+                                    )
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        self.calls.append(ProviderCall("get_product_detail", request))
+        return ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="상품 상세 수집 완료",
+            url=request.url,
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
+            ocr=ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="OCR 상세 본문"),
         )
 
 

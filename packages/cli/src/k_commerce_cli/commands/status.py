@@ -7,7 +7,7 @@ import asyncclick as click
 from k_commerce_cli.commands.tool_runner import run_tool_command, should_use_generic_runner
 from k_commerce_cli.services.registry import get_provider
 from k_commerce_cli.services.tools.invoke import invoke_tool
-from k_commerce_cli.services.tools.types import ToolRuntimeOptions
+from k_commerce_cli.services.tools.types import ToolRequestError, ToolRuntimeOptions
 
 
 def _resolve_root_dir(root_dir: str | None) -> Path | None:
@@ -39,3 +39,7 @@ async def status(ctx: click.Context, provider: str | None, request_file: Path | 
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="provider") from exc
+    except ToolRequestError as exc:
+        if exc.error_code == "unsupported_provider":
+            raise click.BadParameter(exc.message, param_hint="provider") from exc
+        raise

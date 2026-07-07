@@ -9,6 +9,8 @@ from k_commerce_cli.services.tools.types import JSONValue, ToolRequestError, Too
 from k_commerce_cli.services.types import (
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
+    ProductDetailRequest,
+    ProductDetailResult,
     ProviderName,
     ReviewUploadRequest,
     ReviewUploadResult,
@@ -16,7 +18,7 @@ from k_commerce_cli.services.types import (
 )
 from k_commerce_cli.services.registry import list_providers
 
-ProviderRequest = CartQuantityUpdateRequest | ReviewUploadRequest | None
+ProviderRequest = CartQuantityUpdateRequest | ProductDetailRequest | ReviewUploadRequest | None
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,20 @@ class FakeProvider:
             product_id=request.product_id,
             vendor_item_id=request.vendor_item_id,
             item_id=request.item_id,
+        )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        self.calls.append(ProviderCall("get_product_detail", request))
+        return ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="상품 상세",
+            url=request.url,
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
         )
 
     async def upload_review(self, request: ReviewUploadRequest) -> ReviewUploadResult:
@@ -174,6 +190,29 @@ async def test_review_upload_builds_dataclass_request_when_payload_is_valid(
 
 
 @pytest.mark.anyio
+async def test_product_detail_builds_dataclass_request_when_payload_is_valid(
+    fake_provider: FakeProvider,
+    runtime_options: ToolRuntimeOptions,
+) -> None:
+    # Given: a canonical product detail request.
+    payload = {
+        "provider": "coupang",
+        "url": "https://www.coupang.com/vp/products/8825977723",
+    }
+
+    # When: the shared invoker receives it.
+    await invoke_tool("product_detail", payload, runtime_options=runtime_options)
+
+    # Then: the provider receives the product detail request dataclass.
+    assert fake_provider.calls == [
+        ProviderCall(
+            "get_product_detail",
+            ProductDetailRequest(url="https://www.coupang.com/vp/products/8825977723"),
+        )
+    ]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("tool_name", "payload", "match"),
     [
@@ -181,7 +220,7 @@ async def test_review_upload_builds_dataclass_request_when_payload_is_valid(
         ("status", ["coupang"], "Payload must be a JSON object"),
         ("status", {"provider": "coupang", "root_dir": "/tmp"}, "root_dir"),
         (
-            "order_list",
+            "order_sync",
             {"provider": "coupang", "refresh": True, "failed_only": True},
             "refresh and failed_only",
         ),

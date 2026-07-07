@@ -566,6 +566,56 @@ async def test_login_status_closes_browser_session_when_home_check_fails(
 
 
 @pytest.mark.anyio
+async def test_login_status_returns_browser_closed_when_home_tab_is_closed(
+    tmp_path: Path,
+) -> None:
+    provider = _make_coupang_provider(tmp_path)
+    auth_service = provider.auth_service
+    session = types.SimpleNamespace(tab=_DummyTab())
+    session.tab.get = AsyncMock(side_effect=RuntimeError("Session with given id not found."))
+    cookies_file = tmp_path / "coupang" / "cookies.dat"
+    cookies_file.parent.mkdir(parents=True)
+    cookies_file.write_text("cookies", encoding="utf-8")
+
+    with (
+        patch.object(auth_service.browser, "launch", new=AsyncMock(return_value=session)),
+        patch.object(auth_service.browser, "close", new=AsyncMock()) as close,
+    ):
+        result = await provider.status()
+
+    assert result == StatusResult(
+        provider=ProviderName.COUPANG,
+        logged_in=False,
+        message="브라우저가 닫혀 로그인 상태를 확인하지 못했습니다.",
+        error_code="browser_closed",
+        retryable=True,
+        next_tools=(),
+    )
+    close.assert_awaited_once_with(session)
+
+
+@pytest.mark.anyio
+async def test_login_returns_browser_closed_when_manual_browser_is_closed(
+    tmp_path: Path,
+) -> None:
+    provider = _make_coupang_provider(tmp_path)
+    auth_service = provider.auth_service
+
+    with patch.object(
+        auth_service.browser,
+        "launch",
+        new=AsyncMock(side_effect=RuntimeError("browser closed")),
+    ):
+        result = await provider.login()
+
+    assert result.success is False
+    assert result.message == "브라우저가 닫혀 로그인을 완료하지 못했습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+
+
+@pytest.mark.anyio
 async def test_login_status_returns_logged_out_without_launch_on_clean_root(
     tmp_path: Path,
 ) -> None:
@@ -581,6 +631,9 @@ async def test_login_status_returns_logged_out_without_launch_on_clean_root(
         provider=ProviderName.COUPANG,
         logged_in=False,
         message="쿠팡 로그인 상태가 아닙니다",
+        error_code="not_logged_in",
+        retryable=False,
+        next_tools=("login",),
     )
     launch.assert_not_awaited()
     close.assert_not_awaited()

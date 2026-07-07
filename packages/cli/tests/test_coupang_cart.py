@@ -1,12 +1,33 @@
+from pathlib import Path
+from unittest.mock import AsyncMock
+
 import pytest
 
+from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.providers.coupang.cart.service import CoupangCartService
 from k_commerce_cli.services.providers.coupang.cart.state import CoupangCartState
 from k_commerce_cli.services.providers.coupang.cart.type import (
     _CartItemData,
     _ListCartBrowserResult,
 )
-from k_commerce_cli.services.types import CartQuantityUpdateRequest, ProviderName
+from k_commerce_cli.services.store import ProviderStore
+from k_commerce_cli.services.types import CartDeleteRequest, CartQuantityUpdateRequest, ProviderName
+
+
+class _BrowserSpy:
+    def __init__(self) -> None:
+        self.launch = AsyncMock()
+        self.close = AsyncMock()
+        self.save_session = AsyncMock()
+        self.select = AsyncMock(return_value=None)
+
+
+def _make_cart_service(root_dir: Path, browser: _BrowserSpy) -> CoupangCartService:
+    return CoupangCartService(
+        provider=ProviderName.COUPANG,
+        store=ProviderStore(ProviderPaths("coupang", root_dir=root_dir)),
+        browser=browser,
+    )
 
 
 def test_cart_list_result_formats_cart_items() -> None:
@@ -86,6 +107,9 @@ def test_cart_quantity_update_request_requires_positive_quantity() -> None:
 
     assert result.success is False
     assert result.message == "수량은 1개 이상이어야 합니다."
+    assert result.error_code == "validation_error"
+    assert result.retryable is False
+    assert result.next_tools == ()
 
 
 def test_cart_quantity_update_result_uses_applied_quantity_and_notice() -> None:
@@ -135,6 +159,84 @@ def test_cart_delete_result_success_messages() -> None:
     assert clear.message == "쿠팡 장바구니 비우기 성공"
 
 
+@pytest.mark.anyio
+async def test_list_cart_returns_not_logged_in_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    service = _make_cart_service(tmp_path, browser)
+
+    result = await service.list_cart()
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_update_cart_quantity_returns_not_logged_in_when_session_is_missing(
+    tmp_path: Path,
+) -> None:
+    browser = _BrowserSpy()
+    service = _make_cart_service(tmp_path, browser)
+
+    result = await service.update_cart_quantity(
+        CartQuantityUpdateRequest(vendor_item_id="95103608027", quantity=2)
+    )
+
+    assert result.success is False
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_delete_cart_item_returns_not_logged_in_when_session_is_missing(
+    tmp_path: Path,
+) -> None:
+    browser = _BrowserSpy()
+    service = _make_cart_service(tmp_path, browser)
+
+    result = await service.delete_cart_item(CartDeleteRequest(vendor_item_id="95103608027"))
+
+    assert result.success is False
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_delete_cart_items_returns_not_logged_in_when_session_is_missing(
+    tmp_path: Path,
+) -> None:
+    browser = _BrowserSpy()
+    service = _make_cart_service(tmp_path, browser)
+
+    result = await service.delete_cart_items(
+        (CartDeleteRequest(vendor_item_id="95103608027"),)
+    )
+
+    assert result.success is False
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_clear_cart_returns_not_logged_in_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    service = _make_cart_service(tmp_path, browser)
+
+    result = await service.clear_cart()
+
+    assert result.success is False
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
 def test_list_cart_result_handles_browser_closed() -> None:
     service = CoupangCartService(
         provider=ProviderName.COUPANG,
@@ -148,6 +250,9 @@ def test_list_cart_result_handles_browser_closed() -> None:
 
     assert result.success is False
     assert result.message == "브라우저가 닫혀 장바구니 작업을 취소했습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
 
 
 @pytest.mark.anyio

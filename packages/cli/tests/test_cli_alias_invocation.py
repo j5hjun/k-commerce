@@ -2,21 +2,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
 
 from k_commerce_cli.cli import app
 from k_commerce_cli.services.providers.coupang.search.type import SearchProductResult
-from k_commerce_cli.services.providers.coupang.types import (
-    CoupangOrderList,
-    CoupangOrderListResult,
-    CoupangOrderMeta,
-    CoupangOrderSummary,
+from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRequestError, ToolRuntimeOptions
+from k_commerce_cli.services.types import (
+    ListCartResult,
+    ListReviewableResult,
+    OrderListResult,
+    ProductDetailResult,
+    ProductOcrResult,
+    ProviderName,
 )
-from k_commerce_cli.services.tools.types import JSONValue, ToolInvocationResult, ToolRuntimeOptions
-from k_commerce_cli.services.types import ListCartResult, ListReviewableResult, ProviderName
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
 
 RUNNER = CliRunner()
@@ -160,24 +161,15 @@ async def test_cart_alias_uses_shared_invocation() -> None:
 @pytest.mark.anyio
 async def test_order_list_alias_uses_shared_invocation() -> None:
     invoke_tool = ToolInvoker(
-        CoupangOrderListResult(
-            message="주문 수집 완료: 총 1건, 추가 0건, 변경 1건, 삭제 0건",
-            payload=CoupangOrderList(
-                meta=CoupangOrderMeta(
-                    provider=ProviderName.COUPANG,
-                    collectedAt="2026-06-28T12:00:00+09:00",
-                    years=["2026"],
-                    failedPages=[],
-                    refresh=False,
-                    summary=CoupangOrderSummary(
-                        totalOrders=1,
-                        addedOrders=0,
-                        updatedOrders=1,
-                        deletedOrders=0,
-                    ),
-                ),
-                orders=[],
-            ),
+        OrderListResult(
+            success=True,
+            provider="coupang",
+            message="저장된 주문 조회 완료: 0건(전체 0건)",
+            start_date=None,
+            end_date=None,
+            total_count=0,
+            has_more=False,
+            next_cursor=None,
         )
     )
 
@@ -194,8 +186,46 @@ async def test_order_list_alias_uses_shared_invocation() -> None:
     assert result.stdout.splitlines() == []
     assert_invoked_once(
         invoke_tool,
-        ExpectedInvocation("order_list", {"provider": "coupang", "refresh": False, "failed_only": False}),
+        ExpectedInvocation(
+            "order_list",
+            {
+                "provider": "coupang",
+                "start_date": None,
+                "end_date": None,
+                "status": "all",
+                "limit": 50,
+                "cursor": None,
+            },
+        ),
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("args", "tool_name"),
+    [
+        (["order", "list", "invalid"], "order_list"),
+        (["order", "sync", "invalid"], "order_sync"),
+        (["order", "search", "invalid", "세제"], "order_search"),
+        (["order", "detail", "invalid", "100"], "order_detail"),
+        (["order", "failures", "invalid"], "order_failures"),
+    ],
+)
+async def test_order_alias_unsupported_provider_uses_bad_parameter(args: list[str], tool_name: str) -> None:
+    invoke_tool = AsyncMock(
+        side_effect=ToolRequestError(
+            tool_name=tool_name,
+            message="Unsupported provider: invalid",
+            error_code="unsupported_provider",
+        )
+    )
+
+    with patch("k_commerce_cli.commands.order.invoke_tool", invoke_tool, create=True):
+        result = await RUNNER.invoke(app, args)
+
+    assert result.exit_code == 2
+    assert "Invalid value for provider: Unsupported provider: invalid" in result.output
+    invoke_tool.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -230,6 +260,44 @@ async def test_search_alias_uses_shared_invocation_and_prints_result() -> None:
                 "category": None,
                 "sort": "relevance",
                 "max_results": 10,
+            },
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_product_detail_alias_uses_shared_invocation_and_prints_json() -> None:
+    invoke_tool = ToolInvoker(
+        ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="상품 상세 수집 완료",
+            url="https://www.coupang.com/vp/products/1",
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
+            ocr=ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="OCR 상세 본문"),
+        )
+    )
+
+    with patch("k_commerce_cli.commands.product.invoke_tool", invoke_tool, create=True):
+        result = await RUNNER.invoke(
+            app,
+            ["product", "detail", "coupang", "https://www.coupang.com/vp/products/1"],
+        )
+
+    assert result.exit_code == 0
+    assert '"detail_text"' not in result.output
+    assert '"text": "OCR 상세 본문"' in result.output
+    assert_invoked_once(
+        invoke_tool,
+        ExpectedInvocation(
+            "product_detail",
+            {
+                "provider": "coupang",
+                "url": "https://www.coupang.com/vp/products/1",
             },
         ),
     )

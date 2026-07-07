@@ -27,6 +27,9 @@ class ToolRunnerError(Exception):
     message: str
     tool_name: str | None = None
     field: str | None = None
+    error_code: str = ""
+    retryable: bool = False
+    next_tools: tuple[str, ...] = ()
 
 
 def should_use_generic_runner(inline_json: str | None, request_file: Path | None) -> bool:
@@ -77,6 +80,8 @@ async def run_tool_command(
                 error_type="tool_error",
                 message=str(exc),
                 tool_name=tool_name,
+                error_code="timeout",
+                retryable=True,
             )
         )
         raise click.exceptions.Exit(1) from exc
@@ -87,6 +92,9 @@ async def run_tool_command(
                 message=exc.message,
                 tool_name=exc.tool_name,
                 field=exc.field,
+                error_code=exc.error_code,
+                retryable=exc.retryable,
+                next_tools=exc.next_tools,
             )
         )
         raise click.exceptions.Exit(1) from exc
@@ -96,6 +104,7 @@ async def run_tool_command(
                 error_type="tool_error",
                 message="Tool invocation failed.",
                 tool_name=tool_name,
+                retryable=True,
             )
         )
         raise click.exceptions.Exit(1) from None
@@ -122,6 +131,8 @@ async def _invoke_tool_with_timeout(tool_name: str, payload: JSONValue) -> ToolI
             error_type="tool_timeout",
             message=f"Tool invocation timed out after {TOOL_INVOCATION_TIMEOUT_SECONDS:g} seconds.",
             tool_name=tool_name,
+            error_code="timeout",
+            retryable=True,
         ) from exc
 
 
@@ -135,6 +146,7 @@ def _load_payload(
             error_type="usage_conflict",
             message="Pass either inline JSON or --request-file, not both.",
             tool_name=tool_name,
+            error_code="usage_conflict",
         )
     if request_file is not None:
         try:
@@ -144,12 +156,14 @@ def _load_payload(
                 error_type="request_file",
                 message=f"Could not read request file: {exc}",
                 tool_name=tool_name,
+                error_code="request_file",
             ) from exc
     if inline_json is None:
         raise ToolRunnerError(
             error_type="missing_request",
             message="Pass inline JSON or --request-file.",
             tool_name=tool_name,
+            error_code="missing_request",
         )
     return _parse_json(tool_name, inline_json)
 
@@ -162,6 +176,7 @@ def _parse_json(tool_name: str, source: str) -> JSONValue:
             error_type="malformed_json",
             message="Malformed JSON: invalid JSON request.",
             tool_name=tool_name,
+            error_code="malformed_json",
         ) from exc
 
 
@@ -169,9 +184,12 @@ def _emit_error(error: ToolRunnerError) -> None:
     body: dict[str, JSONValue] = {
         "type": error.error_type,
         "message": error.message,
+        "error_code": error.error_code or error.error_type,
+        "retryable": error.retryable,
     }
     if error.tool_name is not None:
         body["tool_name"] = error.tool_name
     if error.field is not None:
         body["field"] = error.field
+    body["next_tools"] = list(error.next_tools)
     click.echo(json.dumps({"error": body}, ensure_ascii=False, indent=2), err=True)

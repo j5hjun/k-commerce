@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
 from k_commerce_cli.services.providers.coupang.cart.state import (
-    CART_STATE_MESSAGES,
     CoupangCartState,
     cart_state_message,
 )
@@ -19,6 +18,7 @@ from k_commerce_cli.services.providers.coupang.cart.utils import (
     COUPANG_CART_URL,
     format_cart_list,
 )
+from k_commerce_cli.services.providers.coupang.result_metadata import cart_metadata
 from k_commerce_cli.services.base import Store
 from k_commerce_cli.services.types import (
     CartDeleteRequest,
@@ -91,6 +91,8 @@ class CoupangCartService(CoupangCartDelete):
         self._browser_session: BrowserSession | None = None
 
     async def list_cart(self) -> ListCartResult:
+        if not self.store.has_session():
+            return self._to_list_result(_ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN))
         async with self.cart_session() as cart_session:
             return await cart_session.list_cart()
 
@@ -98,10 +100,26 @@ class CoupangCartService(CoupangCartDelete):
         self,
         request: CartQuantityUpdateRequest,
     ) -> CartQuantityUpdateResult:
+        validation_error = self._validate_quantity_update_request(request)
+        if validation_error is not None:
+            return self._failure_quantity_update_result(request, validation_error)
+        if not self.store.has_session():
+            return self._to_quantity_update_result(
+                request,
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.update_cart_quantity(request)
 
     async def delete_cart_item(self, request: CartDeleteRequest) -> CartDeleteResult:
+        validation_error = self._validate_delete_request(request)
+        if validation_error is not None:
+            return self._failure_delete_result(validation_error)
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.delete_cart_item(request)
 
@@ -109,10 +127,26 @@ class CoupangCartService(CoupangCartDelete):
         self,
         requests: tuple[CartDeleteRequest, ...],
     ) -> CartDeleteResult:
+        if not requests:
+            return self._failure_delete_result("삭제할 상품을 선택해주세요.")
+        for request in requests:
+            validation_error = self._validate_delete_request(request)
+            if validation_error is not None:
+                return self._failure_delete_result(validation_error)
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.delete_cart_items(requests)
 
     async def clear_cart(self) -> CartDeleteResult:
+        if not self.store.has_session():
+            return self._to_delete_result(
+                _ListCartBrowserResult(state=CoupangCartState.NOT_LOGGED_IN),
+                deleted_count=0,
+            )
         async with self.cart_session() as cart_session:
             return await cart_session.clear_cart()
 
@@ -927,11 +961,15 @@ class CoupangCartService(CoupangCartDelete):
                 browser_result.state,
                 fallback="장바구니 목록 조회에 실패했습니다.",
             )
+            metadata = cart_metadata(browser_result.state)
             return ListCartResult(
                 provider=self.provider.value,
                 success=False,
                 message=message,
                 items=(),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
             )
 
         items = tuple(
@@ -979,13 +1017,7 @@ class CoupangCartService(CoupangCartDelete):
             browser_result.state,
             fallback="장바구니 수량 수정에 실패했습니다.",
         )
-        return self._failure_quantity_update_result(request, message)
-
-    def _failure_quantity_update_result(
-        self,
-        request: CartQuantityUpdateRequest,
-        message: str,
-    ) -> CartQuantityUpdateResult:
+        metadata = cart_metadata(browser_result.state)
         return CartQuantityUpdateResult(
             provider=self.provider.value,
             success=False,
@@ -994,6 +1026,28 @@ class CoupangCartService(CoupangCartDelete):
             product_id=request.product_id,
             vendor_item_id=request.vendor_item_id,
             item_id=request.item_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
+
+    def _failure_quantity_update_result(
+        self,
+        request: CartQuantityUpdateRequest,
+        message: str,
+    ) -> CartQuantityUpdateResult:
+        metadata = cart_metadata(CoupangCartState.VALIDATION_ERROR)
+        return CartQuantityUpdateResult(
+            provider=self.provider.value,
+            success=False,
+            message=message,
+            quantity=request.quantity,
+            product_id=request.product_id,
+            vendor_item_id=request.vendor_item_id,
+            item_id=request.item_id,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
         )
 
     def _to_delete_result(
@@ -1020,7 +1074,16 @@ class CoupangCartService(CoupangCartDelete):
             browser_result.state,
             fallback="장바구니 상품 삭제에 실패했습니다.",
         )
-        return self._failure_delete_result(message, deleted_count=deleted_count)
+        metadata = cart_metadata(browser_result.state)
+        return CartDeleteResult(
+            provider=self.provider.value,
+            success=False,
+            message=message,
+            deleted_count=deleted_count,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
 
     def _failure_delete_result(
         self,
@@ -1028,9 +1091,13 @@ class CoupangCartService(CoupangCartDelete):
         *,
         deleted_count: int = 0,
     ) -> CartDeleteResult:
+        metadata = cart_metadata(CoupangCartState.VALIDATION_ERROR)
         return CartDeleteResult(
             provider=self.provider.value,
             success=False,
             message=message,
             deleted_count=deleted_count,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
         )

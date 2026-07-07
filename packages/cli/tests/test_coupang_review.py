@@ -132,6 +132,23 @@ def _delete_request() -> ReviewDeleteRequest:
     )
 
 
+@pytest.mark.anyio
+async def test_list_reviewable_returns_browser_closed_when_browser_launch_closes() -> None:
+    browser = _BrowserSpy()
+    browser.launch.side_effect = RuntimeError("browser closed")
+    service = _make_review_service(browser=browser)
+
+    result = await service.list_reviewable()
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "브라우저가 닫혀 작업을 계속할 수 없습니다."
+    assert result.error_code == "browser_closed"
+    assert result.retryable is True
+    assert result.next_tools == ()
+    browser.close.assert_not_awaited()
+
+
 def test_build_review_register_url() -> None:
     assert build_review_register_url(
         completed_order_vendor_item_id="22404668406",
@@ -566,6 +583,20 @@ async def test_delete_review_succeeds_with_saved_session(tmp_path: Path) -> None
 
 
 @pytest.mark.anyio
+async def test_delete_review_fails_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+
+    result = await service.delete_review(_delete_request())
+
+    assert result.success is False
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_read_review_delete_confirmation_accepts_success_modal() -> None:
     service = _make_review_service()
     tab = _EvaluateTab([{"state": "success"}])
@@ -644,6 +675,22 @@ async def test_list_editable_succeeds_with_saved_session(tmp_path: Path) -> None
     assert "리뷰 수정 가능 (1건):" in result.message
     assert "★★★★★" in result.message
     assert "예전 리뷰" in result.message
+
+
+@pytest.mark.anyio
+async def test_list_editable_fails_when_session_is_missing(tmp_path: Path) -> None:
+    browser = _BrowserSpy()
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+
+    result = await service.list_editable()
+
+    assert result.success is False
+    assert result.items == ()
+    assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -739,22 +786,17 @@ async def test_list_reviewable_returns_browser_closed_when_tab_is_closed() -> No
 @pytest.mark.anyio
 async def test_list_reviewable_fails_when_session_is_missing(tmp_path: Path) -> None:
     browser = _BrowserSpy()
-    browser.launch.return_value = object()
     service = _make_review_service(root_dir=tmp_path, browser=browser)
-    service._list_reviewable_items = AsyncMock(
-        return_value=_ListReviewableBrowserResult(
-            state=CoupangReviewState.NOT_LOGGED_IN,
-        )
-    )
-    service._open_login_and_wait_for_review = AsyncMock(
-        return_value=CoupangReviewState.NOT_LOGGED_IN
-    )
 
     result = await service.list_reviewable()
 
     assert result.success is False
     assert result.items == ()
     assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.retryable is False
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -814,21 +856,15 @@ async def test_upload_review_succeeds_with_saved_session(tmp_path: Path) -> None
 @pytest.mark.anyio
 async def test_upload_review_fails_when_session_is_missing(tmp_path: Path) -> None:
     browser = _BrowserSpy()
-    browser.launch.return_value = object()
     service = _make_review_service(root_dir=tmp_path, browser=browser)
-    service._upload_review_browser = AsyncMock(
-        return_value=_ReviewUploadBrowserResult(
-            state=CoupangReviewState.NOT_LOGGED_IN,
-        )
-    )
-    service._open_login_and_wait_for_review = AsyncMock(
-        return_value=CoupangReviewState.NOT_LOGGED_IN
-    )
 
     result = await service.upload_review(_request())
 
     assert result.success is False
     assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -872,6 +908,9 @@ async def test_upload_review_fails_when_order_not_found(tmp_path: Path) -> None:
 
     assert result.success is False
     assert result.message == "지정한 주문을 찾을 수 없습니다."
+    assert result.error_code == "order_not_found"
+    assert result.retryable is False
+    assert result.next_tools == ("review_list_reviewable", "order_list")
 
 
 @pytest.mark.anyio
@@ -964,21 +1003,15 @@ async def test_edit_review_succeeds_with_saved_session(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_edit_review_fails_when_session_is_missing(tmp_path: Path) -> None:
     browser = _BrowserSpy()
-    browser.launch.return_value = object()
     service = _make_review_service(root_dir=tmp_path, browser=browser)
-    service._edit_review_browser = AsyncMock(
-        return_value=_ReviewUploadBrowserResult(
-            state=CoupangReviewState.NOT_LOGGED_IN,
-        )
-    )
-    service._open_login_and_wait_for_review = AsyncMock(
-        return_value=CoupangReviewState.NOT_LOGGED_IN
-    )
 
     result = await service.edit_review(_edit_request())
 
     assert result.success is False
     assert result.message == "쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요."
+    assert result.error_code == "not_logged_in"
+    assert result.next_tools == ("login",)
+    browser.launch.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -1039,6 +1072,9 @@ async def test_edit_review_fails_when_identifier_mismatch(tmp_path: Path) -> Non
 
     assert result.success is False
     assert result.message == "주문/상품/리뷰 식별자가 일치하지 않습니다."
+    assert result.error_code == "identifier_mismatch"
+    assert result.retryable is False
+    assert result.next_tools == ("review_list_reviewable", "review_list_editable")
 
 
 @pytest.mark.anyio
@@ -1064,6 +1100,8 @@ async def test_edit_review_allows_empty_review_text(tmp_path: Path) -> None:
     browser = _BrowserSpy()
     browser.launch.return_value = object()
     service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("cookies", encoding="utf-8")
     service._edit_review_browser = AsyncMock(
         return_value=_ReviewUploadBrowserResult(state=CoupangReviewState.SUCCESS)
     )

@@ -11,7 +11,11 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
-    OrderResult,
+    OrderDetailResult,
+    OrderFailuresResult,
+    OrderListResult,
+    OrderSearchResult,
+    OrderSyncResult,
     ReviewDeleteResult,
     ReviewEditResult,
     ReviewUploadResult,
@@ -38,7 +42,23 @@ async def invoke_tool(tool_name: Literal["logout"], payload: JSONValue, *, runti
 
 
 @overload
-async def invoke_tool(tool_name: Literal["order_list"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderResult: ...
+async def invoke_tool(tool_name: Literal["order_sync"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderSyncResult: ...
+
+
+@overload
+async def invoke_tool(tool_name: Literal["order_list"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderListResult: ...
+
+
+@overload
+async def invoke_tool(tool_name: Literal["order_search"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderSearchResult: ...
+
+
+@overload
+async def invoke_tool(tool_name: Literal["order_detail"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderDetailResult: ...
+
+
+@overload
+async def invoke_tool(tool_name: Literal["order_failures"], payload: JSONValue, *, runtime_options: ToolRuntimeOptions | None = None) -> OrderFailuresResult: ...
 
 
 @overload

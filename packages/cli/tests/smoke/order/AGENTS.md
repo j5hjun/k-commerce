@@ -2,13 +2,13 @@
 
 ## OVERVIEW
 
-Opt-in real/local Coupang order-list smoke scenarios.
+Opt-in real/local Coupang order-sync smoke scenarios.
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Order helpers | `_helpers.py` | Invoke `order list`, read/write copied `orders.json`. |
+| Order helpers | `_helpers.py` | Invoke `order sync`, read/write copied `orders.json`. |
 | No snapshot | `test_coupang_order_list_without_snapshot.py` | Starts without prior `orders.json`. |
 | Clean snapshot | `test_coupang_order_list_with_clean_snapshot.py` | Previous snapshot has no failed pages. |
 | Failed snapshot | `test_coupang_order_list_with_failed_snapshot.py` | Previous snapshot has failed pages. |

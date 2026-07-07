@@ -10,7 +10,7 @@ Command handlers registered by `k_commerce_cli/cli.py`. This layer owns CLI pars
 |------|----------|-------|
 | Login/status/logout | `login.py`, `status.py`, `logout.py` | Root-dir handling and provider dispatch. |
 | Generic tool runner | `tool_runner.py` | JSON runner for canonical tool names with inline JSON and `--request-file`. |
-| Orders | `order.py` | `order list`, `--refresh`, `--failed-only`. |
+| Orders | `order.py` | `order list`, `order sync`, detail, and failures aliases. |
 | Search | `search.py` | Sort validation, table/JSON output, optional JSON save. |
 | Cart workflows | `cart/` | List-browse, quantity, delete; see local map. |
 | Review workflows | `review/` | Upload/edit/delete; see local map. |

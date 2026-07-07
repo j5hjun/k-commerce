@@ -12,6 +12,12 @@ from k_commerce_cli.services.types import (
     CartDeleteResult,
     CartQuantityUpdateRequest,
     CartQuantityUpdateResult,
+    OrderListRequest,
+    OrderListResult,
+    OrderSearchRequest,
+    OrderSearchResult,
+    ProductDetailRequest,
+    ProductDetailResult,
     ProviderName,
     ReviewUploadRequest,
     ReviewUploadResult,
@@ -19,6 +25,8 @@ from k_commerce_cli.services.types import (
 )
 from k_commerce_mcp import server
 from k_commerce_mcp.tools.cart import cart_delete_items, cart_update_quantity
+from k_commerce_mcp.tools.order import order_list, order_search
+from k_commerce_mcp.tools.product import product_detail
 from k_commerce_mcp.tools.review import review_upload
 from k_commerce_mcp.tools.search import search_products
 from k_commerce_mcp.tools.status import status
@@ -30,6 +38,9 @@ ProviderFactory = Callable[[str, Path | None, Terminal | None], "RecordingProvid
 class RecordingProvider:
     factory_calls: list[tuple[str, Path | None, bool]] = field(default_factory=list)
     status_calls: int = 0
+    order_list_request: OrderListRequest | None = None
+    order_search_request: OrderSearchRequest | None = None
+    product_detail_request: ProductDetailRequest | None = None
     search_call: tuple[str, str | None, str, int] | None = None
     cart_quantity_request: CartQuantityUpdateRequest | None = None
     cart_delete_requests: tuple[CartDeleteRequest, ...] | None = None
@@ -49,6 +60,45 @@ class RecordingProvider:
     ) -> SearchProductResult:
         self.search_call = (keyword, category, sort, max_results)
         return SearchProductResult(provider="coupang", success=True, message="found", items=())
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult:
+        self.order_list_request = request
+        return OrderListResult(
+            success=True,
+            provider="coupang",
+            message="saved orders",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=0,
+            has_more=False,
+            next_cursor=None,
+        )
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        self.order_search_request = request
+        return OrderSearchResult(
+            success=True,
+            provider="coupang",
+            message="searched orders",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=0,
+        )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        self.product_detail_request = request
+        return ProductDetailResult(
+            success=True,
+            provider="coupang",
+            message="product detail",
+            url=request.url,
+            product=None,
+            required_info=(),
+            detail_images=(),
+            sections=(),
+            tables=(),
+        )
 
     async def update_cart_quantity(
         self,
@@ -115,7 +165,12 @@ async def test_create_mcp_server_registers_canonical_tools_only() -> None:
         "login",
         "status",
         "logout",
+        "order_sync",
         "order_list",
+        "order_search",
+        "order_detail",
+        "order_failures",
+        "product_detail",
         "cart_list",
         "cart_update_quantity",
         "cart_delete_item",
@@ -143,6 +198,71 @@ async def test_status_tool_delegates_to_provider_through_shared_invocation() -> 
 
 
 @pytest.mark.anyio
+async def test_order_list_tool_delegates_canonical_fields_to_provider() -> None:
+    provider = RecordingProvider()
+
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await order_list(
+            provider="coupang",
+            start_date="2026-06-01",
+            end_date="2026-06-30",
+            status="all",
+            limit=25,
+            cursor="50",
+        )
+
+    assert result == OrderListResult(
+        success=True,
+        provider="coupang",
+        message="saved orders",
+        start_date="2026-06-01",
+        end_date="2026-06-30",
+        total_count=0,
+        has_more=False,
+        next_cursor=None,
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.order_list_request == OrderListRequest(
+        start_date="2026-06-01",
+        end_date="2026-06-30",
+        status="all",
+        limit=25,
+        cursor="50",
+    )
+
+
+@pytest.mark.anyio
+async def test_order_search_tool_delegates_canonical_fields_to_provider() -> None:
+    provider = RecordingProvider()
+
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await order_search(
+            provider="coupang",
+            keyword="coffee",
+            start_date="2026-06-01",
+            end_date="2026-06-30",
+            limit=25,
+        )
+
+    assert result == OrderSearchResult(
+        success=True,
+        provider="coupang",
+        message="searched orders",
+        keyword="coffee",
+        start_date="2026-06-01",
+        end_date="2026-06-30",
+        total_count=0,
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.order_search_request == OrderSearchRequest(
+        keyword="coffee",
+        start_date="2026-06-01",
+        end_date="2026-06-30",
+        limit=25,
+    )
+
+
+@pytest.mark.anyio
 async def test_search_tool_delegates_canonical_fields_to_provider() -> None:
     provider = RecordingProvider()
 
@@ -158,6 +278,31 @@ async def test_search_tool_delegates_canonical_fields_to_provider() -> None:
     assert result == SearchProductResult(provider="coupang", success=True, message="found", items=())
     assert provider.factory_calls == [("coupang", None, False)]
     assert provider.search_call == ("coffee", "food", "low_price", 5)
+
+
+@pytest.mark.anyio
+async def test_product_detail_tool_delegates_canonical_fields_to_provider() -> None:
+    provider = RecordingProvider()
+
+    with patch("k_commerce_cli.services.tools.invoke.default_get_provider", new=provider_factory(provider)):
+        result = await product_detail(
+            provider="coupang",
+            url="https://www.coupang.com/vp/products/8825977723",
+        )
+
+    assert result == ProductDetailResult(
+        success=True,
+        provider="coupang",
+        message="product detail",
+        url="https://www.coupang.com/vp/products/8825977723",
+        product=None,
+        required_info=(),
+        detail_images=(),
+        sections=(),
+        tables=(),
+    )
+    assert provider.factory_calls == [("coupang", None, False)]
+    assert provider.product_detail_request == ProductDetailRequest(url="https://www.coupang.com/vp/products/8825977723")
 
 
 @pytest.mark.anyio
@@ -252,6 +397,7 @@ async def test_cart_delete_items_tool_surfaces_shared_validation_errors() -> Non
         "cart_delete_items",
         "items must be a non-empty list",
         field="items",
+        error_code="invalid_field",
     )
 
 

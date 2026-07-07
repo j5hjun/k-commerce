@@ -1,23 +1,42 @@
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime
+from datetime import date, datetime
 import inspect
 from typing import Any
 from urllib.parse import urlencode
+
+import anyio
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, Store
 from k_commerce_cli.services.providers.coupang.types import (
     CoupangDeliveryGroup,
     CoupangOrderList,
-    CoupangOrderListResult,
     CoupangOrderMeta,
     CoupangOrderProduct,
     CoupangOrderResult,
     CoupangOrderSummary,
 )
-from k_commerce_cli.services.types import ProviderName
+from k_commerce_cli.services.providers.coupang.result_metadata import (
+    BROWSER_CLOSED_METADATA,
+    EMPTY_METADATA,
+    LOGIN_REQUIRED_METADATA,
+    ResultMetadata,
+    is_browser_closed_error,
+)
+from k_commerce_cli.services.types import (
+    OrderDetailRequest,
+    OrderDetailResult,
+    OrderFailuresRequest,
+    OrderFailuresResult,
+    OrderListRequest,
+    OrderListResult,
+    OrderSearchRequest,
+    OrderSearchResult,
+    OrderSyncRequest,
+    OrderSyncResult,
+    ProviderName,
+)
 
 COUPANG_ORDER_LIST_URL = "https://mc.coupang.com/ssr/desktop/order/list"
 
@@ -36,44 +55,33 @@ class CoupangOrderService:
         self.terminal = terminal
         self._browser_session: BrowserSession | None = None
 
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> CoupangOrderListResult:
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult:
         terminal = self.terminal
         if terminal is not None:
             terminal.info("쿠팡 주문 수집을 시작합니다...")
         if not self.store.has_session():
-            payload = self._empty_payload(refresh=refresh)
-            self._emit_order_result(terminal, payload)
-            return CoupangOrderListResult(
-                message=format_coupang_order_list_message(payload),
-                payload=payload,
-            )
+            payload = self._empty_payload(refresh=request.refresh)
+            return self._not_logged_in_order_result(payload)
 
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             await self._open_order_list(self._browser_session)
-            if failed_only:
+            if await self._is_order_login_page():
+                payload = self._empty_payload(refresh=request.refresh)
+                return self._not_logged_in_order_result(payload)
+            if request.failed_only:
                 payload = await self._retry_failed_pages(terminal)
                 self.store.write_orders(payload.to_dict())
                 self._emit_order_result(terminal, payload)
-                return CoupangOrderListResult(
-                    message=format_coupang_order_list_message(payload),
-                    payload=payload,
-                )
+                return self._order_sync_result(payload, request)
 
             years = await self._wait_for_visible_years()
             if not years:
-                payload = self._empty_payload(refresh=refresh)
+                payload = self._empty_payload(refresh=request.refresh)
                 self._emit_order_result(terminal, payload)
-                return CoupangOrderListResult(
-                    message=format_coupang_order_list_message(payload),
-                    payload=payload,
-                )
+                return self._order_sync_result(payload, request, ResultMetadata(error_code="order_page_unavailable", retryable=True))
 
-            previous = None if refresh else self._load_previous_order_list()
+            previous = None if request.refresh else self._load_previous_order_list()
             if terminal is not None:
                 terminal.info(f"수집 연도: {', '.join(years)}")
             orders, failed_pages = await self._collect_all_years(
@@ -83,15 +91,157 @@ class CoupangOrderService:
             )
             previous_orders = [] if previous is None else previous.orders
             summary = self._summarize_changes(previous_orders, orders)
-            payload = self._build_payload(years, failed_pages, refresh, orders, summary)
+            payload = self._build_payload(years, failed_pages, request.refresh, orders, summary)
             self.store.write_orders(payload.to_dict())
             self._emit_order_result(terminal, payload)
-            return CoupangOrderListResult(
-                message=format_coupang_order_list_message(payload),
-                payload=payload,
-            )
+            return self._order_sync_result(payload, request)
+        except Exception as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            payload = self._empty_payload(refresh=request.refresh)
+            if terminal is not None:
+                terminal.warn("브라우저가 닫혀 주문 수집을 완료하지 못했습니다.")
+            return self._browser_closed_order_result(payload, request)
         finally:
             await self._close_browser_session()
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult:
+        payload = self._load_previous_order_list()
+        if payload is None:
+            return self._sync_required_order_list_result(request)
+
+        matching_orders = self._filter_orders(payload.orders, request.start_date, request.end_date, request.status)
+        offset = 0 if request.cursor is None else int(request.cursor)
+        page = matching_orders[offset : offset + request.limit]
+        next_offset = offset + request.limit
+        has_more = next_offset < len(matching_orders)
+        return OrderListResult(
+            success=True,
+            provider=self.provider.value,
+            message=f"저장된 주문 조회 완료: {len(page)}건(전체 {len(matching_orders)}건)",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=len(matching_orders),
+            has_more=has_more,
+            next_cursor=str(next_offset) if has_more else None,
+            payload=self._result_payload(payload, page),
+        )
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        terminal = self.terminal
+        if terminal is not None:
+            terminal.info(f"쿠팡 주문 검색을 시작합니다: {request.keyword}")
+        if not self.store.has_session():
+            return self._not_logged_in_order_search_result(request)
+
+        try:
+            self._browser_session = await self.browser.launch(self.store.paths)
+            await self._open_order_list(self._browser_session)
+            if await self._is_order_login_page():
+                return self._not_logged_in_order_search_result(request)
+
+            years = self._filter_year_scope(await self._wait_for_visible_years(), request.start_date, request.end_date)
+            if not years:
+                return OrderSearchResult(
+                    success=True,
+                    provider=self.provider.value,
+                    message="주문 검색 결과가 없습니다.",
+                    keyword=request.keyword,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    total_count=0,
+                    payload=self._empty_payload(refresh=False),
+                )
+
+            orders, failed_pages = await self._collect_search_years(years, request.keyword, terminal)
+            filtered_orders = self._filter_orders(orders, request.start_date, request.end_date, "all")
+            page = filtered_orders[: request.limit]
+            metadata = EMPTY_METADATA
+            if failed_pages:
+                metadata = ResultMetadata(error_code="partial_order_search_failed", retryable=True, next_tools=("order_search",))
+            return OrderSearchResult(
+                success=metadata.error_code == "",
+                provider=self.provider.value,
+                message=f"주문 검색 완료: {len(page)}건(전체 {len(filtered_orders)}건)",
+                keyword=request.keyword,
+                start_date=request.start_date,
+                end_date=request.end_date,
+                total_count=len(filtered_orders),
+                payload=self._result_payload(
+                    self._build_payload(
+                        years,
+                        failed_pages,
+                        False,
+                        filtered_orders,
+                        self._summarize_changes([], filtered_orders),
+                    ),
+                    page,
+                ),
+                error_code=metadata.error_code,
+                retryable=metadata.retryable,
+                next_tools=metadata.next_tools,
+            )
+        except Exception as exc:
+            if not is_browser_closed_error(exc):
+                raise
+            return self._browser_closed_order_search_result(request)
+        finally:
+            await self._close_browser_session()
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult:
+        payload = self._load_previous_order_list()
+        if payload is None:
+            return OrderDetailResult(
+                success=False,
+                provider=self.provider.value,
+                message="저장된 주문 데이터가 없습니다. 먼저 주문 수집이 필요합니다.",
+                order_id=request.order_id,
+                error_code="sync_required",
+                next_tools=("order_sync",),
+            )
+
+        for order in payload.orders:
+            if str(order.orderId) == request.order_id:
+                return OrderDetailResult(
+                    success=True,
+                    provider=self.provider.value,
+                    message="저장된 주문 상세 조회 완료",
+                    order_id=str(order.orderId),
+                    payload=self._result_payload(payload, [order]),
+                )
+        return OrderDetailResult(
+            success=False,
+            provider=self.provider.value,
+            message="저장된 주문에서 해당 주문을 찾지 못했습니다.",
+            order_id=request.order_id,
+            error_code="order_not_found",
+            next_tools=("order_list",),
+        )
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult:
+        payload = self._load_previous_order_list()
+        if payload is None:
+            return OrderFailuresResult(
+                success=False,
+                provider=self.provider.value,
+                message="저장된 주문 데이터가 없습니다. 먼저 주문 수집이 필요합니다.",
+                start_date=request.start_date,
+                end_date=request.end_date,
+                error_code="sync_required",
+                next_tools=("order_sync",),
+            )
+
+        matching_orders = [
+            order for order in self._filter_orders(payload.orders, request.start_date, request.end_date, "all") if self._is_failure_order(order)
+        ][: request.limit]
+        return OrderFailuresResult(
+            success=True,
+            provider=self.provider.value,
+            message=f"저장된 주문 처리 필요 항목 조회 완료: {len(matching_orders)}건",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            payload=self._result_payload(payload, matching_orders),
+        )
 
     def _load_previous_orders(self) -> list[CoupangOrderResult]:
         previous = self._load_previous_order_list()
@@ -119,13 +269,42 @@ class CoupangOrderService:
     async def _open_order_list(self, session: BrowserSession) -> None:
         await session.tab.get(COUPANG_ORDER_LIST_URL)
 
+    async def _is_order_login_page(self) -> bool:
+        try:
+            state = await self._evaluate(
+                """
+                (() => ({
+                  url: window.location.href,
+                  body_text: document.body?.innerText || '',
+                  has_password_input:
+                    document.querySelector('input[type="password"], input[name="password"], #login-password-input') !== null
+                }))()
+                """
+            )
+        except RuntimeError as exc:
+            if is_browser_closed_error(exc):
+                raise
+            return False
+        if not isinstance(state, dict):
+            return False
+
+        page_url = str(state.get("url", ""))
+        body_text = str(state.get("body_text", ""))
+        has_password_input = bool(state.get("has_password_input"))
+        return (
+            "login.coupang.com" in page_url
+            or "login/login.pang" in page_url
+            or "로그인이 필요" in body_text
+            or (has_password_input and "coupang.com" in page_url)
+        )
+
     async def _wait_for_visible_years(self, poll_count: int = 5) -> list[str]:
         for attempt in range(poll_count):
             years = await self._read_visible_years()
             if years:
                 return years
             if attempt < poll_count - 1:
-                await asyncio.sleep(1)
+                await anyio.sleep(1)
         return []
 
     async def _collect_all_years(
@@ -146,7 +325,9 @@ class CoupangOrderService:
                     terminal.info(f"{year}년 {page_index + 1}페이지 수집 중...")
                 try:
                     page = await self._fetch_page_with_retry(year, page_index)
-                except Exception:
+                except Exception as exc:
+                    if is_browser_closed_error(exc):
+                        raise
                     failed_pages.append([year, page_index + 1])
                     break
                 page_orders = [
@@ -166,6 +347,33 @@ class CoupangOrderService:
 
                 collected.extend(page_orders)
                 year_orders.extend(page_orders)
+                pagination = page["orderPagination"]
+                if not pagination["hasNext"]:
+                    break
+                page_index = pagination["nextPageIndex"]
+        return collected, failed_pages
+
+    async def _collect_search_years(
+        self,
+        years: list[str],
+        keyword: str,
+        terminal: Terminal | None,
+    ) -> tuple[list[CoupangOrderResult], list[list[int | str]]]:
+        collected: list[CoupangOrderResult] = []
+        failed_pages: list[list[int | str]] = []
+        for year in years:
+            page_index = 0
+            while True:
+                if terminal is not None:
+                    terminal.info(f"{year}년 검색 결과 {page_index + 1}페이지 수집 중...")
+                try:
+                    page = await self._fetch_search_page_with_retry(year, page_index, keyword)
+                except Exception as exc:
+                    if is_browser_closed_error(exc):
+                        raise
+                    failed_pages.append([year, page_index + 1])
+                    break
+                collected.extend(self._build_order(order) for order in page["orderList"])
                 pagination = page["orderPagination"]
                 if not pagination["hasNext"]:
                     break
@@ -211,7 +419,9 @@ class CoupangOrderService:
                 terminal.info(f"{year}년 {page_number}페이지 재수집 중...")
             try:
                 page = await self._fetch_page_with_retry(year, page_number - 1)
-            except Exception:
+            except Exception as exc:
+                if is_browser_closed_error(exc):
+                    raise
                 failed_pages.append([year, page_number])
                 continue
             collected.extend(self._build_order(order) for order in page["orderList"])
@@ -229,9 +439,36 @@ class CoupangOrderService:
                 return await self._wait_for_order_page_payload()
             except Exception as exc:
                 last_error = exc
-                await asyncio.sleep(1)
+                await anyio.sleep(1)
         assert last_error is not None
         raise last_error
+
+    async def _fetch_search_page_with_retry(self, year: str, page_index: int, keyword: str) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for _ in range(3):
+            try:
+                maybe_navigation = self._browser_session.tab.get(
+                    self._order_search_url(year=year, page_index=page_index, keyword=keyword)
+                )
+                if inspect.isawaitable(maybe_navigation):
+                    await maybe_navigation
+                return await self._wait_for_order_page_payload()
+            except Exception as exc:
+                last_error = exc
+                await anyio.sleep(1)
+        assert last_error is not None
+        raise last_error
+
+    def _order_search_url(self, *, year: str, page_index: int, keyword: str) -> str:
+        query = urlencode(
+            {
+                "isSearch": "true",
+                "keyword": keyword,
+                "requestYear": year,
+                "pageIndex": str(page_index),
+            }
+        )
+        return f"{COUPANG_ORDER_LIST_URL}?{query}"
 
     async def _wait_for_order_page_payload(self, poll_count: int = 5) -> dict[str, Any]:
         last_error: Exception | None = None
@@ -252,7 +489,7 @@ class CoupangOrderService:
             except Exception as exc:
                 last_error = exc
                 if attempt < poll_count - 1:
-                    await asyncio.sleep(1)
+                    await anyio.sleep(1)
         assert last_error is not None
         raise last_error
 
@@ -327,6 +564,8 @@ class CoupangOrderService:
                             combinedUnitPrice=int(product["combinedUnitPrice"]),
                             imagePath=str(product["imagePath"]),
                             productUrl=self._build_product_url(product),
+                            productId=int(product.get("productId") or 0),
+                            itemId=int(product.get("itemId") or 0),
                         )
                         for product in group.get("productList", [])
                     ],
@@ -369,6 +608,188 @@ class CoupangOrderService:
             terminal.warn(message)
             return
         terminal.success(message)
+
+    def _order_sync_result(
+        self,
+        payload: CoupangOrderList,
+        request: OrderSyncRequest,
+        metadata: ResultMetadata = EMPTY_METADATA,
+    ) -> OrderSyncResult:
+        if payload.meta.failedPages:
+            metadata = ResultMetadata(
+                error_code="partial_order_collection_failed",
+                retryable=True,
+                next_tools=("order_sync",),
+            )
+        return OrderSyncResult(
+            success=metadata.error_code == "",
+            provider=self.provider.value,
+            message=format_coupang_order_list_message(payload),
+            start_date=request.start_date,
+            end_date=request.end_date,
+            payload=payload,
+            error_code=metadata.error_code,
+            retryable=metadata.retryable,
+            next_tools=metadata.next_tools,
+        )
+
+    def _browser_closed_order_result(self, payload: CoupangOrderList, request: OrderSyncRequest) -> OrderSyncResult:
+        return OrderSyncResult(
+            success=False,
+            provider=self.provider.value,
+            message="브라우저가 닫혀 주문 수집을 완료하지 못했습니다.",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            payload=payload,
+            error_code=BROWSER_CLOSED_METADATA.error_code,
+            retryable=BROWSER_CLOSED_METADATA.retryable,
+            next_tools=BROWSER_CLOSED_METADATA.next_tools,
+        )
+
+    def _not_logged_in_order_result(self, payload: CoupangOrderList) -> OrderSyncResult:
+        return OrderSyncResult(
+            success=False,
+            provider=self.provider.value,
+            message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+            payload=payload,
+            error_code=LOGIN_REQUIRED_METADATA.error_code,
+            retryable=LOGIN_REQUIRED_METADATA.retryable,
+            next_tools=LOGIN_REQUIRED_METADATA.next_tools,
+        )
+
+    def _result_payload(self, source: CoupangOrderList, orders: list[CoupangOrderResult]) -> CoupangOrderList:
+        order_ids = {order.orderId for order in orders}
+        return CoupangOrderList(
+            meta=CoupangOrderMeta(
+                provider=source.meta.provider,
+                collectedAt=source.meta.collectedAt,
+                years=source.meta.years,
+                failedPages=source.meta.failedPages,
+                refresh=source.meta.refresh,
+                summary=CoupangOrderSummary(
+                    totalOrders=len(order_ids),
+                    addedOrders=0,
+                    updatedOrders=0,
+                    deletedOrders=0,
+                ),
+            ),
+            orders=orders,
+        )
+
+    def _sync_required_order_list_result(self, request: OrderListRequest) -> OrderListResult:
+        return OrderListResult(
+            success=False,
+            provider=self.provider.value,
+            message="저장된 주문 데이터가 없습니다. 먼저 주문 수집이 필요합니다.",
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=0,
+            has_more=False,
+            next_cursor=None,
+            error_code="sync_required",
+            retryable=False,
+            next_tools=("order_sync",),
+        )
+
+    def _not_logged_in_order_search_result(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return OrderSearchResult(
+            success=False,
+            provider=self.provider.value,
+            message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=0,
+            error_code=LOGIN_REQUIRED_METADATA.error_code,
+            retryable=LOGIN_REQUIRED_METADATA.retryable,
+            next_tools=LOGIN_REQUIRED_METADATA.next_tools,
+        )
+
+    def _browser_closed_order_search_result(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return OrderSearchResult(
+            success=False,
+            provider=self.provider.value,
+            message="브라우저가 닫혀 주문 검색을 완료하지 못했습니다.",
+            keyword=request.keyword,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            total_count=0,
+            error_code=BROWSER_CLOSED_METADATA.error_code,
+            retryable=BROWSER_CLOSED_METADATA.retryable,
+            next_tools=BROWSER_CLOSED_METADATA.next_tools,
+        )
+
+    def _filter_year_scope(self, years: list[str], start_date: str | None, end_date: str | None) -> list[str]:
+        start_year = date.fromisoformat(start_date).year if start_date is not None else None
+        end_year = date.fromisoformat(end_date).year if end_date is not None else None
+        scoped_years: list[str] = []
+        for year in years:
+            year_number = int(year)
+            if start_year is not None and year_number < start_year:
+                continue
+            if end_year is not None and year_number > end_year:
+                continue
+            scoped_years.append(year)
+        return scoped_years
+
+    def _filter_orders(
+        self,
+        orders: list[CoupangOrderResult],
+        start_date: str | None,
+        end_date: str | None,
+        status: str,
+    ) -> list[CoupangOrderResult]:
+        start = date.fromisoformat(start_date) if start_date is not None else None
+        end = date.fromisoformat(end_date) if end_date is not None else None
+        return [
+            order
+            for order in orders
+            if self._order_matches_period(order, start, end) and self._order_matches_status(order, status)
+        ]
+
+    def _order_matches_period(
+        self,
+        order: CoupangOrderResult,
+        start_date: date | None,
+        end_date: date | None,
+    ) -> bool:
+        ordered_at = self._ordered_at_date(order)
+        if ordered_at is None:
+            return False
+        if start_date is not None and ordered_at < start_date:
+            return False
+        if end_date is not None and ordered_at > end_date:
+            return False
+        return True
+
+    def _order_matches_status(self, order: CoupangOrderResult, status: str) -> bool:
+        if status == "all":
+            return True
+        return self._order_status(order) == status
+
+    def _is_failure_order(self, order: CoupangOrderResult) -> bool:
+        failure_markers = ("CANCEL", "RETURN", "EXCHANGE", "FAIL", "ERROR")
+        return any(marker in self._order_status(order).upper() for marker in failure_markers)
+
+    def _order_status(self, order: CoupangOrderResult) -> str:
+        for group in order.deliveryGroupList:
+            if group.invoiceStatus:
+                return group.invoiceStatus
+        return "unknown"
+
+    def _ordered_at_date_text(self, order: CoupangOrderResult) -> str:
+        ordered_at = self._ordered_at_date(order)
+        return "" if ordered_at is None else ordered_at.isoformat()
+
+    def _ordered_at_date(self, order: CoupangOrderResult) -> date | None:
+        for divisor in (1000, 1):
+            try:
+                ordered_at = datetime.fromtimestamp(order.orderedAt / divisor).date()
+            except (OSError, OverflowError, ValueError):
+                continue
+            if 2000 <= ordered_at.year <= 2100:
+                return ordered_at
+        return None
 
     def _build_payload(
         self,

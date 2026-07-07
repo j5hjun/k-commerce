@@ -39,7 +39,8 @@ class Settings(BaseSettings):
         "제공된 도구를 사용해 로그인 상태 확인, 주문 조회, 장바구니 조회/수정/삭제 등을 수행하세요. "
         "도구의 provider 인자는 항상 소문자 식별자를 사용하세요(예: 'coupang'). "
         "특별한 언급이 없으면 provider는 'coupang'으로 간주하세요. "
-        "주문 내역을 조회할 때는 order_list를 사용하세요. "
+        "저장된 주문 내역을 조회할 때는 order_list를 사용하고, sync_required가 반환되면 order_sync로 먼저 수집하세요. "
+        "주문 페이지에서 상품명이나 키워드로 검색해야 할 때는 order_search를 사용하세요. "
         "장바구니 항목을 변경하거나 삭제할 때는 cart_list로 얻은 product_id, vendor_item_id, item_id를 사용하세요. "
         "사용자에게는 한국어로 간결하게 답하세요."
     )

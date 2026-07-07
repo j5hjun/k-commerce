@@ -6,7 +6,7 @@ from .._helpers import require_smoke_enabled
 from ._helpers import (
     copy_order_snapshot,
     copy_session_artifacts,
-    invoke_order_list,
+    invoke_order_sync,
     read_orders,
     rewrite_failed_pages,
 )
@@ -25,7 +25,7 @@ def test_coupang_order_failed_only_smoke(tmp_path: Path) -> None:
     failed_page = [str(years[0]), 1]
     rewrite_failed_pages(root_dir, [failed_page])
 
-    result = invoke_order_list(root_dir, "--failed-only")
+    result = invoke_order_sync(root_dir, "--failed-only")
 
     assert result.returncode == 0
     assert f"{failed_page[0]}년 {failed_page[1]}페이지 재수집 중..." in result.stdout

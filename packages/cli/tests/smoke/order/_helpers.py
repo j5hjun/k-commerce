@@ -13,13 +13,13 @@ from .._helpers import (
 )
 
 
-def invoke_order_list(
+def invoke_order_sync(
     root_dir: Path,
     *options: str,
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return invoke_cli(
-        ["order", "list", "coupang", *options, "--root-dir", str(root_dir)],
+        ["order", "sync", "coupang", *options, "--root-dir", str(root_dir)],
         extra_env=extra_env,
     )
 

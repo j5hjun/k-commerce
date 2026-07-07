@@ -35,7 +35,12 @@ Canonical tool names:
 - `login`
 - `status`
 - `logout`
+- `order_sync`
 - `order_list`
+- `order_search`
+- `order_detail`
+- `order_failures`
+- `product_detail`
 - `cart_list`
 - `cart_update_quantity`
 - `cart_delete_item`
@@ -59,7 +64,10 @@ Common request examples:
 
 ```bash
 uv run k-commerce login '{"provider":"coupang"}'
-uv run k-commerce order_list '{"provider":"coupang","refresh":false,"failed_only":false}'
+uv run k-commerce order_sync '{"provider":"coupang","refresh":false,"failed_only":false}'
+uv run k-commerce order_list '{"provider":"coupang","start_date":"2026-01-01","end_date":"2026-06-30","limit":50}'
+uv run k-commerce order_search '{"provider":"coupang","keyword":"세제","start_date":"2026-01-01","end_date":"2026-06-30","limit":50}'
+uv run k-commerce product_detail '{"provider":"coupang","url":"https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3"}'
 uv run k-commerce cart_list '{"provider":"coupang"}'
 uv run k-commerce review_list_reviewable '{"provider":"coupang"}'
 ```
@@ -74,7 +82,12 @@ and output while routing commerce work through the shared contract.
 | `uv run k-commerce login coupang` | `login` |
 | `uv run k-commerce status coupang` | `status` |
 | `uv run k-commerce logout coupang` | `logout` |
+| `uv run k-commerce order sync coupang` | `order_sync` |
 | `uv run k-commerce order list coupang` | `order_list` |
+| `uv run k-commerce order search coupang KEYWORD` | `order_search` |
+| `uv run k-commerce order detail coupang ORDER_ID` | `order_detail` |
+| `uv run k-commerce order failures coupang` | `order_failures` |
+| `uv run k-commerce product detail coupang URL` | `product_detail` |
 | `uv run k-commerce search coupang KEYWORD` | `search_products` |
 | `uv run k-commerce cart coupang --list` | `cart_list` |
 | `uv run k-commerce cart coupang --quantity` | `cart_update_quantity` |
@@ -104,8 +117,9 @@ The `login` tool tries the following in order:
 2. If no valid session exists, try automatic login with saved credentials.
 3. If automatic login is unavailable or fails, wait for manual login in the browser.
 
-When login succeeds, the CLI saves the session so later tools can reuse it. Browser-backed tools
-such as `search_products`, cart tools, review tools, and `order_list` require a valid saved session.
+When login succeeds, the CLI saves the session so later browser-backed tools can reuse it.
+`search_products`, cart tools, review tools, `order_sync`, and `order_search` require a valid saved session.
+`order_list`, `order_detail`, and `order_failures` read the saved order snapshot.
 
 Review image or video attachments are not supported.
 
@@ -167,7 +181,7 @@ These files are local machine state and should be treated as sensitive.
 
 ## Order Snapshot
 
-The `order_list` tool opens the saved Coupang session, discovers the year tabs visible in the
+The `order_sync` tool opens the saved Coupang session, discovers the year tabs visible in the
 current account, skips `최근 6개월`, and walks each visible year page-by-page.
 
 Default mode compares the newly collected data against the previous `orders.json` and prints an
@@ -186,3 +200,11 @@ metadata.
 The `failed_only` request field reads those saved failure pairs, requests only those pages, merges
 successful results into the previous snapshot by order ID, and keeps only pages that still fail in
 the new `failedPages` metadata.
+
+The `order_list`, `order_detail`, and `order_failures` tools read only the saved `orders.json`
+snapshot. They do not open a browser. If the snapshot is missing, they return `sync_required` with
+`next_tools: ["order_sync"]`.
+
+The `order_search` tool opens the saved Coupang order page, searches the order-search field, and
+collects matching order pages within the requested date scope. It returns a bounded summary list and
+does not overwrite the saved `orders.json` snapshot.

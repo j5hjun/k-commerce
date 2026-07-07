@@ -16,6 +16,7 @@ from k_commerce_cli.services.types import (
     LoginResult,
     LogoutResult,
     OrderResult,
+    ProductDetailResult,
     ReviewDeleteResult,
     ReviewEditResult,
     ReviewUploadResult,
@@ -31,6 +32,7 @@ ToolInvocationResult: TypeAlias = (
     | StatusResult
     | LogoutResult
     | OrderResult
+    | ProductDetailResult
     | ListCartResult
     | CartQuantityUpdateResult
     | CartDeleteResult
@@ -75,6 +77,9 @@ class ToolRequestError(Exception):
     tool_name: str
     message: str
     field: str | None = None
+    error_code: str = "tool_request_error"
+    retryable: bool = False
+    next_tools: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         if self.field is None:

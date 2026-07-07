@@ -17,7 +17,18 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     LoginResult,
     LogoutResult,
-    OrderResult,
+    OrderDetailRequest,
+    OrderDetailResult,
+    OrderFailuresRequest,
+    OrderFailuresResult,
+    OrderListRequest,
+    OrderListResult,
+    OrderSearchRequest,
+    OrderSearchResult,
+    OrderSyncRequest,
+    OrderSyncResult,
+    ProductDetailRequest,
+    ProductDetailResult,
     ProviderName,
     ReviewDeleteRequest,
     ReviewDeleteResult,
@@ -127,11 +138,15 @@ class Provider(Protocol):
 
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult: ...
 
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult: ...
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult: ...
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult: ...
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult: ...
 
     async def search_products(
         self,
@@ -141,6 +156,8 @@ class Provider(Protocol):
         sort: str = "relevance",
         max_results: int = 10,
     ) -> SearchProductResult: ...
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult: ...
 
 
 class AuthService(Protocol):
@@ -152,11 +169,15 @@ class AuthService(Protocol):
 
 
 class OrderService(Protocol):
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult: ...
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult: ...
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult: ...
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult: ...
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult: ...
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult: ...
 
 
 class ReviewService(Protocol):
@@ -180,6 +201,10 @@ class SearchService(Protocol):
         sort: str = "relevance",
         max_results: int = 10,
     ) -> SearchProductResult: ...
+
+
+class ProductService(Protocol):
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult: ...
 
 
 class CartService(Protocol):
@@ -223,6 +248,7 @@ OrderServiceT = TypeVar("OrderServiceT", bound=OrderService)
 ReviewServiceT = TypeVar("ReviewServiceT", bound=ReviewService)
 SearchServiceT = TypeVar("SearchServiceT", bound=SearchService)
 CartServiceT = TypeVar("CartServiceT", bound=CartService)
+ProductServiceT = TypeVar("ProductServiceT", bound=ProductService)
 
 
 class BaseProvider(
@@ -233,6 +259,7 @@ class BaseProvider(
         ReviewServiceT,
         SearchServiceT,
         CartServiceT,
+        ProductServiceT,
     ],
 ):
     auth_service_cls: type[AuthServiceT]
@@ -240,6 +267,7 @@ class BaseProvider(
     review_service_cls: type[ReviewServiceT]
     search_service_cls: type[SearchServiceT]
     cart_service_cls: type[CartServiceT]
+    product_service_cls: type[ProductServiceT]
 
     def __init__(
         self,
@@ -308,6 +336,17 @@ class BaseProvider(
             terminal=self.terminal,
         )
 
+    @cached_property
+    def product_service(self) -> ProductServiceT:
+        if self.store is None or self.browser is None:
+            raise ValueError("Provider requires both store and browser before use")
+        return self.product_service_cls(
+            provider=self.provider,
+            store=self.store,
+            browser=self.browser,
+            terminal=self.terminal,
+        )
+
     async def login(self) -> LoginResult:
         return await self.auth_service.login()
 
@@ -356,15 +395,20 @@ class BaseProvider(
     async def delete_review(self, request: ReviewDeleteRequest) -> ReviewDeleteResult:
         return await self.review_service.delete_review(request)
 
-    async def list_orders(
-        self,
-        refresh: bool = False,
-        failed_only: bool = False,
-    ) -> OrderResult:
-        return await self.order_service.list_orders(
-            refresh=refresh,
-            failed_only=failed_only,
-        )
+    async def sync_orders(self, request: OrderSyncRequest) -> OrderSyncResult:
+        return await self.order_service.sync_orders(request)
+
+    async def list_orders(self, request: OrderListRequest) -> OrderListResult:
+        return await self.order_service.list_orders(request)
+
+    async def search_orders(self, request: OrderSearchRequest) -> OrderSearchResult:
+        return await self.order_service.search_orders(request)
+
+    async def get_order_detail(self, request: OrderDetailRequest) -> OrderDetailResult:
+        return await self.order_service.get_order_detail(request)
+
+    async def list_order_failures(self, request: OrderFailuresRequest) -> OrderFailuresResult:
+        return await self.order_service.list_order_failures(request)
 
     async def search_products(
         self,
@@ -380,3 +424,6 @@ class BaseProvider(
             sort=sort,
             max_results=max_results,
         )
+
+    async def get_product_detail(self, request: ProductDetailRequest) -> ProductDetailResult:
+        return await self.product_service.get_product_detail(request)
