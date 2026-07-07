@@ -67,6 +67,7 @@ uv run k-commerce login '{"provider":"coupang"}'
 uv run k-commerce order_sync '{"provider":"coupang","refresh":false,"failed_only":false}'
 uv run k-commerce order_list '{"provider":"coupang","start_date":"2026-01-01","end_date":"2026-06-30","limit":50}'
 uv run k-commerce order_search '{"provider":"coupang","keyword":"세제","start_date":"2026-01-01","end_date":"2026-06-30","limit":50}'
+uv run k-commerce product_detail '{"provider":"coupang","url":"https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3"}'
 uv run k-commerce cart_list '{"provider":"coupang"}'
 uv run k-commerce review_list_reviewable '{"provider":"coupang"}'
 ```
@@ -86,6 +87,7 @@ and output while routing commerce work through the shared contract.
 | `uv run k-commerce order search coupang KEYWORD` | `order_search` |
 | `uv run k-commerce order detail coupang ORDER_ID` | `order_detail` |
 | `uv run k-commerce order failures coupang` | `order_failures` |
+| `uv run k-commerce product detail coupang URL` | `product_detail` |
 | `uv run k-commerce search coupang KEYWORD` | `search_products` |
 | `uv run k-commerce cart coupang --list` | `cart_list` |
 | `uv run k-commerce cart coupang --quantity` | `cart_update_quantity` |

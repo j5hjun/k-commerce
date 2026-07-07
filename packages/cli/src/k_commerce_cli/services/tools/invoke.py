@@ -130,8 +130,8 @@ def _get_provider(tool_name: str, payload: ToolPayload, options: ToolRuntimeOpti
 
 
 async def _invoke_order_sync(payload: ToolPayload, options: ToolRuntimeOptions) -> OrderResult:
-    refresh = _optional_bool(payload, "refresh", default=False)
-    failed_only = _optional_bool(payload, "failed_only", default=False)
+    refresh = _optional_bool("order_sync", payload, "refresh", default=False)
+    failed_only = _optional_bool("order_sync", payload, "failed_only", default=False)
     if refresh and failed_only:
         raise ToolRequestError(
             "order_sync",
@@ -153,7 +153,7 @@ async def _invoke_order_list(payload: ToolPayload, options: ToolRuntimeOptions) 
     request = OrderListRequest(
         start_date=_optional_date_str("order_list", payload, "start_date"),
         end_date=_optional_date_str("order_list", payload, "end_date"),
-        status=_optional_str(payload, "status", default="all"),
+        status=_optional_str("order_list", payload, "status", default="all"),
         limit=_optional_limit("order_list", payload, "limit", default=50),
         cursor=_optional_cursor("order_list", payload, "cursor"),
     )
@@ -210,9 +210,9 @@ async def _invoke_cart_update_quantity(
         )
     request = CartQuantityUpdateRequest(
         quantity=quantity,
-        product_id=_optional_str(payload, "product_id"),
-        vendor_item_id=_optional_str(payload, "vendor_item_id"),
-        item_id=_optional_str(payload, "item_id"),
+        product_id=_optional_str("cart_update_quantity", payload, "product_id"),
+        vendor_item_id=_optional_str("cart_update_quantity", payload, "vendor_item_id"),
+        item_id=_optional_str("cart_update_quantity", payload, "item_id"),
     )
     return await _get_provider("cart_update_quantity", payload, options).update_cart_quantity(request)
 
@@ -221,7 +221,7 @@ async def _invoke_cart_delete_item(
     payload: ToolPayload,
     options: ToolRuntimeOptions,
 ) -> CartDeleteResult:
-    request = _cart_delete_request(payload)
+    request = _cart_delete_request("cart_delete_item", payload)
     return await _get_provider("cart_delete_item", payload, options).delete_cart_item(request)
 
 
@@ -256,9 +256,9 @@ async def _invoke_search_products(
     options: ToolRuntimeOptions,
 ) -> SearchProductResult:
     keyword = _required_str("search_products", payload, "keyword")
-    category = _optional_nullable_str(payload, "category")
-    sort = _optional_str(payload, "sort", default="relevance")
-    max_results = _optional_int(payload, "max_results", default=10)
+    category = _optional_nullable_str("search_products", payload, "category")
+    sort = _optional_str("search_products", payload, "sort", default="relevance")
+    max_results = _optional_int("search_products", payload, "max_results", default=10)
     provider = _get_provider("search_products", payload, options)
     return await provider.search_products(
         keyword,
@@ -302,17 +302,17 @@ async def _invoke_review_delete(
 ) -> ReviewDeleteResult:
     request = ReviewDeleteRequest(
         review_id=_required_str("review_delete", payload, "review_id"),
-        product_id=_optional_str(payload, "product_id"),
-        order_id=_optional_str(payload, "order_id"),
+        product_id=_optional_str("review_delete", payload, "product_id"),
+        order_id=_optional_str("review_delete", payload, "order_id"),
     )
     return await _get_provider("review_delete", payload, options).delete_review(request)
 
 
-def _cart_delete_request(payload: ToolPayload) -> CartDeleteRequest:
+def _cart_delete_request(tool_name: str, payload: ToolPayload) -> CartDeleteRequest:
     return CartDeleteRequest(
-        product_id=_optional_str(payload, "product_id"),
-        vendor_item_id=_optional_str(payload, "vendor_item_id"),
-        item_id=_optional_str(payload, "item_id"),
+        product_id=_optional_str(tool_name, payload, "product_id"),
+        vendor_item_id=_optional_str(tool_name, payload, "vendor_item_id"),
+        item_id=_optional_str(tool_name, payload, "item_id"),
     )
 
 
@@ -322,7 +322,7 @@ def _cart_delete_request_from_value(
 ) -> CartDeleteRequest:
     if not isinstance(value, Mapping):
         raise ToolRequestError(tool_name, "items must contain JSON objects", field="items", error_code="invalid_field")
-    return _cart_delete_request(value)
+    return _cart_delete_request(tool_name, value)
 
 
 def _required_str(
@@ -339,6 +339,7 @@ def _required_str(
 
 
 def _optional_str(
+    tool_name: str,
     payload: ToolPayload,
     field: str,
     *,
@@ -347,14 +348,14 @@ def _optional_str(
     value = payload.get(field, default)
     if isinstance(value, str):
         return value
-    raise ToolRequestError("payload", f"{field} must be a string", field=field, error_code="invalid_field")
+    raise ToolRequestError(tool_name, f"{field} must be a string", field=field, error_code="invalid_field")
 
 
-def _optional_nullable_str(payload: ToolPayload, field: str) -> str | None:
+def _optional_nullable_str(tool_name: str, payload: ToolPayload, field: str) -> str | None:
     value = payload.get(field)
     if value is None or isinstance(value, str):
         return value
-    raise ToolRequestError("payload", f"{field} must be a string or null", field=field, error_code="invalid_field")
+    raise ToolRequestError(tool_name, f"{field} must be a string or null", field=field, error_code="invalid_field")
 
 
 def _required_int(tool_name: str, payload: ToolPayload, field: str) -> int:
@@ -364,22 +365,22 @@ def _required_int(tool_name: str, payload: ToolPayload, field: str) -> int:
     return value
 
 
-def _optional_int(payload: ToolPayload, field: str, *, default: int) -> int:
+def _optional_int(tool_name: str, payload: ToolPayload, field: str, *, default: int) -> int:
     value = payload.get(field, default)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ToolRequestError("payload", f"{field} must be an integer", field=field, error_code="invalid_field")
+        raise ToolRequestError(tool_name, f"{field} must be an integer", field=field, error_code="invalid_field")
     return value
 
 
-def _optional_bool(payload: ToolPayload, field: str, *, default: bool) -> bool:
+def _optional_bool(tool_name: str, payload: ToolPayload, field: str, *, default: bool) -> bool:
     value = payload.get(field, default)
     if isinstance(value, bool):
         return value
-    raise ToolRequestError("payload", f"{field} must be a boolean", field=field, error_code="invalid_field")
+    raise ToolRequestError(tool_name, f"{field} must be a boolean", field=field, error_code="invalid_field")
 
 
 def _optional_date_str(tool_name: str, payload: ToolPayload, field: str) -> str | None:
-    value = _optional_nullable_str(payload, field)
+    value = _optional_nullable_str(tool_name, payload, field)
     if value is None:
         return None
     try:
@@ -390,14 +391,14 @@ def _optional_date_str(tool_name: str, payload: ToolPayload, field: str) -> str 
 
 
 def _optional_limit(tool_name: str, payload: ToolPayload, field: str, *, default: int) -> int:
-    value = _optional_int(payload, field, default=default)
+    value = _optional_int(tool_name, payload, field, default=default)
     if 1 <= value <= 100:
         return value
     raise ToolRequestError(tool_name, f"{field} must be between 1 and 100", field=field, error_code="invalid_field")
 
 
 def _optional_cursor(tool_name: str, payload: ToolPayload, field: str) -> str | None:
-    value = _optional_nullable_str(payload, field)
+    value = _optional_nullable_str(tool_name, payload, field)
     if value is None:
         return None
     if value.isdecimal():
