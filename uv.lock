@@ -689,12 +689,14 @@ wheels = [
 
 [[package]]
 name = "k-commerce"
-version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "k-commerce-agent" },
-    { name = "k-commerce-cli" },
-    { name = "k-commerce-mcp" },
+    { name = "anyio" },
+    { name = "asyncclick" },
+    { name = "langchain-ibm" },
+    { name = "mcp", extra = ["cli"] },
+    { name = "nodriver" },
+    { name = "questionary" },
 ]
 
 [package.dev-dependencies]
@@ -704,9 +706,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "k-commerce-agent", editable = "packages/agent" },
-    { name = "k-commerce-cli", editable = "packages/cli" },
-    { name = "k-commerce-mcp", editable = "packages/mcp" },
+    { name = "anyio" },
+    { name = "asyncclick" },
+    { name = "langchain-ibm" },
+    { name = "mcp", extras = ["cli"] },
+    { name = "nodriver" },
+    { name = "questionary" },
 ]
 
 [package.metadata.requires-dev]
@@ -714,7 +719,6 @@ dev = [{ name = "pytest", specifier = ">=8.4.1" }]
 
 [[package]]
 name = "k-commerce-agent"
-version = "0.1.0"
 source = { editable = "packages/agent" }
 dependencies = [
     { name = "ddgs" },
@@ -747,7 +751,6 @@ requires-dist = [
 
 [[package]]
 name = "k-commerce-cli"
-version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "anyio" },
@@ -768,7 +771,6 @@ requires-dist = [
 
 [[package]]
 name = "k-commerce-mcp"
-version = "0.1.0"
 source = { editable = "packages/mcp" }
 dependencies = [
     { name = "k-commerce-cli" },

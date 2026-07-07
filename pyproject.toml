@@ -1,11 +1,73 @@
 [project]
 name = "k-commerce"
-version = "0.1.0"
+dynamic = ["version"]
+description = "Local CLI and MCP server for K-commerce workflows."
+readme = "README.md"
 requires-python = ">=3.11,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "j5hjun", email = "johj101159@gmail.com" },
+]
+keywords = ["commerce", "coupang", "automation", "cli", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet",
+  "Topic :: Office/Business",
+]
 dependencies = [
-  "k-commerce-cli",
-  "k-commerce-mcp",
-  "k-commerce-agent",
+  "anyio",
+  "asyncclick",
+  "langchain-ibm",
+  "mcp[cli]",
+  "nodriver",
+  "questionary",
+]
+
+[project.scripts]
+k-commerce = "k_commerce_cli.cli:main"
+k-commerce-mcp = "k_commerce_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/j5hjun/k-commerce"
+Repository = "https://github.com/j5hjun/k-commerce"
+Issues = "https://github.com/j5hjun/k-commerce/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = "^(?P<version>.+)$"
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+  "packages/cli/src/k_commerce_cli",
+  "packages/mcp/src/k_commerce_mcp",
+]
+sources = [
+  "packages/cli/src",
+  "packages/mcp/src",
+]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "LICENSE",
+  "README.md",
+  "README.ko.md",
+  "VERSION",
+  "packages/cli/src/k_commerce_cli",
+  "packages/mcp/src/k_commerce_mcp",
 ]
 
 [tool.uv.workspace]

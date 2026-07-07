@@ -1,7 +1,7 @@
 [project]
 name = "k-commerce-mcp"
-version = "0.1.0"
-description = "MCP server for Korean commerce workflows."
+dynamic = ["version"]
+description = "MCP server for K-commerce workflows."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -18,3 +18,7 @@ k-commerce-cli = { workspace = true }
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "../../VERSION"
+pattern = "^(?P<version>.+)$"
