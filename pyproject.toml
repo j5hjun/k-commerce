@@ -84,6 +84,7 @@ k-commerce-agent = { workspace = true }
 
 [dependency-groups]
 dev = [
+  "k-commerce-agent",
   "pytest>=8.4.1",
 ]
 

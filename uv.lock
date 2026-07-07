@@ -701,6 +701,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "k-commerce-agent" },
     { name = "pytest" },
 ]
 
@@ -715,7 +716,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.4.1" }]
+dev = [
+    { name = "k-commerce-agent", editable = "packages/agent" },
+    { name = "pytest", specifier = ">=8.4.1" },
+]
 
 [[package]]
 name = "k-commerce-agent"
