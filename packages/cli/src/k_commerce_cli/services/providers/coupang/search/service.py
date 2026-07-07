@@ -1,8 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from urllib.parse import urlencode
+
+import anyio
 
 from k_commerce_cli.base import Terminal
 from k_commerce_cli.services.base import Browser, BrowserSession, BrowserTab
@@ -227,20 +228,39 @@ class CoupangSearchService:
     ) -> _SearchBrowserResult:
         search_url = self._build_search_url(keyword, category, sort)
         active_tab = self._active_tab(session)
-        await active_tab.get(search_url)
-        await self._sleep_ms(2000)
+        items: list[_SearchResultItemData] = []
+        seen_links: set[str] = set()
+        visited_urls: set[str] = set()
+        current_url = search_url
+        max_pages = max(1, min(20, (max_results + 35) // 36 + 2))
 
-        if not await self._is_logged_in(active_tab):
-            return _SearchBrowserResult(
-                state="not_logged_in",
-                message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+        for page_index in range(max_pages):
+            if current_url in visited_urls:
+                break
+            visited_urls.add(current_url)
+            await active_tab.get(current_url)
+            await self._sleep_ms(2000)
+
+            if page_index == 0 and not await self._is_logged_in(active_tab):
+                return _SearchBrowserResult(
+                    state="not_logged_in",
+                    message="쿠팡 로그인 상태가 아닙니다. 먼저 로그인해주세요.",
+                )
+
+            await self._wait_for_search_page_ready(active_tab)
+            page_items, _ = await self._scrape_search_results(
+                active_tab,
+                max_results=max_results - len(items),
             )
+            added_count = self._append_unique_search_items(items, page_items, seen_links, max_results)
+            if len(items) >= max_results:
+                break
 
-        await self._wait_for_search_page_ready(active_tab)
-        items, found_all_rank_markers = await self._scrape_search_results_with_scroll(
-            active_tab,
-            max_results=max_results,
-        )
+            next_url = await self._read_next_search_page_url(active_tab)
+            if not next_url or added_count == 0:
+                break
+            current_url = next_url
+
         if not items:
             return _SearchBrowserResult(
                 state="no_results",
@@ -248,12 +268,31 @@ class CoupangSearchService:
             )
 
         message = None
-        if not found_all_rank_markers:
-            message = "10개 모두 불러오지 못했습니다"
-        return _SearchBrowserResult(state="success", items=items, message=message)
+        if len(items) < max_results:
+            message = f"요청한 {max_results}개 중 {len(items)}개만 불러왔습니다"
+        return _SearchBrowserResult(state="success", items=tuple(items), message=message)
 
-    def _build_search_url(self, keyword: str, category: str | None, sort: str) -> str:
-        params = {"q": keyword, "page": 1}
+    def _append_unique_search_items(
+        self,
+        items: list[_SearchResultItemData],
+        page_items: tuple[_SearchResultItemData, ...],
+        seen_links: set[str],
+        max_results: int,
+    ) -> int:
+        added_count = 0
+        for item in page_items:
+            key = item.product_link or item.product_id
+            if key in seen_links:
+                continue
+            seen_links.add(key)
+            items.append(item)
+            added_count += 1
+            if len(items) >= max_results:
+                break
+        return added_count
+
+    def _build_search_url(self, keyword: str, category: str | None, sort: str, *, page: int = 1) -> str:
+        params = {"q": keyword, "page": page}
         sort_value = SEARCH_SORT_MAP.get(sort)
         if sort_value:
             params["sorter"] = sort_value
@@ -261,6 +300,46 @@ class CoupangSearchService:
             params["categoryId"] = category
         query = urlencode({k: v for k, v in params.items() if v is not None}, encoding="utf-8", doseq=True)
         return f"{COUPANG_SEARCH_URL}?{query}"
+
+    async def _read_next_search_page_url(self, tab: BrowserTab) -> str:
+        result = await self._evaluate_json(
+            tab,
+            """
+            (() => {
+              const currentUrl = new URL(window.location.href);
+              const currentPage = Number(currentUrl.searchParams.get('page') || '1');
+              const readPage = (href) => {
+                try {
+                  const page = Number(new URL(href, window.location.href).searchParams.get('page') || '');
+                  return Number.isFinite(page) ? page : 0;
+                } catch (error) {
+                  return 0;
+                }
+              };
+              const paginationRoot = document.querySelector('[class*="Pagination_pagination"]') || document;
+              const anchors = Array.from(
+                paginationRoot.querySelectorAll('a[href*="page="]')
+              ).map((anchor) => ({
+                href: anchor.href,
+                page: readPage(anchor.href),
+                text: (anchor.textContent || '').replace(/\\s+/g, ' ').trim(),
+                title: anchor.getAttribute('title') || '',
+                className: String(anchor.className || ''),
+              })).filter((entry) => entry.href && entry.page > currentPage);
+
+              const explicitNext = anchors.find((entry) =>
+                entry.text.includes('다음') ||
+                entry.title.includes('다음') ||
+                entry.className.includes('Pagination_nextBtn')
+              );
+              if (explicitNext) return explicitNext.href;
+
+              anchors.sort((left, right) => left.page - right.page);
+              return anchors[0]?.href || '';
+            })()
+            """,
+        )
+        return str(result or "").strip()
 
     async def _wait_for_search_page_ready(self, tab: BrowserTab, timeout_ms: int = 20000) -> None:
         elapsed_ms = 0
@@ -297,267 +376,6 @@ class CoupangSearchService:
                 return
             await self._sleep_ms(step_ms)
             elapsed_ms += step_ms
-
-    async def _apply_product_detail_prices(
-        self,
-        session: BrowserSession,
-        items: tuple[_SearchResultItemData, ...],
-    ) -> tuple[_SearchResultItemData, ...]:
-        priced_items: list[_SearchResultItemData] = []
-        for item in items:
-            detail_url = f"https://www.coupang.com/vp/products/{item.product_id}"
-            try:
-                await session.tab.get(detail_url)
-                await self._sleep_ms(1200)
-                detail_price = await self._read_product_detail_price(session.tab)
-            except Exception:
-                detail_price = ""
-
-            priced_items.append(
-                replace(
-                    item,
-                    price=detail_price or item.price,
-                    product_link=item.product_link or detail_url,
-                )
-            )
-
-        return tuple(priced_items)
-
-    async def _read_product_detail_price(self, tab: BrowserTab) -> str:
-        result = await self._evaluate_json(
-            tab,
-            """
-            (() => {
-              const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
-              const parsePrices = (text) => {
-                const matches = Array.from(normalizeText(text).matchAll(/([\\d,]+)\\s*\\uC6D0/g));
-                return matches
-                  .map((match) => Number(match[1].replace(/[^0-9]/g, '')))
-                  .filter((value) => Number.isFinite(value) && value > 0);
-              };
-              const parseDiscountRates = (text) => {
-                const matches = Array.from(normalizeText(text).matchAll(/(\\d+)\\s*%/g));
-                return matches
-                  .map((match) => Number(match[1]))
-                  .filter((value) => Number.isFinite(value) && value > 0 && value < 100);
-              };
-              const hasCouponOnlyKeyword = (node) => {
-                const context = normalizeText([
-                  node?.textContent || '',
-                  node?.parentElement?.textContent || '',
-                  node?.closest?.('[class*="coupon"], [class*="Coupon"], [class*="wow"], [class*="Wow"]')?.textContent || '',
-                ].join(' '));
-                return (
-                  context.includes('\\uC640\\uC6B0') ||
-                  context.includes('\\uD68C\\uC6D0') ||
-                  context.includes('\\uCFE0\\uD3F0') ||
-                  context.includes('\\uCD94\\uAC00') ||
-                  context.includes('\\uD560\\uC778\\uBC1B\\uAE30') ||
-                  context.includes('\\uC801\\uC6A9')
-                );
-              };
-              const productPriceCandidates = (prices) => prices.filter((price) => price >= 1000);
-              const uniqueNumbers = (values) => Array.from(new Set(values));
-              const calculatedDiscountCandidates = (basePrice, discountRate) => {
-                const raw = basePrice * (100 - discountRate) / 100;
-                return uniqueNumbers([
-                  Math.round(raw),
-                  Math.floor(raw),
-                  Math.floor(raw / 10) * 10,
-                  Math.round(raw / 10) * 10,
-                  Math.floor(raw / 100) * 100,
-                  Math.round(raw / 100) * 100,
-                ]).filter((value) => Number.isFinite(value) && value > 0);
-              };
-              const readTwcRegularSalePrice = () => {
-                const compact = (text) => normalizeText(text).replace(/\\s+/g, '');
-                const twcBoldNodes = Array.from(document.querySelectorAll('[class*="twc-font-bold"]'));
-                const regularSaleLabel = twcBoldNodes.find((node) =>
-                  compact(node.textContent || '').includes('\\uC77C\\uBC18\\uD560\\uC778\\uAC00')
-                );
-                if (!regularSaleLabel) return '';
-
-                const orderedNodes = Array.from(
-                  document.querySelectorAll('[class*="twc-font-bold"], span, strong, div')
-                );
-                const labelIndex = orderedNodes.indexOf(regularSaleLabel);
-                const followingNodes = orderedNodes.slice(labelIndex >= 0 ? labelIndex + 1 : 0);
-                for (const node of followingNodes) {
-                  if (hasCouponOnlyKeyword(node)) continue;
-                  const prices = productPriceCandidates(parsePrices(node.textContent || ''));
-                  if (prices.length) {
-                    return String(prices.length >= 2 ? Math.min(...prices) : prices[0]);
-                  }
-                }
-
-                return '';
-              };
-              const readDiscountAdjacentPrice = () => {
-                const compact = (text) => normalizeText(text).replace(/\\s+/g, '');
-                const hasReturnedOrNewProductKeyword = (node) => {
-                  const relatedNodes = [
-                    node,
-                    node?.closest?.('div, a'),
-                    node?.parentElement,
-                    node?.previousElementSibling?.matches?.('div, a') ? node.previousElementSibling : null,
-                    node?.nextElementSibling?.matches?.('div, a') ? node.nextElementSibling : null,
-                  ].filter(Boolean);
-                  const context = compact(relatedNodes.map((relatedNode) => relatedNode.textContent || '').join(' '));
-                  return context.includes('\\uC0C8\\uC0C1\\uD488') || context.includes('\\uBC18\\uD488');
-                };
-                const discountDivs = Array.from(document.querySelectorAll('div')).filter((node) =>
-                  compact(node.textContent || '').includes('\\uD560\\uC778') && !hasCouponOnlyKeyword(node)
-                );
-
-                for (const discountDiv of discountDivs) {
-                  const scope =
-                    discountDiv.parentElement?.parentElement ||
-                    discountDiv.parentElement ||
-                    document.body;
-                  const orderedNodes = Array.from(scope.querySelectorAll('div, a, span, strong, del'));
-                  const discountIndex = orderedNodes.indexOf(discountDiv);
-                  const followingNodes = orderedNodes.slice(discountIndex >= 0 ? discountIndex + 1 : 0);
-                  const adjacentPrices = [];
-
-                  for (const node of followingNodes) {
-                    if (hasCouponOnlyKeyword(node)) continue;
-                    if (hasReturnedOrNewProductKeyword(node)) continue;
-                    const context = compact([discountDiv.textContent || '', node.textContent || ''].join(' '));
-                    for (const price of parsePrices(node.textContent || '')) {
-                      if (price <= 1000 && context.includes('\\uD560\\uC778')) continue;
-                      if (price < 1000) continue;
-                      if (!adjacentPrices.includes(price)) {
-                        adjacentPrices.push(price);
-                      }
-                    }
-                  }
-
-                  if (adjacentPrices.length) {
-                    return String(Math.min(...adjacentPrices));
-                  }
-                }
-
-                return '';
-              };
-              const twcRegularSalePrice = readTwcRegularSalePrice();
-              if (twcRegularSalePrice) return twcRegularSalePrice;
-              const discountAdjacentPrice = readDiscountAdjacentPrice();
-              if (discountAdjacentPrice) return discountAdjacentPrice;
-
-              const priceRoot =
-                document.querySelector('.prod-price') ||
-                document.querySelector('[class*="prod-price"]') ||
-                document.querySelector('[class*="Price"]') ||
-                document.querySelector('#contents') ||
-                document.body;
-              if (!priceRoot) return '';
-
-              const priceNodes = Array.from(
-                priceRoot.querySelectorAll('strong, span, div, del')
-              ).filter((node) => parsePrices(node.textContent || '').length);
-              const compactPriceNodes = priceNodes.filter((node) => normalizeText(node.textContent || '').length <= 80);
-              const nodes = compactPriceNodes.length ? compactPriceNodes : priceNodes;
-              const baseNodes = nodes.filter((node) => {
-                const className = String(node.className || '');
-                const text = normalizeText(node.textContent || '');
-                return (
-                  node.tagName?.toLowerCase() === 'del' ||
-                  className.includes('base') ||
-                  className.includes('Base') ||
-                  className.includes('origin') ||
-                  className.includes('Original') ||
-                  text.includes('\\uC815\\uAC00')
-                );
-              });
-              const basePrices = baseNodes.flatMap((node) => parsePrices(node.textContent || ''));
-              const originalPrice = basePrices.length
-                ? Math.max(...basePrices)
-                : Math.max(...nodes.flatMap((node) => parsePrices(node.textContent || '')), 0);
-              const discountRate = Math.max(...parseDiscountRates(priceRoot.textContent || ''), 0);
-              const regularEntries = nodes
-                .filter((node) => !hasCouponOnlyKeyword(node))
-                .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')).map((price) => ({price, node})));
-              const couponEntries = nodes
-                .filter((node) => hasCouponOnlyKeyword(node))
-                .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')).map((price) => ({price, node})));
-
-              if (originalPrice && discountRate) {
-                const expectedPrices = calculatedDiscountCandidates(originalPrice, discountRate);
-                const matchedRegular = regularEntries.find((entry) => expectedPrices.includes(entry.price));
-                if (matchedRegular) return String(matchedRegular.price);
-              }
-
-              const saleSelectors = [
-                '.total-price strong',
-                '.total-price',
-                '[class*="sale"] strong',
-                '[class*="Sale"] strong',
-                '[class*="priceValue"]',
-                '[class*="PriceValue"]',
-              ];
-              for (const selector of saleSelectors) {
-                const selected = Array.from(priceRoot.querySelectorAll(selector))
-                  .filter((node) => !hasCouponOnlyKeyword(node))
-                  .flatMap((node) => productPriceCandidates(parsePrices(node.textContent || '')));
-                if (selected.length) return String(Math.min(...selected));
-              }
-
-              if (regularEntries.length) {
-                const regularPrices = regularEntries.map((entry) => entry.price);
-                const belowOriginal = originalPrice
-                  ? regularPrices.filter((price) => price < originalPrice)
-                  : regularPrices;
-                if (belowOriginal.length) return String(Math.min(...belowOriginal));
-                return String(Math.min(...regularPrices));
-              }
-
-              if (couponEntries.length) {
-                return `\\uCFE0\\uD3F0 \\uD560\\uC778\\uAC00: ${Math.min(...couponEntries.map((entry) => entry.price))}`;
-              }
-
-              return '';
-            })()
-            """,
-        )
-        return str(result or "").strip()
-
-    async def _scrape_search_results_with_scroll(
-        self,
-        tab: BrowserTab,
-        *,
-        max_results: int,
-        max_scroll_attempts: int = 10,
-    ) -> tuple[tuple[_SearchResultItemData, ...], bool]:
-        best_items: tuple[_SearchResultItemData, ...] = ()
-        for attempt in range(max_scroll_attempts + 1):
-            items, found_all_rank_markers = await self._scrape_search_results(
-                tab,
-                max_results=max_results,
-            )
-            if len(items) > len(best_items):
-                best_items = items
-            if found_all_rank_markers and len(items) >= max_results:
-                return items[:max_results], True
-            if attempt >= max_scroll_attempts:
-                break
-            await self._scroll_search_page(tab)
-            await self._sleep_ms(800)
-        return best_items[:max_results], False
-
-    async def _scroll_search_page(self, tab: BrowserTab) -> None:
-        await self._evaluate_json(
-            tab,
-            """
-            (() => {
-              window.scrollBy(0, Math.max(window.innerHeight, 800));
-              const productList = document.querySelector('#product-list');
-              if (productList && productList.scrollHeight > productList.clientHeight + 20) {
-                productList.scrollTop = productList.scrollHeight;
-              }
-              return true;
-            })()
-            """,
-        )
 
     async def _scrape_search_results(
         self,
@@ -703,7 +521,6 @@ class CoupangSearchService:
               const items = [];
               const productList = document.querySelector('#product-list');
               const productRoot = productList || document;
-              const expectedRanks = Array.from({{length: {max_results}}}, (_, index) => index + 1);
               const rankMarkerEntries = Array.from(
                 productRoot.querySelectorAll('div[class*="RankMark_rank"], span[class*="RankMark_rank"], [class*="RankMark_rank"]')
               )
@@ -713,38 +530,30 @@ class CoupangSearchService:
                   const rank = rankMatch ? Number(rankMatch[1]) : Number.NaN;
                   return {{rank, marker}};
                 }})
-                .filter((entry) => Number.isFinite(entry.rank) && entry.rank >= 1 && entry.rank <= {max_results})
+                .filter((entry) => Number.isFinite(entry.rank) && entry.rank >= 1)
                 .sort((a, b) => a.rank - b.rank);
-              const rankMarkerByRank = new Map();
-              for (const entry of rankMarkerEntries) {{
-                if (!rankMarkerByRank.has(entry.rank)) {{
-                  rankMarkerByRank.set(entry.rank, entry.marker);
-                }}
-              }}
-              const foundAllRankMarkers = expectedRanks.every((rank) => rankMarkerByRank.has(rank));
-
               const candidates = [];
               const seenElements = new Set();
-
-              for (const rank of expectedRanks) {{
-                if (candidates.length >= {max_results}) {{
-                  break;
-                }}
-                const rankMarker = rankMarkerByRank.get(rank);
-                if (!rankMarker) {{
-                  continue;
-                }}
-
-                const element =
-                  rankMarker.closest('li[class*="ProductUnit_productUnit"], li') ||
-                  rankMarker.closest('[class*="ProductUnit_productUnit"]') ||
-                  rankMarker.closest('[class*="ProductUnit"]');
+              const addCandidate = (element) => {{
                 if (!element || seenElements.has(element)) {{
-                  continue;
+                  return;
                 }}
-
                 seenElements.add(element);
                 candidates.push(element);
+              }};
+
+              for (const element of Array.from(
+                productRoot.querySelectorAll('li[class*="ProductUnit_productUnit"], [class*="ProductUnit_productUnit"]')
+              )) {{
+                addCandidate(element);
+              }}
+
+              for (const entry of rankMarkerEntries) {{
+                const element =
+                  entry.marker.closest('li[class*="ProductUnit_productUnit"], li') ||
+                  entry.marker.closest('[class*="ProductUnit_productUnit"]') ||
+                  entry.marker.closest('[class*="ProductUnit"]');
+                addCandidate(element);
               }}
 
               for (const element of candidates) {{
@@ -759,7 +568,7 @@ class CoupangSearchService:
                   break;
                 }}
               }}
-              return {{foundRankMarkers: foundAllRankMarkers, items}};
+              return {{foundRankMarkers: items.length >= Math.min({max_results}, candidates.length), items}};
             }})()
             """,
         )
@@ -820,7 +629,7 @@ class CoupangSearchService:
             self._browser_session = None
 
     async def _sleep_ms(self, timeout_ms: int) -> None:
-        await asyncio.sleep(timeout_ms / 1000)
+        await anyio.sleep(timeout_ms / 1000)
 
     async def _is_logged_in(self, tab: BrowserTab) -> bool:
         evaluate = getattr(tab, "evaluate", None)
