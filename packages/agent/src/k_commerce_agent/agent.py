@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any
 
 from langchain.agents import create_agent
@@ -11,6 +12,9 @@ from k_commerce_agent.history import LIST_TOOLS, compact_tool_content
 from k_commerce_agent.mcp_client import load_tools_by_server
 from k_commerce_agent.profiles.kcommerce import attach_next_step
 from k_commerce_agent.tools.web_search import web_search
+
+
+logger = logging.getLogger(__name__)
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -133,6 +137,37 @@ def _tool_error_payload(tool_name: str, exc: Exception) -> str:
     )
 
 
+def _raw_response_text(result: Any) -> Any:
+    """Extract the raw MCP payload from a tool result for logging."""
+
+    # content_and_artifact tools return (content, artifact); log only the content.
+    if isinstance(result, tuple) and result:
+        return result[0]
+    return result
+
+
+def _with_response_logging(tool: BaseTool) -> BaseTool:
+    """Log the raw response an MCP tool returns before any host rewriting.
+
+    This is the innermost wrapper, so what it logs is exactly what the MCP
+    server sent back — before compaction or next-step hints modify it.
+    """
+
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine is None:
+        return tool
+
+    async def logging_coroutine(
+        *args: Any,
+        **kwargs: Any,
+    ) -> str | tuple[Any, Any]:
+        result = await coroutine(*args, **kwargs)
+        logger.info("MCP tool response [%s]: %s", tool.name, _raw_response_text(result))
+        return result
+
+    return tool.model_copy(update={"coroutine": logging_coroutine})
+
+
 def _with_safe_tool_errors(tool: BaseTool) -> BaseTool:
     """Return tool results instead of raising so the chat stream can finish."""
 
@@ -213,7 +248,8 @@ def _wrap_tool(tool: BaseTool, *, first_party: bool) -> BaseTool:
     is never rewritten.
     """
 
-    wrapped = _with_safe_tool_errors(tool)
+    wrapped = _with_response_logging(tool)
+    wrapped = _with_safe_tool_errors(wrapped)
     if first_party:
         wrapped = _with_compact_tool_results(wrapped)
     return _with_next_step_hints(wrapped, first_party=first_party)

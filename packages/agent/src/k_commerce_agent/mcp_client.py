@@ -1,3 +1,5 @@
+import os
+
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -11,10 +13,15 @@ _servers: dict[str, dict] = {}
 def default_server_connection() -> dict:
     """Build the default stdio connection for the bundled k-commerce MCP server."""
 
+    # MCP stdio subprocesses only inherit a minimal safe env by default
+    # (HOME/PATH/USER/...), which drops toggles the bundled server needs — e.g.
+    # K_COMMERCE_BROWSER_SANDBOX, read by the CLI browser adapter. Pass the full
+    # current environment so those propagate to the subprocess.
     return {
         "transport": "stdio",
         "command": settings.mcp_command,
         "args": list(settings.mcp_args),
+        "env": dict(os.environ),
     }
 
 
