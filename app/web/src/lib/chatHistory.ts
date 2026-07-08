@@ -14,6 +14,11 @@ export function toHistoryPayload(messages: ChatMessage[]): HistoryEntry[] {
       out.push({ role: "assistant", content: m.content });
       continue;
     }
+    const toolCall = m.toolCall;
+    if (m.role === "tool" && toolCall && toolCall.status !== "running" && m.content) {
+      out.push({ role: "assistant", content: `[${toolCall.name} 결과] ${m.content}` });
+      continue;
+    }
   }
 
   return out;

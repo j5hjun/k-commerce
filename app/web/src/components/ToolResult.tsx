@@ -228,9 +228,6 @@ export function ToolResult({
     if (fallbackOrder && fallbackOrder.items.length > 0) {
       return <OrderListView view={fallbackOrder} />;
     }
-    if (toolName === "web_search") {
-      return null;
-    }
     return (
       <pre className="max-h-64 overflow-auto rounded-xl border border-line bg-panel-muted p-3 font-mono text-[11px] leading-relaxed text-muted">
         {JSON.stringify(parsed, null, 2)}
