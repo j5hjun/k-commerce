@@ -42,6 +42,7 @@ interface ToolResultEvent {
   id?: string;
   name: string;
   status: ToolCallStatus;
+  content: string;
 }
 
 interface DoneEvent {
@@ -54,6 +55,10 @@ interface ErrorEvent {
 }
 
 type ServerEvent = TokenEvent | ToolEvent | ToolResultEvent | DoneEvent | ErrorEvent;
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled server event: ${JSON.stringify(value)}`);
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -101,23 +106,23 @@ export function useChat() {
     [syncMessages],
   );
 
-  const appendToolResult = useCallback((name: string, status: ToolCallStatus, callId?: string) => {
+  const appendToolResult = useCallback((payload: ToolResultEvent) => {
     setToolLog((prev) =>
       prev.map((entry) =>
-        callId
-          ? entry.id === callId
-            ? { ...entry, time: nowTime(), ok: status !== "failed" }
+        payload.id
+          ? entry.id === payload.id
+            ? { ...entry, time: nowTime(), ok: payload.status !== "failed" }
             : entry
-          : entry.name === name && entry.ok
-            ? { ...entry, time: nowTime(), ok: status !== "failed" }
+          : entry.name === payload.name && entry.ok
+            ? { ...entry, time: nowTime(), ok: payload.status !== "failed" }
             : entry,
       ),
     );
     setMessages((prev) => {
       const idx = [...prev].reverse().findIndex((m) => {
         if (m.role !== "tool" || !m.toolCall || m.toolCall.status !== "running") return false;
-        if (callId) return m.toolCall.id === callId;
-        return m.toolCall.name === name;
+        if (payload.id) return m.toolCall.id === payload.id;
+        return m.toolCall.name === payload.name;
       });
       if (idx === -1) {
         messagesRef.current = prev;
@@ -126,7 +131,7 @@ export function useChat() {
       const targetIndex = prev.length - 1 - idx;
       const next = prev.map((m, i) =>
         i === targetIndex && m.toolCall
-          ? { ...m, toolCall: { ...m.toolCall, status } }
+          ? { ...m, content: payload.content, toolCall: { ...m.toolCall, status: payload.status } }
           : m,
       );
       messagesRef.current = next;
@@ -152,30 +157,38 @@ export function useChat() {
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data) as ServerEvent;
 
-      if (payload.type === "token") {
-        setThinking(false);
-        setActiveTool(null);
-        appendToken(payload.content);
-      } else if (payload.type === "tool") {
-        setThinking(false);
-        setActiveTool(payload.name);
-        appendToolCall(payload.name, payload.args, payload.id);
-      } else if (payload.type === "tool_result") {
-        setActiveTool(null);
-        appendToolResult(payload.name, payload.status, payload.id);
-      } else if (payload.type === "done") {
-        setThinking(false);
-        setActiveTool(null);
-        sendingRef.current = false;
-        assistantIdRef.current = null;
-        seenToolIdsRef.current.clear();
-      } else if (payload.type === "error") {
-        setThinking(false);
-        setActiveTool(null);
-        sendingRef.current = false;
-        setErrorMessage(payload.message);
-        assistantIdRef.current = null;
-        seenToolIdsRef.current.clear();
+      switch (payload.type) {
+        case "token":
+          setThinking(false);
+          setActiveTool(null);
+          appendToken(payload.content);
+          break;
+        case "tool":
+          setThinking(false);
+          setActiveTool(payload.name);
+          appendToolCall(payload.name, payload.args, payload.id);
+          break;
+        case "tool_result":
+          setActiveTool(null);
+          appendToolResult(payload);
+          break;
+        case "done":
+          setThinking(false);
+          setActiveTool(null);
+          sendingRef.current = false;
+          assistantIdRef.current = null;
+          seenToolIdsRef.current.clear();
+          break;
+        case "error":
+          setThinking(false);
+          setActiveTool(null);
+          sendingRef.current = false;
+          setErrorMessage(payload.message);
+          assistantIdRef.current = null;
+          seenToolIdsRef.current.clear();
+          break;
+        default:
+          assertNever(payload);
       }
     };
 

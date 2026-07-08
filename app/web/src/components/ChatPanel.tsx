@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useChatContext } from "@/context/ChatContext";
 import { MarkdownContent } from "@/components/MarkdownContent";
+import { MessageAvatar } from "@/components/MessageAvatar";
+import { ToolCallRow } from "@/components/ToolCallRow";
 import { stamp } from "@/lib/format";
-import type { ChatMessage, McpServerInfo, ToolCall } from "@/lib/types";
-import { BoltIcon, SendIcon } from "@/components/icons";
+import type { ChatMessage, McpServerInfo } from "@/lib/types";
+import { SendIcon } from "@/components/icons";
 
 export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
   const { messages, thinking, busy, errorMessage, status, send } = useChatContext();
@@ -70,10 +72,11 @@ export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="space-y-5">
           <IntroBubble time={mountedTime} />
-          {messages.map((m) => (
+          {messages.map((m, index) => (
             <MessageRow
               key={m.id}
               message={m}
+              priorMessages={messages.slice(0, index)}
               toolSource={toolSource}
             />
           ))}
@@ -118,6 +121,7 @@ export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
             />
             <button
               type="submit"
+              onClick={() => submit(input)}
               disabled={!canChat || !input.trim()}
               className="flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-hover disabled:opacity-30"
             >
@@ -131,24 +135,10 @@ export function ChatPanel({ servers }: { servers: McpServerInfo[] }) {
   );
 }
 
-function Spinner() {
-  return (
-    <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-accent border-t-transparent" />
-  );
-}
-
-function Avatar() {
-  return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-ink">
-      <BoltIcon className="h-4 w-4" />
-    </span>
-  );
-}
-
 function IntroBubble({ time }: { time: string }) {
   return (
     <div className="flex gap-3">
-      <Avatar />
+      <MessageAvatar />
       <div>
         <div className="rounded-2xl rounded-tl-md border border-line bg-panel px-4 py-3 text-sm leading-relaxed text-ink">
           <p>안녕하세요! Agent에 오신 걸 환영합니다.</p>
@@ -165,17 +155,18 @@ function IntroBubble({ time }: { time: string }) {
 function MessageRow({
   message,
   toolSource,
+  priorMessages,
 }: {
   message: ChatMessage;
+  priorMessages: ChatMessage[];
   toolSource: (name: string) => string | undefined;
 }) {
   if (message.role === "tool" && message.toolCall) {
-    if (message.toolCall.name === "web_search" && message.toolCall.status === "completed") {
-      return null;
-    }
     return (
       <ToolCallRow
         call={message.toolCall}
+        content={message.content}
+        priorMessages={priorMessages}
         source={toolSource(message.toolCall.name)}
       />
     );
@@ -195,7 +186,7 @@ function MessageRow({
   if (message.role === "assistant" && message.content) {
     return (
       <div className="flex animate-fade-up gap-3">
-        <Avatar />
+        <MessageAvatar />
         <div className="min-w-0 max-w-[85%] flex-1">
           <div className="rounded-2xl rounded-tl-md border border-line bg-panel px-4 py-3 text-sm leading-relaxed text-ink">
             <MarkdownContent content={message.content} />
@@ -209,52 +200,10 @@ function MessageRow({
   return null;
 }
 
-function ToolCallRow({
-  call,
-  source,
-}: {
-  call: ToolCall;
-  source?: string;
-}) {
-  const running = call.status === "running";
-  const failed = call.status === "failed";
-
-  return (
-    <div className="flex animate-fade-up gap-3">
-      <Avatar />
-      <div className="min-w-0 max-w-[85%] flex-1 space-y-2">
-        <div
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-            running
-              ? "border-accent/20 bg-accent-soft text-accent"
-              : failed
-                ? "border-red-500/30 bg-red-500/10 text-red-500"
-                : "border-line bg-panel text-muted"
-          }`}
-        >
-          {running ? (
-            <Spinner />
-          ) : failed ? (
-            <span>✕</span>
-          ) : (
-            <span className="text-emerald-500">✓</span>
-          )}
-          <span className="font-mono">{call.name}</span>
-          <span className="text-[10px] text-faint">
-            {running ? "실행 중..." : failed ? "실패" : "완료"}
-          </span>
-          {source && <span className="font-mono text-[10px] text-faint">{source}</span>}
-        </div>
-        {call.time && <p className="pl-1 text-[11px] text-faint">{call.time}</p>}
-      </div>
-    </div>
-  );
-}
-
 function ThinkingRow() {
   return (
     <div className="flex gap-3">
-      <Avatar />
+      <MessageAvatar />
       <div className="flex items-center gap-1 rounded-2xl rounded-tl-md border border-line bg-panel px-4 py-3.5">
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-faint [animation-delay:-0.3s]" />
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-faint [animation-delay:-0.15s]" />

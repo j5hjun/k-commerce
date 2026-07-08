@@ -105,7 +105,7 @@ def test_with_compact_tool_results_shrinks_order_list() -> None:
     assert len(compact["items"]) == 10
 
 
-def test_tool_result_payload_omits_tool_response_content() -> None:
+def test_tool_result_payload_includes_tool_response_content() -> None:
     # Given: a tool result whose content is JSON text.
     from k_commerce_agent.routes.chat import _tool_result_payload
 
@@ -114,16 +114,17 @@ def test_tool_result_payload_omits_tool_response_content() -> None:
     # When: the websocket payload is built.
     payload = _tool_result_payload("search_products", content, "call_1")
 
-    # Then: only completion metadata is sent to the user-facing websocket.
+    # Then: the browser receives both completion metadata and the result body.
     assert payload == {
         "type": "tool_result",
         "id": "call_1",
         "name": "search_products",
         "status": "completed",
+        "content": content,
     }
 
 
-def test_tool_result_payload_marks_error_without_leaking_message() -> None:
+def test_tool_result_payload_marks_error_and_includes_message() -> None:
     # Given: a structured tool error payload.
     from k_commerce_agent.routes.chat import _tool_result_payload
 
@@ -132,16 +133,17 @@ def test_tool_result_payload_marks_error_without_leaking_message() -> None:
     # When: the websocket payload is built.
     payload = _tool_result_payload("status", content, "call_2")
 
-    # Then: the UI sees failure state, but not the tool response body.
+    # Then: the UI sees failure state and can render the error detail collapsed.
     assert payload == {
         "type": "tool_result",
         "id": "call_2",
         "name": "status",
         "status": "failed",
+        "content": content,
     }
 
 
-def test_tool_result_payload_omits_plain_text_response() -> None:
+def test_tool_result_payload_includes_plain_text_response() -> None:
     # Given: a plain-text tool result.
     from k_commerce_agent.routes.chat import _tool_result_payload
 
@@ -150,11 +152,12 @@ def test_tool_result_payload_omits_plain_text_response() -> None:
     # When: the websocket payload is built.
     payload = _tool_result_payload("web_search", content, None)
 
-    # Then: plain text is not sent to the browser.
+    # Then: plain text is sent to the browser.
     assert payload == {
         "type": "tool_result",
         "name": "web_search",
         "status": "completed",
+        "content": content,
     }
 
 

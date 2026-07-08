@@ -27,6 +27,7 @@ class ToolResultPayload(TypedDict):
     type: Literal["tool_result"]
     name: str
     status: ToolResultStatus
+    content: str
     id: NotRequired[str]
 
 
@@ -189,6 +190,7 @@ def _tool_result_payload(
         "type": "tool_result",
         "name": tool_name,
         "status": _tool_result_status(content),
+        "content": content,
     }
     if call_id:
         payload["id"] = call_id
