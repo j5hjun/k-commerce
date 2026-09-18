@@ -1,5 +1,4 @@
-# VERSION chooses the release series; only @j5hjun authorizes changes.
-/VERSION @j5hjun
+# VERSION is governed by the required version-policy status, not file-wide approval.
 # Protect ownership and release policy from being changed without owner review.
 /.github/ @j5hjun
 /scripts/ci/ @j5hjun

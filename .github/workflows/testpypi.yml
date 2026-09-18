@@ -2,7 +2,7 @@ name: Python compatibility and TestPyPI
 
 on:
   pull_request:
-    branches: [dev]
+    branches: [dev, main]
   push:
     branches: [dev]
   workflow_dispatch:
@@ -15,7 +15,7 @@ defaults:
     shell: bash
 
 concurrency:
-  # Hold the lock from version selection through publication and verification.
+  # Serialize reservation, persistence and publication; never cancel an active release.
   # PRs have independent groups and never publish.
   group: testpypi-${{ github.event_name == 'push' && 'dev-publish' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('manual-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -24,7 +24,29 @@ env:
   UV_VERSION: "0.9.25"
 
 jobs:
+  reserve:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.reserve.outputs.revision }}
+      publish: ${{ steps.reserve.outputs.publish }}
+      release_id: ${{ steps.reserve.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: reserve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.ci.release_state reserve
+
   source-tests:
+    needs: reserve
+    if: always() && !cancelled() && (needs.reserve.result == 'success' || github.event_name != 'push')
     name: source-tests (${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -36,6 +58,9 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.reserve.outputs.revision || github.sha }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: ${{ env.UV_VERSION }}
@@ -54,25 +79,36 @@ jobs:
           path: reports/
 
   build:
+    needs: reserve
+    if: always() && !cancelled() && (needs.reserve.result == 'success' || github.event_name != 'push')
     name: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       UV_PYTHON: "3.13"
     outputs:
-      version: ${{ steps.release.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.reserve.outputs.revision || github.sha }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.13"
-      - name: Build distributions and manifest
-        id: release
+      - id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Restore the reserved release bytes on retry
+        id: restore
+        if: needs.reserve.outputs.publish == 'true'
         env:
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: python3 scripts/ci/build_release.py --resolve-testpypi --development --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT" --output release
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.reserve.outputs.release_id }}
+        run: python3 -m scripts.ci.release_state restore --release-id "$RELEASE_ID" --directory release
+      - name: Build distributions and manifest
+        if: steps.restore.outputs.restored != 'true'
+        run: python3 scripts/ci/build_release.py --output release
       - name: Check package metadata
         run: uvx --from twine==7.0.0 twine check --strict release/dist/*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -133,10 +169,31 @@ jobs:
           assert all(job["result"] == "success" for job in results.values()), results
           PY
 
+  persist:
+    name: retain-release-artifacts
+    needs: [reserve, compatibility]
+    if: needs.reserve.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: release/
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.reserve.outputs.release_id }}
+        run: python3 -m scripts.ci.release_state persist --release-id "$RELEASE_ID" --directory release
+
   publish:
     name: publish-testpypi
-    needs: [compatibility, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [persist, reserve, build]
+    if: needs.reserve.outputs.publish == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -204,3 +261,20 @@ jobs:
         with:
           name: testpypi-${{ matrix.python }}-${{ github.run_attempt }}
           path: reports/
+
+  complete:
+    name: complete-testpypi-release
+    needs: [reserve, verify-testpypi]
+    if: needs.reserve.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.reserve.outputs.release_id }}
+        run: python3 -m scripts.ci.release_state complete --release-id "$RELEASE_ID"
