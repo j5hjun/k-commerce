@@ -60,7 +60,7 @@ k-commerce <tool-name> --request-file ./request.json
 | `order_search` | provider 주문 페이지에서 주문을 검색합니다. |
 | `order_detail` | 저장된 주문 하나의 상세 정보를 반환합니다. |
 | `order_failures` | 확인이 필요한 주문 실패 항목을 반환합니다. |
-| `product_detail` | 상품 상세, 상세 이미지, OCR 텍스트를 수집합니다. |
+| `product_detail` | 상품 상세와 상세 이미지 URL을 조회합니다. |
 | `cart_list` | 장바구니 항목을 반환합니다. |
 | `cart_update_quantity` | 장바구니 항목 수량을 변경합니다. |
 | `cart_delete_item` | 장바구니 항목 하나를 삭제합니다. |

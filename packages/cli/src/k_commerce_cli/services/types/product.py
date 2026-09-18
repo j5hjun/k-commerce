@@ -10,7 +10,6 @@ __all__ = [
     "ProductDetailSection",
     "ProductDetailTable",
     "ProductDetailTableRow",
-    "ProductOcrResult",
     "ProductRating",
     "ProductRequiredInfo",
 ]
@@ -53,8 +52,6 @@ class ProductRequiredInfo:
 @dataclass(frozen=True, slots=True)
 class ProductDetailImage:
     url: str
-    ocr_status: str = "skipped"
-    warning: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,17 +73,6 @@ class ProductDetailTable:
 
 
 @dataclass(frozen=True, slots=True)
-class ProductOcrResult:
-    enabled: bool
-    status: str
-    model: str
-    scope: str
-    text: str = ""
-    confidence: str = ""
-    warnings: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class ProductDetailResult:
     success: bool
     provider: str
@@ -97,7 +83,6 @@ class ProductDetailResult:
     detail_images: tuple[ProductDetailImage, ...]
     sections: tuple[ProductDetailSection, ...]
     tables: tuple[ProductDetailTable, ...]
-    ocr: ProductOcrResult = ProductOcrResult(enabled=False, status="skipped", model="", scope="summary")
     error_code: str = ""
     retryable: bool = False
     next_tools: tuple[str, ...] = ()

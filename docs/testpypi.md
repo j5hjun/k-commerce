@@ -31,8 +31,11 @@ sdist 검사는 각 Python 버전에서 캐시를 사용하지 않고 wheel을 �
 
 MCP 검사는 설치된 `k-commerce-mcp` 프로세스를 시작하여 초기화, 도구 목록과
 `product_detail` 입력 스키마, `get_providers`, 잘못된 상품 URL의 실패 응답,
-프로세스 종료까지 확인합니다. 상품 조회 실패의 `isError` 값은 OCR 변경 전후에
-달라지므로 공통 계약인 `success`와 `error_code`를 검사합니다.
+프로세스 종료까지 확인합니다. 상품 조회 실패에서는 `isError: true`, `success: false`,
+`error_code`와 빈 `image_delivery`를 확인하고, JSON 텍스트와 `structuredContent`가
+동일하며 제거한 `ocr` 필드가 없는지도 검사합니다. 이미지 변환 모듈이 배포 파일에
+포함되는지 확인하고, 실제 이미지 블록 반환·부분 실패·첨부 제한은 소스 테스트에서
+모의 HTTP 응답으로 검증합니다.
 
 로그와 JUnit XML은 Actions 아티팩트에 남깁니다. 결과를 확인할 때 실행 환경별
 아티팩트와 `compatibility` 검사를 함께 봅니다.

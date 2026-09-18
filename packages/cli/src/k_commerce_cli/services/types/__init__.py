@@ -29,7 +29,6 @@ from .product import (
     ProductDetailSection,
     ProductDetailTable,
     ProductDetailTableRow,
-    ProductOcrResult,
     ProductRating,
     ProductRequiredInfo,
 )
@@ -75,7 +74,6 @@ __all__ = [
     "ProductDetailSection",
     "ProductDetailTable",
     "ProductDetailTableRow",
-    "ProductOcrResult",
     "ProductRating",
     "ProductRequiredInfo",
     "EditableReviewItem",

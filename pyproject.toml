@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
   "anyio",
   "asyncclick",
-  "langchain-ibm",
+  "httpx",
   "mcp[cli]>=1.28,<2",
   "nodriver",
   "questionary",

@@ -31,12 +31,16 @@ async def check_mcp(executable: Path) -> None:
                 assert providers.structuredContent == {"result": ["coupang"]}
                 failure = await session.call_tool("product_detail", {"provider": "coupang", "url": "https://example.invalid/not-a-product"})
                 payload = failure.structuredContent
-                if payload is None:
-                    payload = json.loads(next(block.text for block in failure.content if block.type == "text"))
+                assert failure.isError is True
+                assert isinstance(payload, dict)
+                assert len(failure.content) == 1 and failure.content[0].type == "text"
+                assert json.loads(failure.content[0].text) == payload
                 assert payload["success"] is False
                 assert payload["error_code"] == "invalid_url"
                 assert payload["retryable"] is False
                 assert payload["next_tools"] == []
+                assert payload["image_delivery"] == []
+                assert "ocr" not in payload
     print("MCP initialize, list_tools, get_providers, invalid product URL, and shutdown: passed")
 
 
@@ -48,7 +52,7 @@ def main() -> None:
     assert f"{sys.version_info.major}.{sys.version_info.minor}" == args.python_version
     assert version("k-commerce") == args.version
     installed_root = Path(sysconfig.get_path("purelib")).resolve()
-    for name in ("k_commerce_cli.cli", "k_commerce_cli.services.tools.serialization", "k_commerce_mcp.server"):
+    for name in ("k_commerce_cli.cli", "k_commerce_cli.services.tools.serialization", "k_commerce_mcp.server", "k_commerce_mcp.tools._product_images"):
         print(f"Importing {name}", flush=True)
         module = importlib.import_module(name)
         assert Path(module.__file__).resolve().is_relative_to(installed_root), module.__file__

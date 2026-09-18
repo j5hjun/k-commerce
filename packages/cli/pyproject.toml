@@ -7,7 +7,6 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
   "anyio",
   "asyncclick",
-  "langchain-ibm",
   "nodriver",
   "questionary",
   "typing-extensions>=4.10.0",

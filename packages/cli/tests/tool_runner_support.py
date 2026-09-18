@@ -23,7 +23,6 @@ from k_commerce_cli.services.types import (
     OrderSearchResult,
     ProductDetailRequest,
     ProductDetailResult,
-    ProductOcrResult,
     ProviderName,
 )
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
@@ -149,7 +148,6 @@ class FakeProvider:
             detail_images=(),
             sections=(),
             tables=(),
-            ocr=ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="OCR 상세 본문"),
         )
 
 

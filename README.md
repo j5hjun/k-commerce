@@ -86,7 +86,7 @@ npx @modelcontextprotocol/inspector k-commerce-mcp
 | `order_search` | Search orders on the provider order page. |
 | `order_detail` | Return details for one saved order. |
 | `order_failures` | Return order failure items that need attention. |
-| `product_detail` | Collect product details, detail images, and OCR text. |
+| `product_detail` | Get product details and detail images. |
 | `cart_list` | Return cart items. |
 | `cart_update_quantity` | Update the quantity of one cart item. |
 | `cart_delete_item` | Delete one cart item. |

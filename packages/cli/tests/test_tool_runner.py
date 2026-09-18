@@ -97,7 +97,7 @@ async def test_order_search_json_output_includes_product_urls(fake_provider: Fak
 
 
 @pytest.mark.anyio
-async def test_product_detail_json_output_includes_ocr_text_once(fake_provider: FakeProvider) -> None:
+async def test_product_detail_json_output_includes_images_without_ocr(fake_provider: FakeProvider) -> None:
     # Given: a product detail canonical request.
     url = "https://www.coupang.com/vp/products/1?itemId=2&vendorItemId=3"
     with patched_tool_provider(fake_provider):
@@ -108,7 +108,7 @@ async def test_product_detail_json_output_includes_ocr_text_once(fake_provider: 
     payload = json.loads(result.stdout)
     assert payload["url"] == url
     assert "detail_text" not in payload
-    assert payload["ocr"]["text"] == "OCR 상세 본문"
+    assert "ocr" not in payload
     assert all("ocr_text" not in image for image in payload["detail_images"])
     assert fake_provider.calls == [ProviderCall("get_product_detail", ProductDetailRequest(url=url))]
 
