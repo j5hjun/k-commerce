@@ -36,6 +36,8 @@ MCP 검사는 설치된 `k-commerce-mcp` 프로세스를 시작하여 초기화,
 
 로그와 JUnit XML은 Actions 아티팩트에 남깁니다. 결과를 확인할 때 실행 환경별
 아티팩트와 `compatibility` 검사를 함께 봅니다.
+모든 실행 단계는 명시적인 `bash` 셸을 사용하여 GitHub Actions의 `-eo pipefail`을
+적용합니다. `tee`로 로그를 저장하더라도 원래 검사 명령의 실패가 작업 실패로 전파됩니다.
 
 ## Version and Retries
 

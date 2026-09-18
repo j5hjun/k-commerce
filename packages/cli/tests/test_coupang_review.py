@@ -133,10 +133,12 @@ def _delete_request() -> ReviewDeleteRequest:
 
 
 @pytest.mark.anyio
-async def test_list_reviewable_returns_browser_closed_when_browser_launch_closes() -> None:
+async def test_list_reviewable_returns_browser_closed_when_browser_launch_closes(tmp_path: Path) -> None:
     browser = _BrowserSpy()
     browser.launch.side_effect = RuntimeError("browser closed")
-    service = _make_review_service(browser=browser)
+    service = _make_review_service(root_dir=tmp_path, browser=browser)
+    service.store.cookies_file.parent.mkdir(parents=True, exist_ok=True)
+    service.store.cookies_file.write_text("fake session", encoding="utf-8")
 
     result = await service.list_reviewable()
 
@@ -146,6 +148,7 @@ async def test_list_reviewable_returns_browser_closed_when_browser_launch_closes
     assert result.error_code == "browser_closed"
     assert result.retryable is True
     assert result.next_tools == ()
+    browser.launch.assert_awaited_once_with(service.store.paths)
     browser.close.assert_not_awaited()
 
 
