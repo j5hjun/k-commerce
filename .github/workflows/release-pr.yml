@@ -18,7 +18,8 @@ concurrency:
 
 jobs:
   reconcile:
-    if: vars.RELEASE_APP_ID != '' && vars.RELEASE_BOT_LOGIN != ''
+    # A manual compatibility/preflight run must not cause bot writes afterward.
+    if: vars.RELEASE_APP_ID != '' && vars.RELEASE_BOT_LOGIN != '' && (github.event_name != 'workflow_run' || github.event.workflow_run.event != 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

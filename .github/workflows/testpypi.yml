@@ -24,6 +24,45 @@ env:
   UV_VERSION: "0.9.25"
 
 jobs:
+  app-preflight:
+    name: release-app-preflight
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Request the permissions used by both release workflows, but perform GETs only.
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-workflows: write
+      - name: Verify identity and repository access without mutations
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          EXPECTED_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
+          INSTALLATION_ID: ${{ steps.app.outputs.installation-id }}
+        run: |
+          echo "Authenticated App: ${APP_SLUG}[bot]"
+          test "$EXPECTED_LOGIN" = "${APP_SLUG}[bot]"
+          gh api "repos/$GITHUB_REPOSITORY" --jq '.full_name' | tee repository.txt
+          test "$(cat repository.txt)" = "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=1" --jq 'length' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=1" --jq '.total_count' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=1" --jq 'length' >/dev/null
+          {
+            echo '### Release App preflight passed'
+            echo "App: ${APP_SLUG}[bot]"
+            echo "Installation: $INSTALLATION_ID"
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo 'Granted: contents write, pull requests write, checks read, workflows write.'
+            echo 'Only read requests were performed; no release, PR, branch or package was created.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   reserve:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 # Release Bot Setup
 
-이 절차는 소유자 `j5hjun`이 최초 한 번 수행합니다. 현재 저장소에는 릴리스 App 설정이
-없으므로 구현을 병합해도 봇 PR 생성은 설정 전까지 비활성화됩니다.
+이 절차는 소유자 `j5hjun`이 최초 한 번 수행합니다. 릴리스 App 설정이
+없으면 구현을 병합해도 봇 PR 생성은 설정 전까지 비활성화됩니다.
 일반 PR 검증은 App 없이도 동작합니다. VERSION 커밋의 배포는 App 등록 전까지
 구성 오류로 중단되며, 등록 후 해당 실행을 재시도합니다.
 
@@ -48,7 +48,23 @@ gh secret set RELEASE_APP_PRIVATE_KEY < /absolute/path/to/private-key.pem
 전용 App 토큰을 사용합니다. 토큰은 실행 중 생성하고 액션 종료 시 폐기합니다.
 버전 정책 status는 일관되게 GitHub Actions 토큰으로 게시합니다.
 
-## 3. Activate required checks after merging the implementation
+## 3. Verify App access before merging
+
+기존 `testpypi.yml`을 구현 PR 브랜치에서 수동 실행합니다.
+
+```bash
+gh workflow run testpypi.yml --ref chore/testpypi-ci
+```
+
+`release-app-preflight`는 두 릴리스 workflow에서 사용하는 권한을 요청하여 토큰을 발급하고,
+App slug와 설정된 봇 계정의 일치 및 저장소·PR·검사·릴리스 API 조회를 확인합니다.
+개인키·토큰은 출력하지 않으며 액션 종료 시 토큰을 폐기합니다. 이 실행은 배포·PR 생성·병합을
+수행하지 않으며, 완료 이벤트도 릴리스 PR 컨트롤러의 쓰기 작업을 유발하지 않습니다.
+같이 실행되는 compatibility 검증도 통과해야 합니다.
+
+이는 인증·설치·권한의 사전 검증입니다. 실제 게시·봇 병합·복구가 검증된 것은 아닙니다.
+
+## 4. Activate required checks after merging the implementation
 
 새 `version-policy.yml`은 기본 브랜치 `dev`에 있어야 실행됩니다.
 이 구현 PR을 먼저 검토·병합한 뒤 다음을 수행합니다. 기존 PR을 자동 병합하지 않습니다.
@@ -69,7 +85,7 @@ gh secret set RELEASE_APP_PRIVATE_KEY < /absolute/path/to/private-key.pem
 새 워크플로가 없는 상태에서 필수로 지정하면 현재 PR까지 병합할 수 없기 때문입니다.
 **필수 검사 활성화 전에는 숫자별 버전 권한 정책이 강제된 상태가 아닙니다.**
 
-## 4. Verify one full cycle
+## 5. Verify one full cycle
 
 - 현재 VERSION은 `0.1.1`입니다. 초기 구현 병합은 기존 `0.1.0`에서의 VERSION 변경을
   포함하므로 `0.1.1`을 그대로 배포합니다. 인덱스나 GitHub 릴리스 기록과 충돌하면 먼저 확인합니다.
