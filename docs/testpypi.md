@@ -44,20 +44,62 @@ MCP 검사는 설치된 `k-commerce-mcp` 프로세스를 시작하여 초기화,
 
 ## Version and Retries
 
-`VERSION`에는 다음 정식 릴리스의 목표 버전을 기록합니다. 현재 목표는 `0.1.1`이며,
-CI에서는 여기에 `.dev{run_id * 1000 + run_attempt}`를 붙입니다.
-예를 들어 `VERSION=0.1.1`, 실행 ID 42, 시도 1이면 `0.1.1.dev42001`입니다.
-시도 번호는 충돌 방지를 위해 1~999만 허용합니다.
+`VERSION`은 배포 버전 자체가 아니라 소유자가 선택하는 릴리스 계열과 최솟값입니다.
+현재 값 `0.1.1`은 최초 자동 배포의 하한이며, 자동화가 파일을 커밋하거나 수정하지 않습니다.
+minor·major 변경은 `@j5hjun`이 `VERSION`을 변경하여 결정합니다.
+변경 시 `uv lock`으로 워크스페이스 패키지 버전도 동기화합니다.
+
+CI는 TestPyPI 프로젝트 JSON API의 전체 `releases`를 읽고 다음 patch를 계산합니다.
+정식 버전과 `.devN` 버전 모두 patch를 사용한 것으로 취급합니다. `feat`를 포함해도
+자동으로 minor·major를 올리지 않습니다. 현재 배포 대상은 TestPyPI뿐이며, 향후 PyPI를
+추가할 때는 두 인덱스의 기준과 정식 승격 정책을 별도로 정의해야 합니다.
+
+| VERSION | TestPyPI의 가장 높은 배포 버전 | 다음 빌드 버전 예시 |
+| --- | --- | --- |
+| `0.1.1` | `0.1.0` | `0.1.1.dev42001` |
+| `0.1.1` | `0.1.2.dev42001` | `0.1.3.dev43001` |
+| `0.2.0` | `0.1.3.dev43001` | `0.2.0.dev44001` |
+| `0.2.0` | `0.2.0.dev44001` | `0.2.1.dev45001` |
+
+- 선택한 기준 버전이 기존 배포보다 높으면 그 기준 버전부터 시작합니다.
+- 같은 major·minor이면 기존 최고 patch에 1을 더합니다.
+- 이미 배포된 계열보다 낮은 major·minor는 오류로 처리합니다.
+- 조회 실패·잘못된 응답·지원하지 않는 버전 형식에서는 추측하여 배포하지 않고 실패합니다.
+- yanked·부분 업로드·파일 목록이 빈 버전도 재사용하지 않습니다. 배포 기록을 삭제하면
+  계산 기준을 잃으므로 TestPyPI 릴리스를 삭제하지 않습니다.
+
+개발 접미사는 기존의 `.dev{run_id * 1000 + run_attempt}`를 유지합니다.
+시도 번호는 1~999만 허용합니다. PR과 수동 실행은 버전을 계산하고 검증만 하므로
+patch를 소비하지 않습니다. PR의 미리보기 버전은 실제 병합 시의 배포 버전과 다를 수 있습니다.
+
+`dev` push 실행은 버전 조회부터 게시 후 검증까지 같은 concurrency 그룹으로 직렬화하고,
+실행 중인 배포를 새 push가 취소하지 않습니다. GitHub concurrency는 FIFO 대기열이 아니므로
+대기 중인 여러 push는 최신 실행으로 대체될 수 있습니다. 모든 커밋의 개별 배포를 보장하지는
+않지만, 동시에 같은 patch를 선택하는 것은 방지합니다. 수동 업로드는 이 잠금에 참여하지
+않으므로 이 워크플로를 유일한 게시자로 운영합니다.
 
 빌드 중에만 `VERSION`을 변경하고 성공·실패와 관계없이 원래 값으로 복원합니다.
-버전 변경 커밋이나 태그는 만들지 않습니다. PR 빌드에도 개발 버전을 사용하되
-업로드는 하지 않습니다. `release.json`에는 버전, 커밋 SHA, 두 파일의 SHA-256을 기록합니다.
+`release.json`에는 실제 배포 버전, 커밋 SHA, 두 파일의 SHA-256을 기록합니다.
 
 실패한 업로드 작업만 재실행하면 이전 빌드 아티팩트와 버전을 재사용합니다.
 `skip-existing`은 부분 업로드 재시도를 허용하기 위한 설정이며, 업로드 후 검사에서
 서버 메타데이터와 실제 다운로드한 바이트가 원래 해시와 일치하는지 모두 확인합니다.
-전체 워크플로를 재실행하여 빌드도 다시 수행하면 새 시도 번호의 개발 버전이 생성됩니다.
-게시 이후 검증이 실패해도 이미 업로드된 파일을 자동 삭제하지 않습니다.
+전체 워크플로를 재실행하면 인덱스를 다시 조회하고 새 개발 버전을 빌드합니다.
+이전 버전이 일부라도 게시되었다면 다음 patch를 사용합니다. 게시 이후 검증이 실패해도
+이미 업로드된 파일을 자동 삭제하지 않습니다.
+
+### VERSION ownership
+
+`.github/CODEOWNERS`는 `VERSION`, 소유권 설정, CI 스크립트·워크플로 및 패키지 빌드
+설정을 `@j5hjun`에게 지정합니다. 다른 사람이 브랜치에서 파일을 편집하는 것을 막는 것이
+아니라, 보호 브랜치에 반영하기 위한 소유자 승인을 요구합니다.
+
+`dev`와 `main`에서 코드 소유자 리뷰 필수 및 새 커밋 후 기존 승인 무효화를 유지합니다.
+CODEOWNERS는 PR의 대상 브랜치에 있는 파일을 사용하므로 `dev`에 병합된 뒤 후속 PR부터
+적용되며, `main`에서도 적용하려면 해당 파일을 승격해야 합니다.
+본인이 작성한 PR은 자기 승인할 수 없으므로 GitHub의 병합 가능 상태를 확인하고,
+추가 승인이 요구될 경우 별도 PR 작성자나 명시적으로 정한 관리자 절차를 사용합니다.
+이 변경은 보호 규칙을 완화하거나 우회 권한을 추가하지 않습니다.
 
 ## GitHub and TestPyPI Setup
 
@@ -87,7 +129,7 @@ Trusted Publisher 등록이 없으면 검증은 통과할 수 있지만 업로�
 버전별 검증은 빌드의 일시적인 `VERSION` 변경과 겹치지 않게 실행합니다.
 
 ```bash
-UV_PYTHON=3.13 python3 scripts/ci/build_release.py --development --run-id 42 --attempt 1 --output /tmp/k-commerce-release
+UV_PYTHON=3.13 python3 scripts/ci/build_release.py --resolve-testpypi --development --run-id 42 --attempt 1 --output /tmp/k-commerce-release
 python3 scripts/ci/verify_distribution.py --release-dir /tmp/k-commerce-release --python-version 3.11 --format wheel
 python3 scripts/ci/verify_distribution.py --release-dir /tmp/k-commerce-release --python-version 3.11 --format sdist
 ```

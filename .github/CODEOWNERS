@@ -1,0 +1,7 @@
+# VERSION chooses the release series; only @j5hjun authorizes changes.
+/VERSION @j5hjun
+# Protect ownership and release policy from being changed without owner review.
+/.github/ @j5hjun
+/scripts/ci/ @j5hjun
+/pyproject.toml @j5hjun
+/packages/*/pyproject.toml @j5hjun

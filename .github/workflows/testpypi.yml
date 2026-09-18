@@ -15,7 +15,9 @@ defaults:
     shell: bash
 
 concurrency:
-  group: testpypi-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  # Hold the lock from version selection through publication and verification.
+  # PRs have independent groups and never publish.
+  group: testpypi-${{ github.event_name == 'push' && 'dev-publish' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('manual-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -70,7 +72,7 @@ jobs:
         env:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: python3 scripts/ci/build_release.py --development --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT" --output release
+        run: python3 scripts/ci/build_release.py --resolve-testpypi --development --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT" --output release
       - name: Check package metadata
         run: uvx --from twine==7.0.0 twine check --strict release/dist/*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
