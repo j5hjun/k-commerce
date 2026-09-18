@@ -55,14 +55,15 @@ gh secret set RELEASE_APP_PRIVATE_KEY < /absolute/path/to/private-key.pem
 
 1. `Version policy`를 기본 브랜치에서 열린 PR 번호로 수동 실행해
    `version-policy` status가 생성되는지 확인합니다.
-2. `dev`와 `main`의 보호 규칙에서 `compatibility`와 `version-policy`를 필수 검사로 지정합니다.
+2. 먼저 `dev`의 보호 규칙에서 `compatibility`와 `version-policy`를 필수 검사로 지정합니다.
    제공자는 GitHub Actions로 제한하고 최신 대상 브랜치 기준 검사를 유지합니다.
 3. 기존 CODEOWNERS 리뷰·기존 승인 무효화·관리자 규칙 적용을 유지합니다.
    VERSION 자체에는 CODEOWNERS 항목을 다시 추가하지 않습니다. 추가하면 봇 patch도
    소유자 리뷰를 기다려 자동 병합되지 않을 수 있습니다.
 4. GitHub Actions의 정책 검사와 컨트롤러가 활성화되었는지 확인합니다.
    컨트롤러는 직접 merge API를 사용하므로 저장소의 별도 Allow auto-merge 설정은 필요 없습니다.
-5. main에도 워크플로·CODEOWNERS 변경을 정상 승격합니다.
+5. main에도 워크플로·CODEOWNERS 변경을 정상 승격한 뒤 main의 새 필수 검사를
+   활성화합니다. 새 workflow가 없는 main에서 먼저 필수로 지정해 최초 승격을 막지 않습니다.
 
 이 PR은 저장소 보호 설정을 자동으로 완화하거나 신규 필수 검사를 사전에 강제하지 않습니다.
 새 워크플로가 없는 상태에서 필수로 지정하면 현재 PR까지 병합할 수 없기 때문입니다.
