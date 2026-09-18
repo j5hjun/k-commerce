@@ -290,17 +290,11 @@ async def test_product_detail_tool_delegates_canonical_fields_to_provider() -> N
             url="https://www.coupang.com/vp/products/8825977723",
         )
 
-    assert result == ProductDetailResult(
-        success=True,
-        provider="coupang",
-        message="product detail",
-        url="https://www.coupang.com/vp/products/8825977723",
-        product=None,
-        required_info=(),
-        detail_images=(),
-        sections=(),
-        tables=(),
-    )
+    assert result.isError is False
+    assert result.structuredContent["url"] == "https://www.coupang.com/vp/products/8825977723"
+    assert result.structuredContent["success"] is True
+    assert result.structuredContent["detail_images"] == []
+    assert result.structuredContent["image_delivery"] == []
     assert provider.factory_calls == [("coupang", None, False)]
     assert provider.product_detail_request == ProductDetailRequest(url="https://www.coupang.com/vp/products/8825977723")
 

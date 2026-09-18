@@ -9,7 +9,7 @@ from k_commerce_cli.services.paths import ProviderPaths
 from k_commerce_cli.services.providers.coupang.provider import CoupangProvider
 from k_commerce_cli.services.providers.coupang.product.service import CoupangProductService
 from k_commerce_cli.services.store import ProviderStore
-from k_commerce_cli.services.types import ProductDetailImage, ProductDetailRequest, ProductOcrResult, ProviderName
+from k_commerce_cli.services.types import ProductDetailImage, ProductDetailRequest, ProviderName
 
 
 class _BrowserSpy:
@@ -152,38 +152,13 @@ async def test_product_detail_browser_closed_cleanup_does_not_mask_result(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_product_detail_collects_dom_fields_and_ocr_text(
+async def test_product_detail_collects_dom_fields_and_images_without_model_credentials(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_images: tuple[ProductDetailImage, ...] | None = None
-
-    async def extract_all_images(
-        images: tuple[ProductDetailImage, ...],
-    ) -> tuple[tuple[ProductDetailImage, ...], ProductOcrResult]:
-        nonlocal captured_images
-        captured_images = images
-        return (
-            tuple(
-                ProductDetailImage(
-                    url=image.url,
-                    ocr_status="completed",
-                )
-                for image in images
-            ),
-            ProductOcrResult(
-                enabled=True,
-                status="completed",
-                model="test",
-                scope="full",
-                text="OCR 상세 본문",
-            ),
-        )
-
-    monkeypatch.setattr(
-        "k_commerce_cli.services.providers.coupang.product.service.extract_product_image_text",
-        extract_all_images,
-    )
+    monkeypatch.chdir(tmp_path)
+    for key in ("WATSONX_URL", "WATSONX_PROJECT_ID", "WATSONX_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
     tab = _ProductTab(
         {
             "state": "success",
@@ -223,14 +198,10 @@ async def test_product_detail_collects_dom_fields_and_ocr_text(
     assert result.product.name == "고강도 케이블타이"
     assert result.product.item_id == "123"
     assert result.required_info[0].label == "품명"
-    assert captured_images == (
+    assert result.detail_images == (
         ProductDetailImage(url="https://thumbnail.coupangcdn.com/detail-1.jpg"),
         ProductDetailImage(url="https://thumbnail.coupangcdn.com/detail-2.jpg"),
     )
-    assert result.detail_images[0].ocr_status == "completed"
-    assert result.detail_images[1].ocr_status == "completed"
-    assert result.ocr.text == "OCR 상세 본문"
-    assert result.ocr.scope == "full"
     assert result.tables[0].rows[0].cells == ("소형", "12CM")
     assert tab.get_calls == [
         "https://www.coupang.com/",
@@ -243,17 +214,7 @@ async def test_product_detail_collects_dom_fields_and_ocr_text(
 @pytest.mark.anyio
 async def test_product_detail_waits_until_session_product_page_is_ready(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def skip_ocr(
-        images: tuple[ProductDetailImage, ...],
-    ) -> tuple[tuple[ProductDetailImage, ...], ProductOcrResult]:
-        return images, ProductOcrResult(enabled=True, status="no_images", model="", scope="full")
-
-    monkeypatch.setattr(
-        "k_commerce_cli.services.providers.coupang.product.service.extract_product_image_text",
-        skip_ocr,
-    )
     tab = _ProductTab(
         [
             {
@@ -286,23 +247,10 @@ async def test_product_detail_waits_until_session_product_page_is_ready(
 
 
 @pytest.mark.anyio
-async def test_product_detail_waits_for_lazy_detail_images_before_ocr(
+async def test_product_detail_waits_for_lazy_detail_images(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_images: tuple[ProductDetailImage, ...] | None = None
-
-    async def skip_ocr(
-        images: tuple[ProductDetailImage, ...],
-    ) -> tuple[tuple[ProductDetailImage, ...], ProductOcrResult]:
-        nonlocal captured_images
-        captured_images = images
-        return images, ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="상세 OCR")
-
-    monkeypatch.setattr(
-        "k_commerce_cli.services.providers.coupang.product.service.extract_product_image_text",
-        skip_ocr,
-    )
     monkeypatch.setattr(
         "k_commerce_cli.services.providers.coupang.product.service.PRODUCT_PAGE_READY_POLL_SECONDS",
         0.0,
@@ -337,6 +285,5 @@ async def test_product_detail_waits_for_lazy_detail_images_before_ocr(
 
     assert result.success is True
     assert result.required_info[0].label == "품명"
-    assert captured_images == (ProductDetailImage(url="https://thumbnail.coupangcdn.com/detail-1.jpg"),)
     assert result.detail_images == (ProductDetailImage(url="https://thumbnail.coupangcdn.com/detail-1.jpg"),)
     assert len(tab.evaluate_calls) >= 2

@@ -1,0 +1,51 @@
+name: Release PR controller
+
+on:
+  workflow_run:
+    workflows: [Python compatibility and TestPyPI]
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: release-pr-controller
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # A manual compatibility/preflight run must not cause bot writes afterward.
+    if: vars.RELEASE_APP_ID != '' && vars.RELEASE_BOT_LOGIN != '' && (github.event_name != 'workflow_run' || github.event.workflow_run.event != 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # workflow_run payloads are notifications only. Read protected dev afresh.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.25'
+          python-version: '3.13'
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_STATUS_TOKEN: ${{ github.token }}
+          RELEASE_BOT_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          test "$RELEASE_BOT_LOGIN" = "${APP_SLUG}[bot]"
+          python3 -m scripts.ci.release_pr

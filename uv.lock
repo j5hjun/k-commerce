@@ -693,10 +693,11 @@ source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "asyncclick" },
-    { name = "langchain-ibm" },
+    { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -709,10 +710,11 @@ dev = [
 requires-dist = [
     { name = "anyio" },
     { name = "asyncclick" },
-    { name = "langchain-ibm" },
-    { name = "mcp", extras = ["cli"] },
+    { name = "httpx" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions", specifier = ">=4.10.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -759,32 +761,34 @@ source = { editable = "packages/cli" }
 dependencies = [
     { name = "anyio" },
     { name = "asyncclick" },
-    { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anyio" },
     { name = "asyncclick" },
-    { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions", specifier = ">=4.10.0" },
 ]
 
 [[package]]
 name = "k-commerce-mcp"
 source = { editable = "packages/mcp" }
 dependencies = [
+    { name = "httpx" },
     { name = "k-commerce-cli" },
     { name = "mcp", extra = ["cli"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx" },
     { name = "k-commerce-cli", editable = "packages/cli" },
-    { name = "mcp", extras = ["cli"] },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
 ]
 
 [[package]]

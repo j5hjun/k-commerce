@@ -90,6 +90,8 @@ Smoke 입력은 케이스별로 다음과 같습니다.
 
 ## Branch Strategy
 
+Python 버전별 CI와 TestPyPI 배포 절차는 [Python Compatibility and TestPyPI](docs/testpypi.md)를 참고합니다.
+
 짧게 쓰는 브랜치를 만들고, `dev`를 주 통합 브랜치로 취급합니다.
 `dev`와 `main`에는 직접 커밋하거나 푸시하지 않습니다.
 

@@ -15,7 +15,6 @@ from k_commerce_cli.services.types import (
     ListReviewableResult,
     OrderListResult,
     ProductDetailResult,
-    ProductOcrResult,
     ProviderName,
 )
 from k_commerce_cli.services.types.auth import LoginResult, LogoutResult, StatusResult
@@ -278,7 +277,6 @@ async def test_product_detail_alias_uses_shared_invocation_and_prints_json() -> 
             detail_images=(),
             sections=(),
             tables=(),
-            ocr=ProductOcrResult(enabled=True, status="completed", model="test", scope="full", text="OCR 상세 본문"),
         )
     )
 
@@ -290,7 +288,8 @@ async def test_product_detail_alias_uses_shared_invocation_and_prints_json() -> 
 
     assert result.exit_code == 0
     assert '"detail_text"' not in result.output
-    assert '"text": "OCR 상세 본문"' in result.output
+    assert '"ocr"' not in result.output
+    assert '"detail_images": []' in result.output
     assert_invoked_once(
         invoke_tool,
         ExpectedInvocation(

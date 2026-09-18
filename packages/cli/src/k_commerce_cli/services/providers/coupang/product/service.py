@@ -12,7 +12,6 @@ from k_commerce_cli.services.providers.coupang.product.parsing import (
     build_product_browser_result,
     parse_coupang_product_url,
 )
-from k_commerce_cli.services.providers.coupang.product.ocr import extract_product_image_text
 from k_commerce_cli.services.providers.coupang.product.script import PRODUCT_BODY_LOAD_SCRIPT, PRODUCT_DETAIL_SCRIPT
 from k_commerce_cli.services.providers.coupang.result_metadata import (
     BROWSER_CLOSED_EXCEPTIONS,
@@ -26,7 +25,6 @@ from k_commerce_cli.services.store import ProviderStore
 from k_commerce_cli.services.types import (
     ProductDetailRequest,
     ProductDetailResult,
-    ProductOcrResult,
     ProviderName,
 )
 
@@ -68,10 +66,7 @@ class CoupangProductService:
         try:
             self._browser_session = await self.browser.launch(self.store.paths)
             browser_result = await self._collect_product_detail(request.url, identifiers)
-            result = self._to_result(request, browser_result)
-            if result.success:
-                return await self._with_ocr(result)
-            return result
+            return self._to_result(request, browser_result)
         except BROWSER_CLOSED_EXCEPTIONS as exc:
             if not is_browser_closed_error(exc):
                 raise
@@ -144,24 +139,6 @@ class CoupangProductService:
             tables=browser_result.tables,
         )
 
-    async def _with_ocr(self, result: ProductDetailResult) -> ProductDetailResult:
-        detail_images, ocr = await extract_product_image_text(result.detail_images)
-        return ProductDetailResult(
-            success=result.success,
-            provider=result.provider,
-            message=result.message,
-            url=result.url,
-            product=result.product,
-            required_info=result.required_info,
-            detail_images=detail_images,
-            sections=result.sections,
-            tables=result.tables,
-            ocr=ocr,
-            error_code=result.error_code,
-            retryable=result.retryable,
-            next_tools=result.next_tools,
-        )
-
     def _failure_result(self, url: str, state: str, message: str) -> ProductDetailResult:
         metadata = PRODUCT_DETAIL_METADATA.get(state, ResultMetadata(error_code=state, retryable=True))
         return ProductDetailResult(
@@ -174,7 +151,6 @@ class CoupangProductService:
             detail_images=(),
             sections=(),
             tables=(),
-            ocr=ProductOcrResult(enabled=False, status="skipped", model="", scope="summary"),
             error_code=metadata.error_code,
             retryable=metadata.retryable,
             next_tools=metadata.next_tools,

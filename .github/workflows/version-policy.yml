@@ -1,0 +1,38 @@
+name: Version policy
+
+on:
+  pull_request_target:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to recheck after an owner review
+        required: true
+        type: number
+
+permissions:
+  # Draft release visibility requires push access. Only protected code runs here.
+  contents: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: version-policy-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Never checkout or execute the PR head in this privileged workflow.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BOT_LOGIN: ${{ vars.RELEASE_BOT_LOGIN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+        run: python3 -m scripts.ci.version_policy --pr "$PR_NUMBER"

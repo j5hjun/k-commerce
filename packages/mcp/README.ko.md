@@ -68,7 +68,7 @@ npx @modelcontextprotocol/inspector k-commerce-mcp
 | `order_search` | provider 주문 페이지에서 주문을 검색합니다. |
 | `order_detail` | 저장된 주문 하나의 상세 정보를 반환합니다. |
 | `order_failures` | 확인이 필요한 주문 실패 항목을 반환합니다. |
-| `product_detail` | 상품 상세, 상세 이미지, OCR 텍스트를 수집합니다. |
+| `product_detail` | 상품 상세와 상세 이미지를 조회합니다. |
 | `cart_list` | 장바구니 항목을 반환합니다. |
 | `cart_update_quantity` | 장바구니 항목 수량을 변경합니다. |
 | `cart_delete_item` | 장바구니 항목 하나를 삭제합니다. |
@@ -80,3 +80,18 @@ npx @modelcontextprotocol/inspector k-commerce-mcp
 | `review_upload` | 상품 리뷰를 작성합니다. |
 | `review_edit` | 상품 리뷰를 수정합니다. |
 | `review_delete` | 상품 리뷰를 삭제합니다. |
+
+### 상품 상세 이미지
+
+`product_detail`은 상품 JSON을 `structuredContent`와 텍스트 블록으로 반환하고,
+원본 상세 이미지를 base64 MCP 이미지 블록으로 함께 전달합니다. 호출한 클라이언트와
+모델은 이미지 입력을 지원해야 합니다. 이 도구에는 OCR 모델, Watsonx 인증 정보,
+`.env`가 필요하지 않습니다. 기존 쿠팡 로그인·세션 조건은 유지됩니다.
+CLI는 상품 정보와 이미지 URL만 반환합니다. 기존 `ocr`, `ocr_status` 필드는 제거했습니다.
+`image_delivery`는 각 URL의 `attached`, `failed`, `skipped` 상태를 원본 순서대로 표시하며,
+이미지 블록 순서는 `attached` 항목 순서와 같습니다.
+
+HTTPS 쿠팡 CDN의 JPEG, PNG, WebP, GIF 응답을 지원하며 리디렉션은 따르지 않습니다.
+최대 20장, 장당 5 MiB, 원본 합계 10 MiB, 다운로드 총 30초로 제한합니다.
+실패하거나 생략된 이미지도 URL과 경고를 남기고 상품 정보는 반환합니다.
+서버에서 이미지를 축소하거나 자르지 않으므로 모델별 이미지 크기 제한은 적용됩니다.

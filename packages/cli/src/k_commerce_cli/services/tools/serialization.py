@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import is_dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol, TypeAlias, TypeIs, override
+from typing import TYPE_CHECKING, Protocol, TypeAlias
+
+from typing_extensions import TypeIs, override
 
 from .types import JSONPrimitive, JSONValue, ToolInvocationResult
 
