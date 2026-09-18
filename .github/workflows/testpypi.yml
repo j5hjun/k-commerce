@@ -1,0 +1,200 @@
+name: Python compatibility and TestPyPI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testpypi-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.9.25"
+
+jobs:
+  source-tests:
+    name: source-tests (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Check interpreter and run source tests
+        run: |
+          mkdir -p reports
+          uv run --no-sync python -c 'import os, sys; assert f"{sys.version_info.major}.{sys.version_info.minor}" == os.environ["UV_PYTHON"]'
+          uv run --no-sync python -m pytest -m "not smoke" -ra --junitxml=reports/pytest.xml 2>&1 | tee reports/source.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: source-tests-${{ matrix.python }}-${{ github.run_attempt }}
+          path: reports/
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.13"
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.13"
+      - name: Build distributions and manifest
+        id: release
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: python3 scripts/ci/build_release.py --development --run-id "$RUN_ID" --attempt "$RUN_ATTEMPT" --output release
+      - name: Check package metadata
+        run: uvx --from twine==7.0.0 twine check --strict release/dist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distributions
+          path: release/
+          if-no-files-found: error
+          overwrite: true
+
+  distribution-tests:
+    name: distribution-tests (${{ matrix.python }}, ${{ matrix.format }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+        format: [wheel, sdist]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: release/
+      - name: Install and probe the distribution
+        env:
+          TEST_PYTHON: ${{ matrix.python }}
+          DIST_FORMAT: ${{ matrix.format }}
+        run: |
+          mkdir -p reports
+          python3 scripts/ci/verify_distribution.py --release-dir release --python-version "$TEST_PYTHON" --format "$DIST_FORMAT" 2>&1 | tee reports/distribution.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: distribution-tests-${{ matrix.python }}-${{ matrix.format }}-${{ github.run_attempt }}
+          path: reports/
+
+  compatibility:
+    name: compatibility
+    needs: [source-tests, build, distribution-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every matrix and build to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          assert all(job["result"] == "success" for job in results.values()), results
+          PY
+
+  publish:
+    name: publish-testpypi
+    needs: [compatibility, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/k-commerce/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: release/
+      - name: Publish tested artifacts with OIDC
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: release/dist/
+          skip-existing: true
+
+  verify-testpypi:
+    name: verify-testpypi (${{ matrix.python }})
+    needs: [publish, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: expected/
+      - name: Download and verify published bytes
+        run: |
+          mkdir -p reports
+          python3 scripts/ci/fetch_testpypi.py --manifest expected/release.json --output published 2>&1 | tee reports/download.log
+      - name: Install the published wheel and probe MCP
+        env:
+          TEST_PYTHON: ${{ matrix.python }}
+        run: python3 scripts/ci/verify_distribution.py --release-dir published --python-version "$TEST_PYTHON" --format wheel 2>&1 | tee reports/install.log
+      - name: Write deployment summary
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ["RELEASE_VERSION"]
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as report:
+              report.write(f"Verified k-commerce {version}\n\nCommit: {os.environ['GITHUB_SHA']}\n\n")
+              report.write(f"https://test.pypi.org/project/k-commerce/{version}/\n\n")
+              report.write("Download only this package from TestPyPI, then install dependencies from PyPI:\n\n```bash\n")
+              report.write(f"python3 -m pip download --no-deps --only-binary=:all: --index-url https://test.pypi.org/simple/ k-commerce=={version} -d download\n")
+              report.write(f"python3 -m pip install --index-url https://pypi.org/simple/ download/k_commerce-{version}-py3-none-any.whl\n```\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: testpypi-${{ matrix.python }}-${{ github.run_attempt }}
+          path: reports/

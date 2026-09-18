@@ -28,9 +28,10 @@ dependencies = [
   "anyio",
   "asyncclick",
   "langchain-ibm",
-  "mcp[cli]",
+  "mcp[cli]>=1.28,<2",
   "nodriver",
   "questionary",
+  "typing-extensions>=4.10.0",
 ]
 
 [project.scripts]
@@ -96,6 +97,7 @@ testpaths = [
   "packages/cli/tests",
   "packages/mcp/tests",
   "packages/agent/tests",
+  "scripts/ci/tests",
 ]
 markers = [
   "smoke: opt-in smoke tests that launch the real browser or depend on local credentials/session state",

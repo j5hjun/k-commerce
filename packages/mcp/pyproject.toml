@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "k-commerce-cli",
-  "mcp[cli]",
+  "mcp[cli]>=1.28,<2",
 ]
 
 [project.scripts]

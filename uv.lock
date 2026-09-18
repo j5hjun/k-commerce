@@ -697,6 +697,7 @@ dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -710,9 +711,10 @@ requires-dist = [
     { name = "anyio" },
     { name = "asyncclick" },
     { name = "langchain-ibm" },
-    { name = "mcp", extras = ["cli"] },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions", specifier = ">=4.10.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -762,6 +764,7 @@ dependencies = [
     { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -771,6 +774,7 @@ requires-dist = [
     { name = "langchain-ibm" },
     { name = "nodriver" },
     { name = "questionary" },
+    { name = "typing-extensions", specifier = ">=4.10.0" },
 ]
 
 [[package]]
@@ -784,7 +788,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "k-commerce-cli", editable = "packages/cli" },
-    { name = "mcp", extras = ["cli"] },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
 ]
 
 [[package]]
