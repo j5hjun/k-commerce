@@ -12,7 +12,8 @@ on:
         type: number
 
 permissions:
-  contents: read
+  # Draft release visibility requires push access. Only protected code runs here.
+  contents: write
   pull-requests: read
   statuses: write
 

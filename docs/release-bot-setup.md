@@ -2,7 +2,8 @@
 
 이 절차는 소유자 `j5hjun`이 최초 한 번 수행합니다. 현재 저장소에는 릴리스 App 설정이
 없으므로 구현을 병합해도 봇 PR 생성은 설정 전까지 비활성화됩니다.
-일반 PR 검증과 VERSION 커밋의 TestPyPI 배포는 App 없이도 동작합니다.
+일반 PR 검증은 App 없이도 동작합니다. VERSION 커밋의 배포는 App 등록 전까지
+구성 오류로 중단되며, 등록 후 해당 실행을 재시도합니다.
 
 ## 1. Create and install a dedicated GitHub App
 
@@ -16,8 +17,11 @@ GitHub Settings → Developer settings → GitHub Apps → New GitHub App에서 
   - Contents: Read and write — 봇 브랜치 커밋 및 보호 규칙을 따르는 PR 병합
   - Pull requests: Read and write — PR 생성·갱신·조회
   - Checks: Read-only — 최신 compatibility 결과 확인
+  - Workflows: Read and write — 재시도 시 기본 브랜치와 workflow 파일이 다른 과거 커밋에
+    릴리스 태그를 생성·확정하기 위해 GitHub API가 요구하는 권한
   - Metadata: Read-only — 기본 권한
-- Administration·Workflows 우회 권한이나 보호 브랜치 bypass는 부여하지 않습니다.
+- Administration 또는 보호 브랜치 bypass는 부여하지 않습니다. Workflows 권한은
+  배포 예약·완료 작업의 토큰에만 요청하며 PR 컨트롤러 토큰에는 포함하지 않습니다.
 
 App을 만든 뒤 설치하고 private key를 발급받습니다. 비밀키를 채팅·저장소·PR에 붙이지 않습니다.
 
@@ -82,4 +86,5 @@ gh secret set RELEASE_APP_PRIVATE_KEY < /absolute/path/to/private-key.pem
 
 - [Create GitHub App tokens in Actions](https://github.com/actions/create-github-app-token)
 - [GITHUB_TOKEN event behavior](https://docs.github.com/en/enterprise-cloud@latest/actions/concepts/security/github_token)
+- [Release API permissions for historical workflow changes](https://docs.github.com/en/rest/releases/releases)
 - [Workflow events and default-branch requirements](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)

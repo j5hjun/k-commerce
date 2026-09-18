@@ -1,6 +1,6 @@
 # Python Compatibility and TestPyPI
 
-`.github/workflows/testpypi.yml`은 `dev` 대상 PR에서 검증하고, `dev`의 VERSION 변경 커밋을 검증한 뒤 TestPyPI에 배포합니다. 일반 PyPI에는 배포하지 않습니다.
+`.github/workflows/testpypi.yml`은 `dev`·`main` 대상 PR에서 검증하고, `dev`의 VERSION 변경 커밋을 검증한 뒤 TestPyPI에 배포합니다. 일반 PyPI에는 배포하지 않습니다.
 수동 실행(`workflow_dispatch`)은 검증만 수행합니다.
 
 ## Verification
@@ -66,6 +66,7 @@ patch 건너뛰기·버전 감소·개발 접미사는 허용하지 않습니다
 
 `version-policy.yml`은 `pull_request_target`에서 보호된 기본 브랜치 코드를 실행합니다.
 PR 파일은 GitHub API로만 읽고 PR의 코드·워크플로·의존성을 실행하지 않습니다.
+미완료 초안 릴리스의 조회를 위해 contents: write 권한이 필요하지만 저장소 내용은 수정하지 않습니다.
 
 - 일반 기여자의 VERSION 변경은 j5hjun의 현재 head에 대한 승인이 필요합니다.
 - j5hjun이 작성한 PR은 본인 변경으로 인정합니다. 자기 승인을 요구하지 않습니다.

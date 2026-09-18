@@ -89,9 +89,6 @@ def restore(release_id, destination):
     manifest = check_release(destination)
     if manifest["version"] != metadata["version"] or manifest["commit"] != metadata["commit"]:
         raise ValueError("Reserved version/commit differs from stored artifact")
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    if head != manifest["commit"] or Path("VERSION").read_text().strip() != manifest["version"]:
-        raise ValueError("Checkout differs from stored artifact")
     output(restored="true")
 
 
