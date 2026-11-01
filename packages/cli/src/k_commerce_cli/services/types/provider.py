@@ -1,5 +1,3 @@
-from enum import StrEnum
+from k_commerce_cli.services.provider_name import ProviderName
 
-
-class ProviderName(StrEnum):
-    COUPANG = "coupang"
+__all__ = ["ProviderName"]

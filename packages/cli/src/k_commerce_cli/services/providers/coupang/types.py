@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from k_commerce_cli.services.types.provider import ProviderName
+from k_commerce_cli.services.provider_name import ProviderName
 
 
 @dataclass(frozen=True)
@@ -35,8 +34,6 @@ class CoupangOrderMeta:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderMeta":
-        from k_commerce_cli.services.types.provider import ProviderName
-
         return cls(
             provider=ProviderName(str(payload["provider"])),
             collectedAt=str(payload["collectedAt"]),
@@ -111,8 +108,6 @@ class CoupangOrderResult:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CoupangOrderResult":
-        from k_commerce_cli.services.types.provider import ProviderName
-
         return cls(
             provider=ProviderName(str(payload["provider"])),
             orderId=int(payload["orderId"]),

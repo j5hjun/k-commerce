@@ -57,7 +57,9 @@ class OrderFailuresRequest:
     limit: int = 50
 
 
-@dataclass(frozen=True, slots=True)
+# FastMCP builds output schemas from class attributes; slots expose descriptors
+# as defaults, which its strict JSON schema generator cannot serialize.
+@dataclass(frozen=True)
 class OrderSyncResult:
     success: bool
     provider: str
@@ -70,7 +72,7 @@ class OrderSyncResult:
     next_tools: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OrderListResult:
     success: bool
     provider: str
@@ -86,7 +88,7 @@ class OrderListResult:
     next_tools: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OrderSearchResult:
     success: bool
     provider: str
@@ -101,7 +103,7 @@ class OrderSearchResult:
     next_tools: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OrderDetailResult:
     success: bool
     provider: str
@@ -113,7 +115,7 @@ class OrderDetailResult:
     next_tools: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OrderFailuresResult:
     success: bool
     provider: str
