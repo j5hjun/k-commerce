@@ -17,7 +17,7 @@ Or:
 uv tool install k-commerce
 ```
 
-K-Commerce requires Python `3.11` or later. Python `3.11` through `3.14` are covered by compatibility checks.
+K-Commerce requires Python `3.11` or later.
 
 ## Usage
 

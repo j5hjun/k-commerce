@@ -23,7 +23,7 @@ uv tool install k-commerce
 - `k-commerce`: 터미널에서 도구를 직접 실행하는 CLI
 - `k-commerce-mcp`: MCP 클라이언트가 실행하는 로컬 stdio 서버
 
-Python `3.11` 이상이 필요하며, `3.11`부터 `3.14`까지 호환성을 검사합니다.
+Python `3.11` 이상이 필요합니다.
 
 ## CLI 사용
 
