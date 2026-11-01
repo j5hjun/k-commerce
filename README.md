@@ -23,7 +23,7 @@ The package installs two commands:
 - `k-commerce`: CLI for running tools directly from a terminal
 - `k-commerce-mcp`: local stdio MCP server for MCP clients
 
-K-Commerce supports Python `3.11` through `3.13`.
+K-Commerce requires Python `3.11` or later. Python `3.11` through `3.14` are covered by compatibility checks.
 
 ## CLI Usage
 

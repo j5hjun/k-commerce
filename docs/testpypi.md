@@ -7,12 +7,12 @@
 
 | Job | 환경 | 통과 조건 |
 | --- | --- | --- |
-| `source-tests` | Python 3.11, 3.12, 3.13 | `uv sync --locked`, 실제 인터프리터 버전 확인, `pytest -m "not smoke"` 통과 |
+| `source-tests` | Python 3.11, 3.12, 3.13, 3.14 | `uv sync --locked`, 실제 인터프리터 버전 확인, `pytest -m "not smoke"` 통과 |
 | `build` | Python 3.13 | 루트 `k-commerce`의 wheel·sdist 빌드, Twine 메타데이터 검사 |
-| `distribution-tests` | Python 3개 × wheel/sdist | 격리된 설치, 의존성 검사, CLI 및 MCP 호출 성공 |
+| `distribution-tests` | Python 4개 × wheel/sdist | 격리된 설치, 의존성 검사, CLI 및 MCP 호출 성공 |
 | `compatibility` | 전체 결과 | 앞선 모든 작업 성공; 실패·취소·건너뜀은 통과하지 않음 |
 | `publish-testpypi` | `dev`의 미완료 VERSION만 | 보존한 검증 아티팩트를 OIDC로 업로드 |
-| `verify-testpypi` | Python 3.11, 3.12, 3.13 | 실제 TestPyPI 파일의 해시 일치 및 wheel 설치·MCP 호출 성공 |
+| `verify-testpypi` | Python 3.11, 3.12, 3.13, 3.14 | 실제 TestPyPI 파일의 해시 일치 및 wheel 설치·MCP 호출 성공 |
 
 각 matrix는 독립된 Ubuntu 러너에서 실행하며, 한 버전이 실패해도 다른 버전의
 검증을 계속합니다. 실제 쿠팡 로그인과 브라우저 조작이 필요한 smoke 테스트는
@@ -150,7 +150,7 @@ python3 scripts/ci/verify_distribution.py --release-dir /tmp/k-commerce-release 
 python3 scripts/ci/verify_distribution.py --release-dir /tmp/k-commerce-release --python-version 3.11 --format sdist
 ```
 
-출력 폴더는 존재하지 않는 새 경로를 사용합니다. 3.12와 3.13에도 같은 설치 검사를
+출력 폴더는 존재하지 않는 새 경로를 사용합니다. 3.12, 3.13, 3.14에도 같은 설치 검사를
 반복합니다. 게시 후에는 `fetch_testpypi.py`로 배포 파일을 내려받아 같은 검사를 수행합니다.
 설치 예시는 Actions의 배포 요약에 정확한 버전과 함께 표시합니다.
 

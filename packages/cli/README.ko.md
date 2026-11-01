@@ -17,7 +17,7 @@ pipx install k-commerce
 uv tool install k-commerce
 ```
 
-지원 Python 버전은 `3.11`부터 `3.13`까지입니다.
+Python `3.11` 이상이 필요하며, `3.11`부터 `3.14`까지 호환성을 검사합니다.
 
 ## 사용
 

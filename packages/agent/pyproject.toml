@@ -3,7 +3,7 @@ name = "k-commerce-agent"
 dynamic = ["version"]
 description = "LangChain agent backend that bridges a web frontend to the K-commerce MCP server."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
 dependencies = [
   "k-commerce-mcp",
   "fastapi",

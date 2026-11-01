@@ -3,11 +3,11 @@ name = "k-commerce-cli"
 dynamic = ["version"]
 description = "CLI for K-Commerce workflows."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
 dependencies = [
   "anyio",
   "asyncclick",
-  "nodriver",
+  "nodriver>=0.50.99",
   "questionary",
   "typing-extensions>=4.10.0",
 ]

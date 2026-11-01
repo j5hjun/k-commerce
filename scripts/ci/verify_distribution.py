@@ -26,7 +26,7 @@ def check_release(directory: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--release-dir", type=Path, required=True)
-    parser.add_argument("--python-version", choices=("3.11", "3.12", "3.13"), required=True)
+    parser.add_argument("--python-version", choices=("3.11", "3.12", "3.13", "3.14"), required=True)
     parser.add_argument("--format", choices=("wheel", "sdist"), required=True)
     args = parser.parse_args()
     release = args.release_dir.resolve()

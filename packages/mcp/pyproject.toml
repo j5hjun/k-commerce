@@ -3,7 +3,7 @@ name = "k-commerce-mcp"
 dynamic = ["version"]
 description = "MCP server for K-commerce workflows."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
 dependencies = [
   "k-commerce-cli",
   "httpx",
